@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koschei.invalid/schemas/sentinel.opinion.v1.json",
+  "title": "Koschei Sentinel Opinion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "case_id", "verdict_signature", "authority", "assessment", "claims", "limitations", "recommended_actions", "engine", "generated_at"],
+  "properties": {
+    "schema_version": {"const": "sentinel.opinion.v1"},
+    "case_id": {"type": "string"},
+    "verdict_signature": {"type": "string"},
+    "authority": {"type": "string"},
+    "assessment": {"const": "EXPLANATION_ONLY"},
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "evidence_ids", "confidence"],
+        "properties": {
+          "text": {"type": "string"},
+          "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "confidence": {"enum": ["VERIFIED", "INFERRED", "UNVERIFIED"]}
+        }
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "recommended_actions": {"type": "array", "items": {"type": "string"}},
+    "engine": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"}
+  }
+}

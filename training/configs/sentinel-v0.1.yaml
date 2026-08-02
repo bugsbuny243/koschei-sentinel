@@ -1,0 +1,13 @@
+run_name: koschei-sentinel-v0.1-alpha
+stage: evidence-foundation
+base_model: null
+method: lora
+seed: 2404
+schema_version: sentinel.case.v1
+output_schema_version: sentinel.opinion.v1
+quality_gates:
+  evidence_citation_rate: 1.0
+  unknown_evidence_rate: 0.0
+  verdict_override_rate: 0.0
+  pii_leak_rate: 0.0
+notes: "Select a base model only after benchmark and license review."

@@ -1,0 +1,23 @@
+{
+  "schema_version": "sentinel.case.v1",
+  "case_id": "fixture-holder-concentration-001",
+  "target_ref": "wallet_8c0d7cb45b5e3942f912ed61",
+  "network": "solana-mainnet",
+  "signed_verdict": {
+    "grade": "D",
+    "signature": "koschei-fixture-signature-0001",
+    "triggered_rules": ["KS-HOLDER-001"],
+    "summary": "Deterministic scanning found a holder concentration condition."
+  },
+  "evidence": [
+    {
+      "evidence_id": "E-HOLDER-001",
+      "kind": "holder_intelligence",
+      "statement": "The largest resolved holder controls a material share of circulating supply.",
+      "confidence": "VERIFIED",
+      "rule_ids": ["KS-HOLDER-001"],
+      "attributes": {"source": "fixture"}
+    }
+  ],
+  "limitations": ["This fixture contains no live market data."]
+}
