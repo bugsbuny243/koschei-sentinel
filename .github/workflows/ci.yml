@@ -24,5 +24,11 @@ jobs:
       - run: >-
           sentinel-eval
           --suite fixtures/evals/suite.safe.jsonl
-          --candidate sentinel-baseline-v0.3
+          --candidate sentinel-baseline-v0.4
           --output build/evals/baseline.json
+      - run: >-
+          sentinel-compare
+          --suite fixtures/evals/suite.safe.jsonl
+          --registry fixtures/models/candidates.safe.json
+          --output-dir build/comparisons/safe
+          --require-all
