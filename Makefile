@@ -1,9 +1,9 @@
-.PHONY: install check test lint format run dataset-dry-run dataset-release-dry-run benchmark compare
+.PHONY: install check test lint format run dataset-dry-run dataset-release-dry-run benchmark compare together-plan
 
 install:
 	python -m pip install -e '.[dev]'
 
-check: lint test benchmark compare
+check: lint test benchmark compare together-plan
 
 lint:
 	ruff check .
@@ -42,3 +42,9 @@ compare:
 		--registry fixtures/models/candidates.safe.json \
 		--output-dir build/comparisons/safe \
 		--require-all
+
+together-plan:
+	sentinel-compare \
+		--suite fixtures/evals/suite.safe.jsonl \
+		--registry fixtures/models/candidates.together.low-cost.json \
+		--plan-only
