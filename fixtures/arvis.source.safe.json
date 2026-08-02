@@ -1,0 +1,26 @@
+[
+  {
+    "schema_version": "arvis.export.v1",
+    "case_id": "fixture-arvis-001",
+    "network": "solana-mainnet",
+    "target": "8KxV7JGnVKXHh4UauuMxoPjzD4hnvy9dPp7Z4hXqW2aB",
+    "signed_verdict": {
+      "grade": "D",
+      "signature": "fixture-signed-verdict-signature-0001",
+      "triggered_rules": ["KS-HOLDER-001"],
+      "summary": "Deterministic scanning found a holder concentration condition."
+    },
+    "evidence": [
+      {
+        "evidence_id": "fixture-evidence-holder-001",
+        "kind": "holder_intelligence",
+        "statement": "The largest resolved holder controls a material share of circulating supply.",
+        "confidence": "VERIFIED",
+        "rule_ids": ["KS-HOLDER-001"],
+        "attributes": {"source": "fixture", "share_bps": 4200}
+      }
+    ],
+    "limitations": ["This fixture contains no live market data."],
+    "lineage_ids": ["fixture-cluster-001"]
+  }
+]
