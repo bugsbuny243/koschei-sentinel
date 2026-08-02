@@ -1,4 +1,4 @@
-.PHONY: install check test lint format run
+.PHONY: install check test lint format run dataset-dry-run
 
 install:
 	python -m pip install -e '.[dev]'
@@ -16,3 +16,10 @@ test:
 
 run:
 	python -m koschei_sentinel
+
+dataset-dry-run:
+	SENTINEL_DATASET_SALT=local-development-salt-only \
+		sentinel-dataset-export \
+		--input fixtures/arvis.source.safe.json \
+		--manifest build/sentinel.dry-run.json \
+		--dry-run
