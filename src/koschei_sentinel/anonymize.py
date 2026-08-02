@@ -78,6 +78,23 @@ def sanitize_text(value: str, *, salt: str) -> str:
     )
 
 
+def detect_sensitive_text(value: str) -> list[str]:
+    findings: list[str] = []
+    checks = (
+        ("email", _EMAIL),
+        ("phone", _PHONE),
+        ("solana_address", _SOLANA_ADDRESS),
+        ("jwt", _JWT),
+        ("bearer_credential", _BEARER),
+        ("api_key", _OPENAI_STYLE_KEY),
+        ("long_hex_secret", _LONG_HEX_SECRET),
+    )
+    for name, pattern in checks:
+        if pattern.search(value):
+            findings.append(name)
+    return findings
+
+
 def _walk(value: Any, salt: str, key: str = "") -> Any:
     normalized_key = key.lower()
     if normalized_key in SENSITIVE_KEYS or any(
