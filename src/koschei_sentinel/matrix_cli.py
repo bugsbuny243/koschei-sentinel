@@ -5,7 +5,11 @@ import json
 import sys
 from pathlib import Path
 
-from koschei_sentinel.adapters import load_candidate_registry
+from koschei_sentinel.adapters import (
+    load_candidate_registry,
+    plan_registry_costs,
+    select_candidates,
+)
 from koschei_sentinel.benchmark import BenchmarkThresholds, load_benchmark_suite
 from koschei_sentinel.matrix import run_comparison, write_comparison
 
@@ -18,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--suite", required=True, type=Path)
     parser.add_argument("--registry", required=True, type=Path)
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--candidate", action="append", default=[])
+    parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--allow-network", action="store_true")
     parser.add_argument("--allow-local-network", action="store_true")
     parser.add_argument("--require-all", action="store_true")
@@ -35,7 +41,14 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--allow-local-network requires --allow-network")
     try:
         suite = load_benchmark_suite(args.suite)
-        registry = load_candidate_registry(args.registry)
+        registry = select_candidates(
+            load_candidate_registry(args.registry),
+            args.candidate,
+        )
+        if args.plan_only:
+            plan = plan_registry_costs(registry, suite)
+            print(json.dumps(plan.model_dump(mode="json"), indent=2, sort_keys=True))
+            return 0 if plan.all_within_limits else 3
         run = run_comparison(
             suite,
             registry,

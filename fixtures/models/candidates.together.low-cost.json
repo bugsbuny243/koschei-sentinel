@@ -1,0 +1,41 @@
+{
+  "schema_version": "sentinel.candidate-registry.v1",
+  "candidates": [
+    {
+      "schema_version": "sentinel.candidate.v1",
+      "candidate_id": "sentinel-together-gpt-oss-20b",
+      "adapter": "together",
+      "model": "openai/gpt-oss-20b",
+      "api_key_env": "TOGETHER_API_KEY",
+      "timeout_seconds": 90,
+      "max_output_tokens": 512,
+      "temperature": 0.0,
+      "json_mode": "json-object",
+      "cost_policy": {
+        "pricing_as_of": "2026-08-03",
+        "input_usd_per_million_tokens": 0.05,
+        "output_usd_per_million_tokens": 0.20,
+        "max_estimated_cost_usd": 0.01,
+        "max_requests": 4
+      }
+    },
+    {
+      "schema_version": "sentinel.candidate.v1",
+      "candidate_id": "sentinel-together-qwen3.5-9b",
+      "adapter": "together",
+      "model": "Qwen/Qwen3.5-9B",
+      "api_key_env": "TOGETHER_API_KEY",
+      "timeout_seconds": 90,
+      "max_output_tokens": 512,
+      "temperature": 0.0,
+      "json_mode": "json-object",
+      "cost_policy": {
+        "pricing_as_of": "2026-08-03",
+        "input_usd_per_million_tokens": 0.17,
+        "output_usd_per_million_tokens": 0.25,
+        "max_estimated_cost_usd": 0.01,
+        "max_requests": 4
+      }
+    }
+  ]
+}

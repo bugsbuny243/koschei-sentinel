@@ -32,3 +32,8 @@ jobs:
           --registry fixtures/models/candidates.safe.json
           --output-dir build/comparisons/safe
           --require-all
+      - run: >-
+          sentinel-compare
+          --suite fixtures/evals/suite.safe.jsonl
+          --registry fixtures/models/candidates.together.low-cost.json
+          --plan-only

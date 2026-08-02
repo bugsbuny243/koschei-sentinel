@@ -13,8 +13,10 @@ from pydantic import Field
 
 from koschei_sentinel.adapters import (
     AdapterError,
+    CandidateCostPlan,
     CandidateRegistry,
     build_adapter,
+    plan_candidate_cost,
 )
 from koschei_sentinel.benchmark import (
     BenchmarkCase,
@@ -34,6 +36,7 @@ class CandidateOutcome(StrictModel):
     report: BenchmarkReport | None = None
     error_code: str | None = None
     error_message: str | None = None
+    cost_plan: CandidateCostPlan | None = None
 
 
 class ComparisonMatrix(StrictModel):
@@ -79,6 +82,7 @@ def run_comparison(
     reports_by_candidate: dict[str, BenchmarkReport] = {}
 
     for spec in sorted(registry.candidates, key=lambda item: item.candidate_id):
+        cost_plan = plan_candidate_cost(spec, suite)
         try:
             adapter = build_adapter(
                 spec,
@@ -106,6 +110,7 @@ def run_comparison(
                     model=spec.model,
                     status="passed" if report.gate_passed else "failed",
                     report=report,
+                    cost_plan=cost_plan,
                 )
             )
         except AdapterError as exc:
@@ -117,6 +122,7 @@ def run_comparison(
                     status="error",
                     error_code=exc.code,
                     error_message=str(exc),
+                    cost_plan=cost_plan,
                 )
             )
         except (OSError, ValueError):
@@ -128,6 +134,7 @@ def run_comparison(
                     status="error",
                     error_code="benchmark_rejected",
                     error_message="candidate output was rejected by the benchmark contract",
+                    cost_plan=cost_plan,
                 )
             )
 

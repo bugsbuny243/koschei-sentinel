@@ -1,0 +1,61 @@
+name: together-benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Low-cost Together candidate to evaluate
+        required: true
+        type: choice
+        options:
+          - sentinel-together-gpt-oss-20b
+          - sentinel-together-qwen3.5-9b
+      confirm_spend:
+        description: Confirm the run may consume Together credits or incur up to $0.01
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Require explicit spend confirmation
+        run: test "${{ inputs.confirm_spend }}" = "true"
+      - name: Require Together secret
+        run: test -n "$TOGETHER_API_KEY"
+      - name: Show conservative cost ceiling
+        run: >-
+          sentinel-compare
+          --suite fixtures/evals/suite.safe.jsonl
+          --registry fixtures/models/candidates.together.low-cost.json
+          --candidate "${{ inputs.candidate }}"
+          --plan-only
+      - name: Run live Together benchmark
+        run: >-
+          sentinel-compare
+          --suite fixtures/evals/suite.safe.jsonl
+          --registry fixtures/models/candidates.together.low-cost.json
+          --candidate "${{ inputs.candidate }}"
+          --output-dir build/comparisons/together
+          --allow-network
+          --require-all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: together-${{ inputs.candidate }}
+          path: build/comparisons/together
+          if-no-files-found: error
+          retention-days: 7
