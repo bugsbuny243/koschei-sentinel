@@ -1,6 +1,5 @@
 from koschei_sentinel.anonymize import anonymize_record
 
-
 SALT = "unit-test-salt-with-minimum-length"
 
 
