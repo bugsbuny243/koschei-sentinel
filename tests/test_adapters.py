@@ -16,7 +16,6 @@ from koschei_sentinel.adapters import (
 )
 from koschei_sentinel.benchmark import load_benchmark_suite
 
-
 FIXTURES = Path(__file__).parents[1] / "fixtures"
 
 
