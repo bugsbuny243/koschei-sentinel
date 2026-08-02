@@ -1,4 +1,4 @@
-.PHONY: install check test lint format run dataset-dry-run
+.PHONY: install check test lint format run dataset-dry-run dataset-release-dry-run
 
 install:
 	python -m pip install -e '.[dev]'
@@ -22,4 +22,9 @@ dataset-dry-run:
 		sentinel-dataset-export \
 		--input fixtures/arvis.source.safe.json \
 		--manifest build/sentinel.dry-run.json \
+		--dry-run
+
+dataset-release-dry-run:
+	sentinel-dataset-split \
+		--input fixtures/dataset.safe.jsonl \
 		--dry-run
