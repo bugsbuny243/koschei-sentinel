@@ -1,0 +1,16 @@
+{
+  "candidates": [
+    {
+      "adapter": "baseline",
+      "candidate_id": "sentinel-baseline-v0.4",
+      "schema_version": "sentinel.candidate.v1"
+    },
+    {
+      "adapter": "replay",
+      "candidate_id": "sentinel-replay-safe",
+      "predictions_path": "replay.safe.jsonl",
+      "schema_version": "sentinel.candidate.v1"
+    }
+  ],
+  "schema_version": "sentinel.candidate-registry.v1"
+}
