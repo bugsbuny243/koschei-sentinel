@@ -8,7 +8,6 @@ from koschei_sentinel.adapters import CandidateRegistry, load_candidate_registry
 from koschei_sentinel.benchmark import load_benchmark_suite
 from koschei_sentinel.matrix import run_comparison, write_comparison
 
-
 FIXTURES = Path(__file__).parents[1] / "fixtures"
 
 
