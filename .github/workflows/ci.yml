@@ -21,3 +21,8 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: ruff check .
       - run: pytest
+      - run: >-
+          sentinel-eval
+          --suite fixtures/evals/suite.safe.jsonl
+          --candidate sentinel-baseline-v0.3
+          --output build/evals/baseline.json
