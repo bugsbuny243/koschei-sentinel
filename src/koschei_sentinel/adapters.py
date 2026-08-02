@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import os
 import socket
 from collections.abc import Iterable
@@ -22,11 +23,12 @@ from koschei_sentinel.benchmark import (
 )
 from koschei_sentinel.models import SentinelOpinion, StrictModel
 
-AdapterKind = Literal["baseline", "replay", "openai-compatible"]
+AdapterKind = Literal["baseline", "replay", "openai-compatible", "together"]
 JsonMode = Literal["json-object", "prompt-only"]
 _CANDIDATE_ID = r"^[a-z0-9][a-z0-9._-]{0,127}$"
 _ENV_NAME = r"^[A-Z][A-Z0-9_]{0,127}$"
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_TOGETHER_BASE_URL = "https://api.together.ai/v1"
 _SYSTEM_PROMPT = (
     "You are Koschei Sentinel. Return exactly one JSON object matching "
     "sentinel.opinion.v1. The signed deterministic verdict is final. "
@@ -43,6 +45,41 @@ class AdapterError(RuntimeError):
         self.code = code
 
 
+class CostPolicy(StrictModel):
+    pricing_as_of: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    input_usd_per_million_tokens: float = Field(ge=0.0, le=1000.0)
+    output_usd_per_million_tokens: float = Field(ge=0.0, le=1000.0)
+    max_estimated_cost_usd: float = Field(gt=0.0, le=100.0)
+    max_requests: int = Field(default=8, ge=1, le=128)
+
+
+class CandidateCostPlan(StrictModel):
+    schema_version: Literal["sentinel.candidate-cost-plan.v1"] = (
+        "sentinel.candidate-cost-plan.v1"
+    )
+    candidate_id: str
+    adapter: AdapterKind
+    model: str | None = None
+    request_count: int
+    max_requests: int | None = None
+    estimated_input_tokens: int | None = None
+    max_output_tokens: int | None = None
+    estimated_max_cost_usd: float | None = None
+    max_estimated_cost_usd: float | None = None
+    within_request_limit: bool
+    within_budget: bool
+
+
+class RegistryCostPlan(StrictModel):
+    schema_version: Literal["sentinel.registry-cost-plan.v1"] = (
+        "sentinel.registry-cost-plan.v1"
+    )
+    total_candidates: int
+    network_candidates: int
+    all_within_limits: bool
+    candidates: list[CandidateCostPlan]
+
+
 class CandidateSpec(StrictModel):
     schema_version: Literal["sentinel.candidate.v1"] = "sentinel.candidate.v1"
     candidate_id: str = Field(pattern=_CANDIDATE_ID)
@@ -55,17 +92,33 @@ class CandidateSpec(StrictModel):
     max_output_tokens: int = Field(default=2048, ge=128, le=8192)
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     json_mode: JsonMode = "json-object"
+    cost_policy: CostPolicy | None = None
 
     @model_validator(mode="after")
     def adapter_fields_are_consistent(self) -> CandidateSpec:
         if self.adapter == "baseline":
             if any((self.model, self.base_url, self.api_key_env, self.predictions_path)):
                 raise ValueError("baseline candidates cannot configure provider fields")
+            if self.cost_policy is not None:
+                raise ValueError("baseline candidates cannot configure a cost policy")
         elif self.adapter == "replay":
             if self.predictions_path is None:
                 raise ValueError("replay candidates require predictions_path")
             if any((self.model, self.base_url, self.api_key_env)):
                 raise ValueError("replay candidates cannot configure provider fields")
+            if self.cost_policy is not None:
+                raise ValueError("replay candidates cannot configure a cost policy")
+        elif self.adapter == "together":
+            if self.model is None:
+                raise ValueError("Together candidates require model")
+            if self.base_url is not None:
+                raise ValueError("Together candidates cannot override the provider endpoint")
+            if self.api_key_env != "TOGETHER_API_KEY":
+                raise ValueError("Together candidates must use TOGETHER_API_KEY")
+            if self.predictions_path is not None:
+                raise ValueError("Together candidates cannot configure predictions_path")
+            if self.cost_policy is None:
+                raise ValueError("Together candidates require a cost policy")
         else:
             if self.model is None or self.base_url is None:
                 raise ValueError("openai-compatible candidates require model and base_url")
@@ -146,13 +199,15 @@ class OpenAICompatibleAdapter:
                 "network_disabled",
                 "network adapters require the explicit --allow-network flag",
             )
+        benchmarks = list(suite)
+        _enforce_cost_plan(plan_candidate_cost(self.spec, benchmarks))
         endpoint = _validate_endpoint(
             self.spec.base_url or "",
             allow_local_network=self.allow_local_network,
         )
         api_key = _load_api_key(self.spec.api_key_env)
         outputs: list[PredictionRecord] = []
-        for benchmark in suite:
+        for benchmark in benchmarks:
             opinion = self._predict_one(benchmark, endpoint=endpoint, api_key=api_key)
             outputs.append(
                 PredictionRecord(
@@ -174,29 +229,7 @@ class OpenAICompatibleAdapter:
             endpoint,
             allow_local_network=self.allow_local_network,
         )
-        payload = {
-            "model": self.spec.model,
-            "temperature": self.spec.temperature,
-            "max_tokens": self.spec.max_output_tokens,
-            "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "schema_version": "sentinel.inference-request.v1",
-                            "test_id": benchmark.test_id,
-                            "case": benchmark.case.model_dump(mode="json"),
-                        },
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ),
-                },
-            ],
-        }
-        if self.spec.json_mode == "json-object":
-            payload["response_format"] = {"type": "json_object"}
-
+        payload = _request_payload(self.spec, benchmark)
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if api_key is not None:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -240,11 +273,134 @@ def build_adapter(
         return BaselineAdapter(spec)
     if spec.adapter == "replay":
         return ReplayAdapter(spec, base_dir=base_dir)
+    active_spec = (
+        spec.model_copy(update={"base_url": _TOGETHER_BASE_URL})
+        if spec.adapter == "together"
+        else spec
+    )
     return OpenAICompatibleAdapter(
-        spec,
+        active_spec,
         allow_network=allow_network,
         allow_local_network=allow_local_network,
     )
+
+
+def select_candidates(
+    registry: CandidateRegistry, candidate_ids: Iterable[str] | None
+) -> CandidateRegistry:
+    requested = list(dict.fromkeys(candidate_ids or []))
+    if not requested:
+        return registry
+    available = {item.candidate_id: item for item in registry.candidates}
+    missing = sorted(set(requested) - set(available))
+    if missing:
+        raise ValueError("unknown candidate_id values: " + ", ".join(missing))
+    return CandidateRegistry(candidates=[available[item] for item in requested])
+
+
+def plan_registry_costs(
+    registry: CandidateRegistry, suite: Iterable[BenchmarkCase]
+) -> RegistryCostPlan:
+    benchmarks = list(suite)
+    plans = [
+        plan_candidate_cost(spec, benchmarks)
+        for spec in sorted(registry.candidates, key=lambda item: item.candidate_id)
+    ]
+    return RegistryCostPlan(
+        total_candidates=len(plans),
+        network_candidates=sum(
+            item.adapter in {"openai-compatible", "together"} for item in plans
+        ),
+        all_within_limits=all(
+            item.within_request_limit and item.within_budget for item in plans
+        ),
+        candidates=plans,
+    )
+
+
+def plan_candidate_cost(
+    spec: CandidateSpec, suite: Iterable[BenchmarkCase]
+) -> CandidateCostPlan:
+    benchmarks = list(suite)
+    policy = spec.cost_policy
+    if policy is None:
+        return CandidateCostPlan(
+            candidate_id=spec.candidate_id,
+            adapter=spec.adapter,
+            model=spec.model,
+            request_count=len(benchmarks),
+            within_request_limit=True,
+            within_budget=True,
+        )
+
+    input_tokens = sum(
+        len(
+            json.dumps(
+                _request_payload(spec, benchmark)["messages"],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        for benchmark in benchmarks
+    )
+    output_tokens = len(benchmarks) * spec.max_output_tokens
+    estimated = (
+        input_tokens * policy.input_usd_per_million_tokens
+        + output_tokens * policy.output_usd_per_million_tokens
+    ) / 1_000_000
+    estimated = math.ceil(estimated * 100_000_000) / 100_000_000
+    return CandidateCostPlan(
+        candidate_id=spec.candidate_id,
+        adapter=spec.adapter,
+        model=spec.model,
+        request_count=len(benchmarks),
+        max_requests=policy.max_requests,
+        estimated_input_tokens=input_tokens,
+        max_output_tokens=output_tokens,
+        estimated_max_cost_usd=estimated,
+        max_estimated_cost_usd=policy.max_estimated_cost_usd,
+        within_request_limit=len(benchmarks) <= policy.max_requests,
+        within_budget=estimated <= policy.max_estimated_cost_usd,
+    )
+
+
+def _enforce_cost_plan(plan: CandidateCostPlan) -> None:
+    if not plan.within_request_limit:
+        raise AdapterError(
+            "request_limit_exceeded",
+            "candidate request count exceeds the configured safety limit",
+        )
+    if not plan.within_budget:
+        raise AdapterError(
+            "budget_exceeded",
+            "candidate estimated maximum cost exceeds the configured USD budget",
+        )
+
+
+def _request_payload(spec: CandidateSpec, benchmark: BenchmarkCase) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "model": spec.model,
+        "temperature": spec.temperature,
+        "max_tokens": spec.max_output_tokens,
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "schema_version": "sentinel.inference-request.v1",
+                        "test_id": benchmark.test_id,
+                        "case": benchmark.case.model_dump(mode="json"),
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            },
+        ],
+    }
+    if spec.json_mode == "json-object":
+        payload["response_format"] = {"type": "json_object"}
+    return payload
 
 
 def load_candidate_registry(path: str | Path) -> CandidateRegistry:
