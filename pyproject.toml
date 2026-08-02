@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "koschei-sentinel"
-version = "0.1.0"
+version = "0.1.1"
 description = "Evidence-grounded Web3 security model platform for Koschei"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,7 @@ dev = [
 
 [project.scripts]
 koschei-sentinel = "koschei_sentinel.__main__:main"
+sentinel-dataset-export = "koschei_sentinel.dataset_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
