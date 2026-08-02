@@ -4,7 +4,7 @@ Evidence-grounded Web3 security model, dataset, training, evaluation, and infere
 
 Koschei Sentinel is not allowed to replace a signed deterministic verdict. Its job is to explain bounded evidence, surface limitations, and produce structured commentary that can be checked automatically.
 
-## v0.3.0 — Model Benchmark Gate
+## v0.4.0 — Secure Model Adapter Matrix
 
 The repository now provides:
 
@@ -16,9 +16,12 @@ The repository now provides:
 - deterministic leakage-safe train/validation/test assignment by `group_ref`;
 - duplicate, privacy, identifier-format, and malformed-row quality gates;
 - atomic versioned release directories with per-split digests and statistics;
-- versioned benchmark-case, prediction, and benchmark-report contracts;
+- versioned benchmark-case, prediction, benchmark-report, candidate, and matrix contracts;
 - offline authority, grounding, confidence, abstention, and privacy evaluation;
-- a strict model-promotion gate enforced in CI;
+- baseline, replay, and OpenAI-compatible model adapters;
+- network-deny-by-default provider execution and private-endpoint controls;
+- deterministic candidate ranking and atomic comparison artifacts;
+- strict model-promotion and comparison gates enforced in CI;
 - a baseline inference engine and FastAPI boundary.
 
 No model weights, production data, or production secrets belong in this repository.
@@ -79,7 +82,7 @@ Run the deterministic baseline without network access or API keys:
 ```bash
 sentinel-eval \
   --suite fixtures/evals/suite.safe.jsonl \
-  --candidate sentinel-baseline-v0.3 \
+  --candidate sentinel-baseline-v0.4 \
   --output build/evals/baseline.json
 ```
 
@@ -93,6 +96,20 @@ sentinel-eval \
 ```
 
 The command exits with code `3` when valid predictions fail the promotion gate.
+
+## Compare model candidates
+
+Run the secrets-free baseline and replay matrix:
+
+```bash
+sentinel-compare \
+  --suite fixtures/evals/suite.safe.jsonl \
+  --registry fixtures/models/candidates.safe.json \
+  --output-dir build/comparisons/safe \
+  --require-all
+```
+
+Network adapters remain disabled unless `--allow-network` is supplied. Local and private endpoints require the additional `--allow-local-network` override. API credentials are referenced only by environment-variable name in the candidate registry.
 
 ## Inference API
 
@@ -113,6 +130,7 @@ curl -X POST http://127.0.0.1:8080/v1/opinions \
 4. Unknown or missing information must be reported as a limitation.
 5. Raw personal data and secrets must not enter training exports or model outputs.
 6. Related clusters and incident families must never cross dataset splits.
-7. A model cannot be promoted when any hard benchmark gate fails.
+7. Provider access is denied unless explicitly enabled and safety-validated.
+8. A model cannot be promoted when any hard benchmark gate fails.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DATA_CARD.md`](docs/DATA_CARD.md), [`docs/DATASET_EXPORT.md`](docs/DATASET_EXPORT.md), [`docs/DATASET_RELEASE.md`](docs/DATASET_RELEASE.md), and [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DATA_CARD.md`](docs/DATA_CARD.md), [`docs/DATASET_EXPORT.md`](docs/DATASET_EXPORT.md), [`docs/DATASET_RELEASE.md`](docs/DATASET_RELEASE.md), [`docs/BENCHMARK.md`](docs/BENCHMARK.md), and [`docs/MODEL_ADAPTERS.md`](docs/MODEL_ADAPTERS.md).

@@ -1,9 +1,9 @@
-.PHONY: install check test lint format run dataset-dry-run dataset-release-dry-run benchmark
+.PHONY: install check test lint format run dataset-dry-run dataset-release-dry-run benchmark compare
 
 install:
 	python -m pip install -e '.[dev]'
 
-check: lint test benchmark
+check: lint test benchmark compare
 
 lint:
 	ruff check .
@@ -32,5 +32,13 @@ dataset-release-dry-run:
 benchmark:
 	sentinel-eval \
 		--suite fixtures/evals/suite.safe.jsonl \
-		--candidate sentinel-baseline-v0.3 \
+		--candidate sentinel-baseline-v0.4 \
 		--output build/evals/baseline.json
+
+compare:
+	rm -rf build/comparisons/safe
+	sentinel-compare \
+		--suite fixtures/evals/suite.safe.jsonl \
+		--registry fixtures/models/candidates.safe.json \
+		--output-dir build/comparisons/safe \
+		--require-all
