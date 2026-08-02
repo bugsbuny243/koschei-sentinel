@@ -11,4 +11,6 @@ The current suite measures:
 
 The built-in baseline is the contract oracle. CI runs it without API keys against `fixtures/evals/suite.safe.jsonl`. External providers and trained checkpoints must emit the same versioned prediction contract and pass the same gate.
 
-See [`docs/BENCHMARK.md`](../docs/BENCHMARK.md).
+`sentinel-compare` runs multiple candidate adapters against the identical suite and thresholds. The safe CI registry compares the baseline with a replay fixture, so adapter orchestration, artifact generation, ranking, and fail-closed behavior are verified without network access.
+
+See [`docs/BENCHMARK.md`](../docs/BENCHMARK.md) and [`docs/MODEL_ADAPTERS.md`](../docs/MODEL_ADAPTERS.md).
