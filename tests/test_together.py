@@ -7,9 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from koschei_sentinel.adapters import (
-    _request_payload,
     AdapterError,
     CandidateSpec,
+    _request_payload,
     build_adapter,
     load_candidate_registry,
     parse_chat_completion,
