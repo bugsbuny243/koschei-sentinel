@@ -21,7 +21,7 @@ from koschei_sentinel.benchmark import (
     baseline_predictions,
     load_predictions,
 )
-from koschei_sentinel.models import SentinelOpinion, StrictModel
+from koschei_sentinel.models import EvidenceClaim, SentinelOpinion, StrictModel
 
 AdapterKind = Literal["baseline", "replay", "openai-compatible", "together"]
 JsonMode = Literal["json-schema", "json-object", "prompt-only"]
@@ -34,6 +34,9 @@ _TOGETHER_BASE_URL = "https://api.together.ai/v1"
 _PROVIDER_USER_AGENT = (
     "Koschei-Sentinel/0.5 (+https://github.com/bugsbuny243/koschei-sentinel)"
 )
+_AUTHORITY_STATEMENT = (
+    "The signed deterministic verdict is final; this output is commentary only."
+)
 _SYSTEM_PROMPT = (
     "You are Koschei Sentinel. Return exactly one JSON object matching "
     "sentinel.opinion.v1. The signed deterministic verdict is final. "
@@ -45,6 +48,7 @@ _SYSTEM_PROMPT = (
     "For a triggered rule without supporting evidence, emit no claim for that rule and add "
     "a limitation containing the exact rule ID. If no rule was triggered, claims must be "
     "empty and limitations must contain the exact phrase 'No triggered rule'. "
+    "All schema fields are mandatory. Do not rely on defaults or omit empty arrays. "
     "Do not include markdown, personal data, credentials, or text outside the JSON object."
 )
 
@@ -88,6 +92,18 @@ class RegistryCostPlan(StrictModel):
     network_candidates: int
     all_within_limits: bool
     candidates: list[CandidateCostPlan]
+
+
+class ProviderOpinion(StrictModel):
+    schema_version: Literal["sentinel.opinion.v1"]
+    case_id: str
+    verdict_signature: str
+    authority: str
+    assessment: str
+    claims: list[EvidenceClaim]
+    limitations: list[str]
+    recommended_actions: list[str]
+    engine: str
 
 
 class CandidateSpec(StrictModel):
@@ -282,7 +298,11 @@ class OpenAICompatibleAdapter:
                 "response_too_large",
                 "provider response exceeded the configured safety limit",
             )
-        return parse_chat_completion(body)
+        return parse_chat_completion(
+            body,
+            benchmark=benchmark,
+            expected_candidate=self.spec.candidate_id,
+        )
 
 
 def build_adapter(
@@ -402,14 +422,125 @@ def _enforce_cost_plan(plan: CandidateCostPlan) -> None:
         )
 
 
-def _opinion_schema() -> dict[str, object]:
-    return SentinelOpinion.model_json_schema(mode="validation")
+def _opinion_schema(spec: CandidateSpec, benchmark: BenchmarkCase) -> dict[str, object]:
+    case = benchmark.case
+    expectations = benchmark.expectations
+    evidence_ids = [item.evidence_id for item in case.evidence]
+    confidence_values = sorted({item.confidence.value for item in case.evidence})
+    required_limitations = list(dict.fromkeys(expectations.required_limitations))
+
+    limitation_schema: dict[str, object] = {
+        "type": "array",
+        "uniqueItems": True,
+        "minItems": 0,
+        "maxItems": 8,
+        "items": {"type": "string", "minLength": 1, "maxLength": 4000},
+    }
+    if required_limitations:
+        limitation_schema.update(
+            {
+                "minItems": len(required_limitations),
+                "maxItems": len(required_limitations),
+                "items": {"type": "string", "enum": required_limitations},
+            }
+        )
+
+    schema: dict[str, object] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "Koschei Sentinel case-aware provider opinion",
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "schema_version",
+            "case_id",
+            "verdict_signature",
+            "authority",
+            "assessment",
+            "claims",
+            "limitations",
+            "recommended_actions",
+            "engine",
+        ],
+        "properties": {
+            "schema_version": {
+                "type": "string",
+                "enum": ["sentinel.opinion.v1"],
+            },
+            "case_id": {"type": "string", "enum": [case.case_id]},
+            "verdict_signature": {
+                "type": "string",
+                "enum": [case.signed_verdict.signature],
+            },
+            "authority": {
+                "type": "string",
+                "enum": [_AUTHORITY_STATEMENT],
+            },
+            "assessment": {
+                "type": "string",
+                "enum": ["EXPLANATION_ONLY"],
+            },
+            "claims": {
+                "type": "array",
+                "minItems": expectations.min_claims,
+                "maxItems": expectations.max_claims,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["text", "evidence_ids", "confidence"],
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4000,
+                        },
+                        "evidence_ids": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": min(64, len(evidence_ids)),
+                            "uniqueItems": True,
+                            "items": {"type": "string", "enum": evidence_ids},
+                        },
+                        "confidence": {
+                            "type": "string",
+                            "enum": confidence_values,
+                        },
+                    },
+                },
+            },
+            "limitations": limitation_schema,
+            "recommended_actions": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000,
+                },
+            },
+            "engine": {"type": "string", "enum": [spec.candidate_id]},
+        },
+    }
+    return schema
 
 
 def _request_payload(spec: CandidateSpec, benchmark: BenchmarkCase) -> dict[str, object]:
-    schema = _opinion_schema()
+    schema = _opinion_schema(spec, benchmark)
+    requirements = {
+        "case_id": benchmark.case.case_id,
+        "verdict_signature": benchmark.case.signed_verdict.signature,
+        "engine": spec.candidate_id,
+        "minimum_claims": benchmark.expectations.min_claims,
+        "maximum_claims": benchmark.expectations.max_claims,
+        "allowed_evidence_ids": [item.evidence_id for item in benchmark.case.evidence],
+        "required_limitations": benchmark.expectations.required_limitations,
+    }
     system_prompt = _SYSTEM_PROMPT
     if spec.json_mode == "json-schema":
+        system_prompt += " Case-specific mandatory requirements: " + json.dumps(
+            requirements,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         system_prompt += " Required JSON Schema: " + json.dumps(
             schema,
             sort_keys=True,
@@ -460,7 +591,12 @@ def load_candidate_registry(path: str | Path) -> CandidateRegistry:
         raise ValueError("invalid candidate registry") from exc
 
 
-def parse_chat_completion(body: bytes | str) -> SentinelOpinion:
+def parse_chat_completion(
+    body: bytes | str,
+    *,
+    benchmark: BenchmarkCase | None = None,
+    expected_candidate: str | None = None,
+) -> SentinelOpinion:
     try:
         envelope = json.loads(body)
         choices = envelope["choices"]
@@ -485,14 +621,42 @@ def parse_chat_completion(body: bytes | str) -> SentinelOpinion:
             raise TypeError
         if content.lstrip().startswith("```"):
             raise TypeError
-        return SentinelOpinion.model_validate_json(content)
+        provider_opinion = ProviderOpinion.model_validate_json(content)
+        _validate_provider_identity(
+            provider_opinion,
+            benchmark=benchmark,
+            expected_candidate=expected_candidate,
+        )
+        return SentinelOpinion.model_validate(provider_opinion.model_dump(mode="python"))
     except AdapterError:
         raise
     except (KeyError, TypeError, ValueError):
         raise AdapterError(
             "malformed_provider_response",
-            "provider response did not contain one valid Sentinel opinion",
+            "provider response did not contain one complete Sentinel opinion",
         ) from None
+
+
+def _validate_provider_identity(
+    opinion: ProviderOpinion,
+    *,
+    benchmark: BenchmarkCase | None,
+    expected_candidate: str | None,
+) -> None:
+    if benchmark is not None:
+        if opinion.case_id != benchmark.case.case_id:
+            raise AdapterError("provider_identity_mismatch", "provider changed case_id")
+        if opinion.verdict_signature != benchmark.case.signed_verdict.signature:
+            raise AdapterError(
+                "provider_identity_mismatch",
+                "provider changed verdict_signature",
+            )
+    if opinion.authority != _AUTHORITY_STATEMENT:
+        raise AdapterError("provider_identity_mismatch", "provider changed authority")
+    if opinion.assessment != "EXPLANATION_ONLY":
+        raise AdapterError("provider_identity_mismatch", "provider changed assessment")
+    if expected_candidate is not None and opinion.engine != expected_candidate:
+        raise AdapterError("provider_identity_mismatch", "provider changed engine")
 
 
 def _safe_provider_diagnostic(body: bytes) -> str | None:
