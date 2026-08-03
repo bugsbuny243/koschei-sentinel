@@ -13,6 +13,7 @@ _SUITE = "fixtures/evals/suite.safe.jsonl"
 _REGISTRY = "fixtures/models/candidates.together.low-cost.json"
 _CANDIDATE = "sentinel-together-gpt-oss-20b"
 _ENDPOINT = "https://api.together.ai/v1/chat/completions"
+_USER_AGENT = "Koschei-Sentinel/0.5 (+https://github.com/bugsbuny243/koschei-sentinel)"
 
 
 def _extract_message(raw: bytes, api_key: str) -> str:
@@ -55,6 +56,7 @@ def main() -> int:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "User-Agent": _USER_AGENT,
         },
         method="POST",
     )
