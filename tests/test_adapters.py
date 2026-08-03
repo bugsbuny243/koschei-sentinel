@@ -8,10 +8,10 @@ from pydantic import ValidationError
 
 from koschei_sentinel.adapters import (
     _PROVIDER_USER_AGENT,
-    _safe_provider_diagnostic,
     AdapterError,
     CandidateRegistry,
     CandidateSpec,
+    _safe_provider_diagnostic,
     build_adapter,
     load_candidate_registry,
     parse_chat_completion,
