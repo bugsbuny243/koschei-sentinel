@@ -1,0 +1,40 @@
+{
+  "confidence_counts": {
+    "VERIFIED": 1
+  },
+  "dry_run": false,
+  "evidence_kind_counts": {
+    "holder_intelligence": 1
+  },
+  "grade_counts": {
+    "D": 1
+  },
+  "schema_version": "sentinel.quality-manifest.v1",
+  "seed": "sentinel-training-fixture-v1",
+  "splits": {
+    "test": {
+      "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "examples": 0,
+      "groups": 0
+    },
+    "train": {
+      "digest": "b5a3cf02433e60fc0fb22b66d23cdcf9f350335da261a383d9b914e841ca6274",
+      "examples": 1,
+      "groups": 1
+    },
+    "validation": {
+      "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "examples": 0,
+      "groups": 0
+    }
+  },
+  "test_bps": 1000,
+  "total_examples": 1,
+  "total_groups": 1,
+  "train_bps": 8000,
+  "validation_bps": 1000,
+  "warnings": [
+    "validation split is empty",
+    "test split is empty"
+  ]
+}
