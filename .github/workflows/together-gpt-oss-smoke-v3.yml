@@ -1,0 +1,64 @@
+name: together-gpt-oss-smoke-v3
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    if: github.head_ref == 'run/together-gpt-oss-20b-smoke-v3'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Require Together secret
+        run: test -n "$TOGETHER_API_KEY"
+      - name: Verify conservative cost ceiling
+        run: >-
+          sentinel-compare
+          --suite fixtures/evals/suite.safe.jsonl
+          --registry fixtures/models/candidates.together.low-cost.json
+          --candidate sentinel-together-gpt-oss-20b
+          --plan-only
+      - name: Run live GPT-OSS 20B benchmark
+        id: live
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p build/live
+          set +e
+          sentinel-compare \
+            --suite fixtures/evals/suite.safe.jsonl \
+            --registry fixtures/models/candidates.together.low-cost.json \
+            --candidate sentinel-together-gpt-oss-20b \
+            --output-dir build/comparisons/together-gpt-oss-20b \
+            --allow-network \
+            --require-all \
+            | tee build/live/stdout.json
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > build/live/exit-code.txt
+          exit "$status"
+      - name: Upload live result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: together-gpt-oss-20b-smoke-v3
+          path: |
+            build/comparisons/together-gpt-oss-20b
+            build/live
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce benchmark result
+        if: always()
+        run: test "${{ steps.live.outcome }}" = "success"
