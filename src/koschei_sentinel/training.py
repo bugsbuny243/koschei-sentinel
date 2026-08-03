@@ -12,6 +12,7 @@ from pydantic import Field, model_validator
 from koschei_sentinel.dataset import DatasetExample
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.policy import baseline_opinion, validate_opinion
+from koschei_sentinel.readiness import DatasetReadinessReport
 
 _SPLIT_NAMES = ("train", "validation", "test")
 SYSTEM_PROMPT = (
@@ -62,6 +63,8 @@ class TrainingConfig(StrictModel):
     base_model: str = Field(min_length=3, max_length=256)
     base_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
     dataset_release: str = Field(min_length=1, max_length=1024)
+    readiness_report: str | None = Field(default=None, min_length=1, max_length=1024)
+    require_readiness: bool = False
     output_dir: str = Field(min_length=1, max_length=1024)
     max_sequence_length: int = Field(default=2048, ge=256, le=32768)
     epochs: float = Field(default=1.0, gt=0.0, le=20.0)
@@ -79,6 +82,10 @@ class TrainingConfig(StrictModel):
     def inputs_are_safe(self) -> TrainingConfig:
         _validate_relative_path(self.dataset_release, "dataset_release")
         _validate_relative_path(self.output_dir, "output_dir")
+        if self.readiness_report is not None:
+            _validate_relative_path(self.readiness_report, "readiness_report")
+        if self.require_readiness and self.readiness_report is None:
+            raise ValueError("require_readiness requires readiness_report")
         if self.base_model.startswith(("http://", "https://")):
             raise ValueError("base_model must be a registry identifier, not a URL")
         if self.base_model.count("/") != 1:
@@ -104,6 +111,10 @@ class TrainingPlan(StrictModel):
     base_model: str
     base_revision: str
     dataset_manifest_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    readiness_report_digest: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
     training_config_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     splits: dict[str, TrainingSplit]
     effective_batch_size: int
@@ -140,6 +151,7 @@ def plan_training(config: TrainingConfig, *, root: str | Path = ".") -> Training
         raise ValueError("dataset release is missing quality-manifest.json")
 
     manifest_bytes = manifest_path.read_bytes()
+    manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
     try:
         manifest = json.loads(manifest_bytes)
     except json.JSONDecodeError as exc:
@@ -178,6 +190,13 @@ def plan_training(config: TrainingConfig, *, root: str | Path = ".") -> Training
             digest=digest,
         )
 
+    readiness_digest = _validate_readiness_report(
+        config,
+        root_path=root_path,
+        release_path=release_path,
+        manifest_digest=manifest_digest,
+        warnings=warnings,
+    )
     train_examples = splits["train"].examples
     if train_examples == 0:
         raise ValueError("train split must contain at least one example")
@@ -193,7 +212,8 @@ def plan_training(config: TrainingConfig, *, root: str | Path = ".") -> Training
         run_id=config.run_id,
         base_model=config.base_model,
         base_revision=config.base_revision,
-        dataset_manifest_digest=hashlib.sha256(manifest_bytes).hexdigest(),
+        dataset_manifest_digest=manifest_digest,
+        readiness_report_digest=readiness_digest,
         training_config_digest=model_digest(config),
         splits=splits,
         effective_batch_size=config.effective_batch_size,
@@ -224,7 +244,11 @@ def load_release_examples(
         raise ValueError(f"dataset release is missing {Path(relative_path).name}")
     raw = path.read_bytes()
     rows: list[DatasetExample] = []
-    for line_number, line in enumerate(raw.decode("utf-8").splitlines(), 1):
+    try:
+        lines = raw.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{path.name} is not valid UTF-8") from exc
+    for line_number, line in enumerate(lines, 1):
         if not line.strip():
             continue
         try:
@@ -271,6 +295,35 @@ def atomic_write(path: Path, payload: str) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+def _validate_readiness_report(
+    config: TrainingConfig,
+    *,
+    root_path: Path,
+    release_path: Path,
+    manifest_digest: str,
+    warnings: list[str],
+) -> str | None:
+    if config.readiness_report is None:
+        return None
+    report_path = resolve_under_root(root_path, config.readiness_report)
+    if report_path.parent != release_path:
+        raise ValueError("readiness_report must be stored inside dataset_release")
+    if not report_path.is_file():
+        raise ValueError("dataset release is missing readiness report")
+    report_bytes = report_path.read_bytes()
+    try:
+        report = DatasetReadinessReport.model_validate_json(report_bytes)
+    except ValueError as exc:
+        raise ValueError("dataset readiness report is invalid") from exc
+    if report.release_manifest_digest != manifest_digest:
+        raise ValueError("readiness report does not match dataset quality manifest")
+    if config.require_readiness and not report.ready:
+        raise ValueError("dataset readiness report did not pass")
+    if not report.ready:
+        warnings.append("dataset readiness report did not pass")
+    return hashlib.sha256(report_bytes).hexdigest()
 
 
 def _validate_relative_path(value: str, field: str) -> None:
