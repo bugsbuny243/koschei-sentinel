@@ -11,7 +11,9 @@ The initial registry contains two structured-output candidates:
 - `openai/gpt-oss-20b`
 - `Qwen/Qwen3.5-9B`
 
-Each candidate is limited to four requests, 512 output tokens per request, and a conservative maximum estimated cost of `$0.01` for one comparison run.
+Each candidate is limited to four requests and a conservative maximum estimated cost of `$0.01` for one comparison run. GPT-OSS uses a 1,024-token output ceiling with low reasoning effort. Qwen uses a 512-token output ceiling with reasoning disabled.
+
+Both candidates use Together JSON Schema structured output. The exact `SentinelOpinion` validation schema is sent through `response_format` and included in the system prompt. This prevents a reasoning model from returning an arbitrary JSON shape that merely happens to be syntactically valid.
 
 ## Plan without network access
 
@@ -54,7 +56,9 @@ sentinel-compare \
   --require-all
 ```
 
-Together candidates cannot configure a custom base URL. The adapter always uses `https://api.together.ai/v1`, requires `TOGETHER_API_KEY`, and sends chat-completions requests with JSON-object output enabled.
+Together candidates cannot configure a custom base URL. The adapter always uses `https://api.together.ai/v1`, requires `TOGETHER_API_KEY`, identifies requests with a stable Koschei Sentinel user agent, and sends chat-completions requests with JSON Schema output enabled.
+
+A response that exhausts `max_tokens` before producing final `content` is reported as `provider_output_truncated`, not as an ambiguous malformed response. Increasing output budget still requires the preflight cost plan to remain below the configured USD ceiling.
 
 ## Run from GitHub Actions
 
