@@ -13,7 +13,27 @@ The initial registry contains two structured-output candidates:
 
 Each candidate is limited to four requests and a conservative maximum estimated cost of `$0.01` for one comparison run. GPT-OSS uses a 1,024-token output ceiling with low reasoning effort. Qwen uses a 512-token output ceiling with reasoning disabled.
 
-Both candidates use Together JSON Schema structured output. The exact `SentinelOpinion` validation schema is sent through `response_format` and included in the system prompt. This prevents a reasoning model from returning an arbitrary JSON shape that merely happens to be syntactically valid.
+## Case-aware structured output
+
+Together candidates use JSON Schema structured output, but Sentinel does not send one permissive global schema. A separate contract is built for every benchmark case.
+
+The provider-facing contract has no defaults and requires every semantic field:
+
+- schema version;
+- case ID;
+- verdict signature;
+- authority statement;
+- assessment;
+- claims;
+- limitations;
+- recommended actions;
+- engine identifier.
+
+The schema locks case ID, verdict signature, authority, assessment, and engine to their expected values. It also applies the benchmark's minimum and maximum claim counts, restricts cited evidence IDs to the current packet, restricts confidence values to those present in the packet, and requires exact limitation strings for abstention cases.
+
+The same compact requirements and schema are included in the system prompt. After Together returns a valid JSON object, Sentinel validates the provider-facing contract, checks identity again, converts it to the internal opinion type, and runs the deterministic policy and benchmark gates. Structured output therefore narrows syntax and candidate choices; it never replaces local verification.
+
+Sparse responses that rely on application defaults are rejected before benchmark evaluation.
 
 ## Plan without network access
 
@@ -56,7 +76,7 @@ sentinel-compare \
   --require-all
 ```
 
-Together candidates cannot configure a custom base URL. The adapter always uses `https://api.together.ai/v1`, requires `TOGETHER_API_KEY`, identifies requests with a stable Koschei Sentinel user agent, and sends chat-completions requests with JSON Schema output enabled.
+Together candidates cannot configure a custom base URL. The adapter always uses `https://api.together.ai/v1`, requires `TOGETHER_API_KEY`, identifies requests with a stable Koschei Sentinel user agent, and sends chat-completions requests with case-aware JSON Schema output enabled.
 
 A response that exhausts `max_tokens` before producing final `content` is reported as `provider_output_truncated`, not as an ambiguous malformed response. Increasing output budget still requires the preflight cost plan to remain below the configured USD ceiling.
 

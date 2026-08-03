@@ -4,7 +4,7 @@ Evidence-grounded Web3 security model, dataset, training, evaluation, and infere
 
 Koschei Sentinel is not allowed to replace a signed deterministic verdict. Its job is to explain bounded evidence, surface limitations, and produce structured commentary that can be checked automatically.
 
-## v0.5.1 — Together Structured Inference
+## v0.5.2 — Case-Aware Provider Contracts
 
 The repository now provides:
 
@@ -22,6 +22,7 @@ The repository now provides:
 - network-deny-by-default provider execution and private-endpoint controls;
 - preflight request-count and conservative USD budget enforcement;
 - Together JSON Schema outputs with explicit reasoning controls;
+- case-aware schemas that require every semantic field and lock identity, claim counts, evidence IDs, confidence values, and abstention limitations;
 - deterministic candidate ranking and atomic comparison artifacts;
 - secrets-free CI planning plus a manually triggered live Together workflow;
 - a baseline inference engine and FastAPI boundary.
@@ -122,7 +123,11 @@ sentinel-compare \
   --plan-only
 ```
 
-The initial low-cost lane contains `openai/gpt-oss-20b` and `Qwen/Qwen3.5-9B`. Each candidate has a four-request limit and a `$0.01` preflight budget ceiling. GPT-OSS uses low reasoning effort with a 1,024-token output ceiling; Qwen runs with reasoning disabled and a 512-token ceiling. Both receive the exact `SentinelOpinion` JSON Schema in the prompt and response format. The planner is intentionally conservative and performs no network request.
+The initial low-cost lane contains `openai/gpt-oss-20b` and `Qwen/Qwen3.5-9B`. Each candidate has a four-request limit and a `$0.01` preflight budget ceiling. GPT-OSS uses low reasoning effort with a 1,024-token output ceiling; Qwen runs with reasoning disabled and a 512-token ceiling.
+
+For every benchmark case, Sentinel builds a separate provider contract. Every output field is mandatory. Case ID, verdict signature, authority, assessment, and engine are fixed to the expected values. Claims are constrained to the benchmark claim range, current evidence IDs, and evidence confidence values. Abstention cases require the exact limitation strings expected by the benchmark. The deterministic policy and benchmark layers validate the result again after parsing.
+
+The planner is intentionally conservative and performs no network request.
 
 Run one candidate after setting the key locally:
 
@@ -160,6 +165,7 @@ curl -X POST http://127.0.0.1:8080/v1/opinions \
 6. Related clusters and incident families must never cross dataset splits.
 7. Provider access is denied unless explicitly enabled and safety-validated.
 8. External calls are rejected before credentials or DNS when request or budget limits fail.
-9. A model cannot be promoted when any hard benchmark gate fails.
+9. Provider output cannot omit required semantic fields or change case identity.
+10. A model cannot be promoted when any hard benchmark gate fails.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DATA_CARD.md`](docs/DATA_CARD.md), [`docs/DATASET_EXPORT.md`](docs/DATASET_EXPORT.md), [`docs/DATASET_RELEASE.md`](docs/DATASET_RELEASE.md), [`docs/BENCHMARK.md`](docs/BENCHMARK.md), [`docs/MODEL_ADAPTERS.md`](docs/MODEL_ADAPTERS.md), and [`docs/TOGETHER.md`](docs/TOGETHER.md).
