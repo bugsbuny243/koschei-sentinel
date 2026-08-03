@@ -7,6 +7,8 @@ import pytest
 from pydantic import ValidationError
 
 from koschei_sentinel.adapters import (
+    _PROVIDER_USER_AGENT,
+    _safe_provider_diagnostic,
     AdapterError,
     CandidateRegistry,
     CandidateSpec,
@@ -112,6 +114,24 @@ def test_malformed_provider_response_is_rejected() -> None:
     with pytest.raises(AdapterError) as error:
         parse_chat_completion('{"choices":[{"message":{"content":"```json\\n{}\\n```"}}]}')
     assert error.value.code == "malformed_provider_response"
+
+
+def test_provider_requests_use_stable_sentinel_identity() -> None:
+    assert _PROVIDER_USER_AGENT.startswith("Koschei-Sentinel/")
+    assert "koschei-sentinel" in _PROVIDER_USER_AGENT
+
+
+def test_provider_diagnostic_is_bounded_and_secret_aware() -> None:
+    safe = _safe_provider_diagnostic(
+        json.dumps({"error": {"message": "x" * 400}}).encode()
+    )
+    assert safe is not None
+    assert len(safe) == 240
+
+    secret = _safe_provider_diagnostic(
+        json.dumps({"error": {"message": "token=" + "a" * 64}}).encode()
+    )
+    assert secret == "provider diagnostic redacted by Sentinel"
 
 
 def test_safe_registry_loads() -> None:
