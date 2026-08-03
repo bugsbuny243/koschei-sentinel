@@ -33,6 +33,19 @@ def suite():
     return load_benchmark_suite(SUITE_PATH)
 
 
+def provider_envelope(content: dict[str, object], *, finish_reason: str = "stop") -> str:
+    return json.dumps(
+        {
+            "choices": [
+                {
+                    "finish_reason": finish_reason,
+                    "message": {"content": json.dumps(content)},
+                }
+            ]
+        }
+    )
+
+
 def test_together_candidate_cannot_override_endpoint() -> None:
     raw = together_spec().model_dump(mode="json")
     raw["base_url"] = "https://example.com/v1"
@@ -82,6 +95,49 @@ def test_together_preset_uses_fixed_official_endpoint() -> None:
     assert adapter.spec.base_url == "https://api.together.ai/v1"
 
 
+def test_case_aware_schema_requires_every_provider_field() -> None:
+    spec = together_spec()
+    benchmark = suite()[0]
+    payload = _request_payload(spec, benchmark)
+    schema = payload["response_format"]["json_schema"]["schema"]
+    properties = schema["properties"]
+
+    assert set(schema["required"]) == set(properties)
+    assert properties["case_id"]["enum"] == [benchmark.case.case_id]
+    assert properties["verdict_signature"]["enum"] == [
+        benchmark.case.signed_verdict.signature
+    ]
+    assert properties["engine"]["enum"] == [spec.candidate_id]
+    assert properties["claims"]["minItems"] == 1
+    assert properties["claims"]["maxItems"] == 2
+    claim_properties = properties["claims"]["items"]["properties"]
+    assert claim_properties["evidence_ids"]["items"]["enum"] == ["E-HOLDER-001"]
+    assert claim_properties["confidence"]["enum"] == ["VERIFIED"]
+
+
+def test_case_aware_schema_requires_exact_abstention_limitations() -> None:
+    spec = together_spec()
+    missing_evidence = suite()[1]
+    no_rule = suite()[2]
+
+    missing_schema = _request_payload(spec, missing_evidence)["response_format"][
+        "json_schema"
+    ]["schema"]
+    missing_properties = missing_schema["properties"]
+    assert missing_properties["claims"]["maxItems"] == 0
+    assert missing_properties["limitations"]["minItems"] == 1
+    assert missing_properties["limitations"]["maxItems"] == 1
+    assert missing_properties["limitations"]["items"]["enum"] == ["KS-LINK-404"]
+
+    no_rule_schema = _request_payload(spec, no_rule)["response_format"]["json_schema"][
+        "schema"
+    ]
+    assert no_rule_schema["properties"]["claims"]["maxItems"] == 0
+    assert no_rule_schema["properties"]["limitations"]["items"]["enum"] == [
+        "No triggered rule"
+    ]
+
+
 def test_together_payload_uses_schema_and_reasoning_budget() -> None:
     registry = load_candidate_registry(REGISTRY_PATH)
     gpt_oss, qwen = registry.candidates
@@ -93,11 +149,82 @@ def test_together_payload_uses_schema_and_reasoning_budget() -> None:
     assert gpt_payload["response_format"]["json_schema"]["name"] == "sentinel_opinion"
     system_prompt = gpt_payload["messages"][0]["content"]
     assert "Required JSON Schema" in system_prompt
+    assert "Case-specific mandatory requirements" in system_prompt
     assert "No triggered rule" in system_prompt
 
     qwen_payload = _request_payload(qwen, suite()[0])
     assert qwen_payload["reasoning"] == {"enabled": False}
     assert "reasoning_effort" not in qwen_payload
+
+
+def test_sparse_default_like_provider_output_is_rejected() -> None:
+    benchmark = suite()[0]
+    sparse = {
+        "schema_version": "sentinel.opinion.v1",
+        "case_id": benchmark.case.case_id,
+        "verdict_signature": benchmark.case.signed_verdict.signature,
+    }
+    with pytest.raises(AdapterError) as error:
+        parse_chat_completion(provider_envelope(sparse))
+    assert error.value.code == "malformed_provider_response"
+
+
+def test_complete_provider_output_is_converted_to_sentinel_opinion() -> None:
+    benchmark = suite()[0]
+    candidate = together_spec().candidate_id
+    complete = {
+        "schema_version": "sentinel.opinion.v1",
+        "case_id": benchmark.case.case_id,
+        "verdict_signature": benchmark.case.signed_verdict.signature,
+        "authority": (
+            "The signed deterministic verdict is final; this output is commentary only."
+        ),
+        "assessment": "EXPLANATION_ONLY",
+        "claims": [
+            {
+                "text": "The resolved holder controls a material supply share.",
+                "evidence_ids": ["E-HOLDER-001"],
+                "confidence": "VERIFIED",
+            }
+        ],
+        "limitations": [],
+        "recommended_actions": [],
+        "engine": candidate,
+    }
+    opinion = parse_chat_completion(
+        provider_envelope(complete),
+        benchmark=benchmark,
+        expected_candidate=candidate,
+    )
+    assert opinion.case_id == benchmark.case.case_id
+    assert opinion.engine == candidate
+    assert opinion.claims[0].evidence_ids == ["E-HOLDER-001"]
+    assert opinion.generated_at is not None
+
+
+def test_provider_identity_mismatch_fails_closed() -> None:
+    benchmark = suite()[2]
+    candidate = together_spec().candidate_id
+    wrong = {
+        "schema_version": "sentinel.opinion.v1",
+        "case_id": "changed-case",
+        "verdict_signature": benchmark.case.signed_verdict.signature,
+        "authority": (
+            "The signed deterministic verdict is final; this output is commentary only."
+        ),
+        "assessment": "EXPLANATION_ONLY",
+        "claims": [],
+        "limitations": ["No triggered rule"],
+        "recommended_actions": [],
+        "engine": candidate,
+    }
+    with pytest.raises(AdapterError) as error:
+        parse_chat_completion(
+            provider_envelope(wrong),
+            benchmark=benchmark,
+            expected_candidate=candidate,
+        )
+    assert error.value.code == "provider_identity_mismatch"
 
 
 def test_truncated_reasoning_output_gets_specific_error() -> None:
