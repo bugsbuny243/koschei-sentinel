@@ -1,9 +1,12 @@
-.PHONY: install check test lint format run dataset-dry-run dataset-release-dry-run benchmark compare together-plan
+.PHONY: install install-training check test lint format run dataset-dry-run dataset-release-dry-run benchmark compare together-plan training-plan training-execute
 
 install:
 	python -m pip install -e '.[dev]'
 
-check: lint test benchmark compare together-plan
+install-training:
+	python -m pip install -e '.[dev,training]'
+
+check: lint test benchmark compare together-plan training-plan
 
 lint:
 	ruff check .
@@ -48,3 +51,14 @@ together-plan:
 		--suite fixtures/evals/suite.safe.jsonl \
 		--registry fixtures/models/candidates.together.low-cost.json \
 		--plan-only
+
+training-plan:
+	sentinel-train \
+		--config fixtures/training/config.safe.json \
+		--plan-output build/training/fixture.plan.json
+
+training-execute:
+	sentinel-train \
+		--config configs/training/qlora.colab.example.json \
+		--plan-output build/training/colab.plan.json \
+		--execute
