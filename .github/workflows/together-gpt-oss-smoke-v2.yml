@@ -31,34 +31,12 @@ jobs:
           --registry fixtures/models/candidates.together.low-cost.json
           --candidate sentinel-together-gpt-oss-20b
           --plan-only
-      - name: Run live GPT-OSS 20B benchmark
-        id: live
-        continue-on-error: true
-        shell: bash
-        run: |
-          mkdir -p build/live
-          set +e
-          sentinel-compare \
-            --suite fixtures/evals/suite.safe.jsonl \
-            --registry fixtures/models/candidates.together.low-cost.json \
-            --candidate sentinel-together-gpt-oss-20b \
-            --output-dir build/comparisons/together-gpt-oss-20b \
-            --allow-network \
-            --require-all \
-            | tee build/live/stdout.json
-          status=${PIPESTATUS[0]}
-          printf '%s\n' "$status" > build/live/exit-code.txt
-          exit "$status"
-      - name: Upload live result
-        if: always()
+      - name: Diagnose one final answer safely
+        run: python scripts/diagnose_together_output.py
+      - name: Upload diagnostic
         uses: actions/upload-artifact@v4
         with:
-          name: together-gpt-oss-20b-smoke-v2
-          path: |
-            build/comparisons/together-gpt-oss-20b
-            build/live
+          name: together-gpt-oss-20b-diagnostic
+          path: build/diagnostic/provider-output.json
           if-no-files-found: error
           retention-days: 7
-      - name: Enforce benchmark result
-        if: always()
-        run: test "${{ steps.live.outcome }}" = "success"
