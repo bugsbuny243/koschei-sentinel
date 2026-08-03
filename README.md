@@ -4,7 +4,7 @@ Evidence-grounded Web3 security model, dataset, training, evaluation, and infere
 
 Koschei Sentinel is not allowed to replace a signed deterministic verdict. Its job is to explain bounded evidence, surface limitations, and produce structured commentary that can be checked automatically.
 
-## v0.6.0 — Own-Model Training Foundation
+## v0.7.0 — Real Dataset Readiness
 
 The repository now provides:
 
@@ -16,24 +16,24 @@ The repository now provides:
 - deterministic leakage-safe train/validation/test assignment by `group_ref`;
 - duplicate, privacy, identifier-format, and malformed-row quality gates;
 - atomic versioned release directories with per-split digests and statistics;
+- a one-shot private ARVIS dataset builder that never copies raw source data into releases;
+- versioned real-training readiness policies and deterministic readiness reports;
+- minimum example, lineage, split, grade, evidence-kind, confidence, and group-concentration gates;
+- training plans cryptographically bound to the exact passing readiness report and release manifest;
 - versioned benchmark-case, prediction, benchmark-report, candidate, and matrix contracts;
 - offline authority, grounding, confidence, abstention, and privacy evaluation;
 - baseline, replay, OpenAI-compatible, and provider-locked Together adapters;
 - network-deny-by-default provider execution and private-endpoint controls;
 - preflight request-count and conservative USD budget enforcement;
 - Together JSON Schema outputs with explicit reasoning controls;
-- case-aware schemas that require every semantic field and lock identity, claim counts, evidence IDs, confidence values, and abstention limitations;
-- deterministic candidate ranking and atomic comparison artifacts;
 - deterministic `sentinel.training-config.v1`, `sentinel.training-plan.v1`, and `sentinel.adapter-manifest.v1` contracts;
-- fail-closed dataset-release digest, row, group, path, and immutable base-revision checks before training;
-- policy-grounded supervised message materialization with timestamp-free targets;
 - an executable 4-bit or 8-bit QLoRA/LoRA trainer with prompt-token loss masking;
+- a pinned T4-compatible Qwen2.5 1.5B training configuration using `float16`;
 - atomic adapter output and deterministic adapter artifact digests;
-- a Google Colab notebook and model-neutral training configuration template;
-- secrets-free CI planning plus a manually triggered live Together workflow;
+- secrets-free CI planning and dataset-readiness checks;
 - a baseline inference engine and FastAPI boundary.
 
-No model weights, production data, private training releases, or production secrets belong in this repository.
+No model weights, production data, raw ARVIS exports, private training releases, or production secrets belong in this repository.
 
 ## Local development
 
@@ -45,48 +45,41 @@ make check
 make run
 ```
 
-## Export source evidence
+## Build a private real-training release
 
-Set a deployment-owned salt. Never commit the real value.
+Keep raw ARVIS exports outside Git and set a deployment-owned salt through a secret manager or runtime environment:
 
 ```bash
 export SENTINEL_DATASET_SALT='at-least-16-secret-characters'
-sentinel-dataset-export \
-  --input fixtures/arvis.source.safe.json \
-  --output build/sentinel.dataset.jsonl \
-  --manifest build/sentinel.manifest.json
+
+sentinel-dataset-build \
+  --input /private/arvis-export-001.json \
+  --input /private/arvis-export-002.jsonl \
+  --output-dir build/releases/sentinel-v0.7-training \
+  --salt-version production-2026-08 \
+  --policy configs/readiness/training-ready.v1.json
 ```
 
-Validate without writing training data:
+The final release is written only when strict export validation, pseudonymization, privacy checks, lineage-safe splitting, digest verification, and all readiness thresholds pass. Use `--dry-run` to validate without materializing any release.
+
+Inspect an existing release independently:
 
 ```bash
-sentinel-dataset-export \
-  --input fixtures/arvis.source.safe.json \
-  --manifest build/sentinel.dry-run.json \
-  --dry-run
+sentinel-dataset-readiness \
+  --release build/releases/sentinel-v0.7-training \
+  --policy configs/readiness/training-ready.v1.json \
+  --output build/releases/sentinel-v0.7-training/readiness-report.json
 ```
 
-## Create a release
+A readiness command exits with code `0` when ready, `3` when structurally valid but below policy, and `2` when rejected.
 
-```bash
-sentinel-dataset-split \
-  --input fixtures/dataset.safe.jsonl \
-  --output-dir build/releases/sentinel-v0.2
-```
-
-Dry-run release validation:
-
-```bash
-sentinel-dataset-split \
-  --input fixtures/dataset.safe.jsonl \
-  --dry-run
-```
-
-A rejected export or release exits with code `2` and writes no training release.
+The lower-level `sentinel-dataset-export` and `sentinel-dataset-split` commands remain available for controlled workflows. See [`docs/DATASET_EXPORT.md`](docs/DATASET_EXPORT.md), [`docs/DATASET_RELEASE.md`](docs/DATASET_RELEASE.md), and [`docs/DATASET_READINESS.md`](docs/DATASET_READINESS.md).
 
 ## Plan or execute QLoRA training
 
-The default training command is a network-free planner. It validates the immutable base-model reference, release manifest, every split digest, every dataset row, group counts, output path, and effective batch plan without loading a model.
+The default training command is a network-free planner. It validates the immutable base-model reference, exact release manifest, split digests, every dataset row, group counts, readiness binding, output path, and effective batch plan without loading a model.
+
+Fixture plan:
 
 ```bash
 sentinel-train \
@@ -94,17 +87,18 @@ sentinel-train \
   --plan-output build/training/fixture.plan.json
 ```
 
-For a real Colab or CUDA run, copy `configs/training/qlora.colab.example.json`, replace the model identifier and full 40-character model commit SHA, point it at a real materialized Sentinel release, then run:
+Pinned T4 real-training plan:
 
 ```bash
 pip install -e '.[dev,training]'
 sentinel-train \
-  --config configs/training/qlora.colab.example.json \
-  --plan-output build/training/colab.plan.json \
-  --execute
+  --config configs/training/qlora.t4.qwen2.5-1.5b.json \
+  --plan-output build/training/qwen2.5-1.5b.plan.json
 ```
 
-The initial v0.6 supervision target is generated by the deterministic baseline. This teaches the adapter Sentinel's output contract, evidence grounding, confidence ceiling, abstention behavior, and authority boundary. It does not yet add reviewed expert knowledge. See [`docs/TRAINING.md`](docs/TRAINING.md) and [`notebooks/koschei_sentinel_qlora_colab.ipynb`](notebooks/koschei_sentinel_qlora_colab.ipynb).
+Inspect the plan before adding `--execute`. The real-training configuration requires `build/releases/sentinel-v0.7-training/readiness-report.json` to be present, passing, stored inside the release, and bound to that release's exact quality-manifest digest.
+
+The initial supervision target is generated by the deterministic baseline. This teaches the adapter Sentinel's output contract, evidence grounding, confidence ceiling, abstention behavior, and authority boundary. It does not yet add reviewed expert knowledge. See [`docs/TRAINING.md`](docs/TRAINING.md).
 
 ## Run the model benchmark
 
@@ -151,26 +145,7 @@ sentinel-compare \
   --plan-only
 ```
 
-The initial low-cost lane contains `openai/gpt-oss-20b` and `Qwen/Qwen3.5-9B`. Each candidate has a four-request limit and a `$0.01` preflight budget ceiling. GPT-OSS uses low reasoning effort with a 1,024-token output ceiling; Qwen runs with reasoning disabled and a 512-token ceiling.
-
-For every benchmark case, Sentinel builds a separate provider contract. Every output field is mandatory. Case ID, verdict signature, authority, assessment, and engine are fixed to the expected values. Claims are constrained to the benchmark claim range, current evidence IDs, and evidence confidence values. Abstention cases require the exact limitation strings expected by the benchmark. The deterministic policy and benchmark layers validate the result again after parsing.
-
-The planner is intentionally conservative and performs no network request.
-
-Run one candidate after setting the key locally:
-
-```bash
-export TOGETHER_API_KEY='replace-locally'
-sentinel-compare \
-  --suite fixtures/evals/suite.safe.jsonl \
-  --registry fixtures/models/candidates.together.low-cost.json \
-  --candidate sentinel-together-gpt-oss-20b \
-  --output-dir build/comparisons/together-gpt-oss-20b \
-  --allow-network \
-  --require-all
-```
-
-The Together adapter locks the endpoint to `https://api.together.ai/v1`. Normal CI only runs the cost planner; the live `together-benchmark` workflow must be started manually with explicit spend confirmation and a repository `TOGETHER_API_KEY` secret.
+The planner is intentionally conservative and performs no network request. Every provider response is constrained by a case-specific JSON Schema and revalidated by the deterministic policy and benchmark layers.
 
 ## Inference API
 
@@ -197,7 +172,9 @@ curl -X POST http://127.0.0.1:8080/v1/opinions \
 10. A model cannot be promoted when any hard benchmark gate fails.
 11. Training cannot use a mutable base-model revision or execute remote model code.
 12. Training cannot begin when a release split digest, count, group count, or row contract drifts.
-13. Existing adapter output directories cannot be overwritten.
-14. A trained adapter remains untrusted until it passes the independent benchmark and comparison gates.
+13. Real training cannot begin without a passing readiness report bound to the exact release.
+14. A dataset below minimum diversity, independence, confidence, or split thresholds is not materialized as training-ready.
+15. Existing adapter output directories cannot be overwritten.
+16. A trained adapter remains untrusted until it passes the independent benchmark and comparison gates.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DATA_CARD.md`](docs/DATA_CARD.md), [`docs/DATASET_EXPORT.md`](docs/DATASET_EXPORT.md), [`docs/DATASET_RELEASE.md`](docs/DATASET_RELEASE.md), [`docs/TRAINING.md`](docs/TRAINING.md), [`docs/BENCHMARK.md`](docs/BENCHMARK.md), [`docs/MODEL_ADAPTERS.md`](docs/MODEL_ADAPTERS.md), and [`docs/TOGETHER.md`](docs/TOGETHER.md).
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DATA_CARD.md`](docs/DATA_CARD.md), [`docs/DATASET_READINESS.md`](docs/DATASET_READINESS.md), [`docs/TRAINING.md`](docs/TRAINING.md), [`docs/BENCHMARK.md`](docs/BENCHMARK.md), [`docs/MODEL_ADAPTERS.md`](docs/MODEL_ADAPTERS.md), and [`docs/TOGETHER.md`](docs/TOGETHER.md).
