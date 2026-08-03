@@ -1,0 +1,14 @@
+{
+  "max_largest_group_share_bps": 1000,
+  "min_distinct_evidence_kinds": 3,
+  "min_distinct_grades": 3,
+  "min_test_examples": 10,
+  "min_total_examples": 100,
+  "min_total_groups": 50,
+  "min_train_examples": 80,
+  "min_validation_examples": 10,
+  "require_verified_evidence": true,
+  "required_evidence_kinds": [],
+  "required_grades": [],
+  "schema_version": "sentinel.readiness-policy.v1"
+}
