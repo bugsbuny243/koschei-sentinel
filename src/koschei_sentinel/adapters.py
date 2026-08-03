@@ -24,7 +24,8 @@ from koschei_sentinel.benchmark import (
 from koschei_sentinel.models import SentinelOpinion, StrictModel
 
 AdapterKind = Literal["baseline", "replay", "openai-compatible", "together"]
-JsonMode = Literal["json-object", "prompt-only"]
+JsonMode = Literal["json-schema", "json-object", "prompt-only"]
+ReasoningEffort = Literal["low", "medium", "high"]
 _CANDIDATE_ID = r"^[a-z0-9][a-z0-9._-]{0,127}$"
 _ENV_NAME = r"^[A-Z][A-Z0-9_]{0,127}$"
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -38,7 +39,12 @@ _SYSTEM_PROMPT = (
     "sentinel.opinion.v1. The signed deterministic verdict is final. "
     "Do not change the case ID, verdict signature, grade, triggered rules, or authority. "
     "Every factual claim must cite supplied evidence IDs. Never invent evidence. "
-    "When evidence is missing, emit a limitation and abstain from unsupported claims. "
+    "A claim may cover only rules listed on its cited evidence rows. "
+    "Use the cited evidence confidence exactly; never raise confidence. "
+    "For every triggered rule with supporting evidence, emit at least one grounded claim. "
+    "For a triggered rule without supporting evidence, emit no claim for that rule and add "
+    "a limitation containing the exact rule ID. If no rule was triggered, claims must be "
+    "empty and limitations must contain the exact phrase 'No triggered rule'. "
     "Do not include markdown, personal data, credentials, or text outside the JSON object."
 )
 
@@ -96,15 +102,21 @@ class CandidateSpec(StrictModel):
     max_output_tokens: int = Field(default=2048, ge=128, le=8192)
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     json_mode: JsonMode = "json-object"
+    reasoning_effort: ReasoningEffort | None = None
+    reasoning_enabled: bool | None = None
     cost_policy: CostPolicy | None = None
 
     @model_validator(mode="after")
     def adapter_fields_are_consistent(self) -> CandidateSpec:
+        if self.reasoning_effort is not None and self.reasoning_enabled is not None:
+            raise ValueError("reasoning_effort and reasoning_enabled are mutually exclusive")
         if self.adapter == "baseline":
             if any((self.model, self.base_url, self.api_key_env, self.predictions_path)):
                 raise ValueError("baseline candidates cannot configure provider fields")
             if self.cost_policy is not None:
                 raise ValueError("baseline candidates cannot configure a cost policy")
+            if self.reasoning_effort is not None or self.reasoning_enabled is not None:
+                raise ValueError("baseline candidates cannot configure reasoning")
         elif self.adapter == "replay":
             if self.predictions_path is None:
                 raise ValueError("replay candidates require predictions_path")
@@ -112,6 +124,8 @@ class CandidateSpec(StrictModel):
                 raise ValueError("replay candidates cannot configure provider fields")
             if self.cost_policy is not None:
                 raise ValueError("replay candidates cannot configure a cost policy")
+            if self.reasoning_effort is not None or self.reasoning_enabled is not None:
+                raise ValueError("replay candidates cannot configure reasoning")
         elif self.adapter == "together":
             if self.model is None:
                 raise ValueError("Together candidates require model")
@@ -123,6 +137,8 @@ class CandidateSpec(StrictModel):
                 raise ValueError("Together candidates cannot configure predictions_path")
             if self.cost_policy is None:
                 raise ValueError("Together candidates require a cost policy")
+            if self.json_mode != "json-schema":
+                raise ValueError("Together candidates must use json-schema output")
         else:
             if self.model is None or self.base_url is None:
                 raise ValueError("openai-compatible candidates require model and base_url")
@@ -386,13 +402,25 @@ def _enforce_cost_plan(plan: CandidateCostPlan) -> None:
         )
 
 
+def _opinion_schema() -> dict[str, object]:
+    return SentinelOpinion.model_json_schema(mode="validation")
+
+
 def _request_payload(spec: CandidateSpec, benchmark: BenchmarkCase) -> dict[str, object]:
+    schema = _opinion_schema()
+    system_prompt = _SYSTEM_PROMPT
+    if spec.json_mode == "json-schema":
+        system_prompt += " Required JSON Schema: " + json.dumps(
+            schema,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     payload: dict[str, object] = {
         "model": spec.model,
         "temperature": spec.temperature,
         "max_tokens": spec.max_output_tokens,
         "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": json.dumps(
@@ -407,8 +435,20 @@ def _request_payload(spec: CandidateSpec, benchmark: BenchmarkCase) -> dict[str,
             },
         ],
     }
-    if spec.json_mode == "json-object":
+    if spec.json_mode == "json-schema":
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "sentinel_opinion",
+                "schema": schema,
+            },
+        }
+    elif spec.json_mode == "json-object":
         payload["response_format"] = {"type": "json_object"}
+    if spec.reasoning_effort is not None:
+        payload["reasoning_effort"] = spec.reasoning_effort
+    if spec.reasoning_enabled is not None:
+        payload["reasoning"] = {"enabled": spec.reasoning_enabled}
     return payload
 
 
@@ -426,7 +466,8 @@ def parse_chat_completion(body: bytes | str) -> SentinelOpinion:
         choices = envelope["choices"]
         if not isinstance(choices, list) or len(choices) != 1:
             raise TypeError
-        message = choices[0]["message"]
+        choice = choices[0]
+        message = choice["message"]
         content = message["content"]
         if isinstance(content, list):
             parts = [
@@ -436,10 +477,17 @@ def parse_chat_completion(body: bytes | str) -> SentinelOpinion:
             ]
             content = "".join(parts)
         if not isinstance(content, str) or not content.strip():
+            if choice.get("finish_reason") == "length":
+                raise AdapterError(
+                    "provider_output_truncated",
+                    "provider exhausted max_tokens before producing a final answer",
+                )
             raise TypeError
         if content.lstrip().startswith("```"):
             raise TypeError
         return SentinelOpinion.model_validate_json(content)
+    except AdapterError:
+        raise
     except (KeyError, TypeError, ValueError):
         raise AdapterError(
             "malformed_provider_response",
