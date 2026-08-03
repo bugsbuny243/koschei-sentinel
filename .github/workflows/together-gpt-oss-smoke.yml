@@ -31,6 +31,8 @@ jobs:
           --registry fixtures/models/candidates.together.low-cost.json
           --candidate sentinel-together-gpt-oss-20b
           --plan-only
+      - name: Probe sanitized provider response
+        run: python scripts/probe_together_error.py
       - name: Run live GPT-OSS 20B benchmark
         run: >-
           sentinel-compare
