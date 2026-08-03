@@ -1,0 +1,37 @@
+{
+  "base_model": "replace/model",
+  "base_revision": "0000000000000000000000000000000000000000",
+  "dataset_release": "build/releases/sentinel-v0.6-training",
+  "epochs": 1.0,
+  "gradient_accumulation_steps": 16,
+  "learning_rate": 0.0002,
+  "logging_steps": 5,
+  "lora": {
+    "alpha": 32,
+    "dropout": 0.05,
+    "rank": 16,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ]
+  },
+  "max_sequence_length": 2048,
+  "output_dir": "build/training/koschei-sentinel-v0.6-adapter",
+  "per_device_batch_size": 1,
+  "quantization": {
+    "bits": 4,
+    "compute_dtype": "bfloat16",
+    "double_quant": true,
+    "quant_type": "nf4"
+  },
+  "run_id": "koschei-sentinel-v0.6-adapter",
+  "schema_version": "sentinel.training-config.v1",
+  "seed": 1701,
+  "trust_remote_code": false,
+  "warmup_ratio": 0.03
+}
