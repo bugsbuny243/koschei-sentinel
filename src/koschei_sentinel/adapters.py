@@ -28,7 +28,11 @@ JsonMode = Literal["json-object", "prompt-only"]
 _CANDIDATE_ID = r"^[a-z0-9][a-z0-9._-]{0,127}$"
 _ENV_NAME = r"^[A-Z][A-Z0-9_]{0,127}$"
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_MAX_PROVIDER_DIAGNOSTIC_CHARS = 240
 _TOGETHER_BASE_URL = "https://api.together.ai/v1"
+_PROVIDER_USER_AGENT = (
+    "Koschei-Sentinel/0.5 (+https://github.com/bugsbuny243/koschei-sentinel)"
+)
 _SYSTEM_PROMPT = (
     "You are Koschei Sentinel. Return exactly one JSON object matching "
     "sentinel.opinion.v1. The signed deterministic verdict is final. "
@@ -230,7 +234,11 @@ class OpenAICompatibleAdapter:
             allow_local_network=self.allow_local_network,
         )
         payload = _request_payload(self.spec, benchmark)
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": _PROVIDER_USER_AGENT,
+        }
         if api_key is not None:
             headers["Authorization"] = f"Bearer {api_key}"
         request = Request(
@@ -243,10 +251,11 @@ class OpenAICompatibleAdapter:
             with urlopen(request, timeout=self.spec.timeout_seconds) as response:
                 body = response.read(_MAX_RESPONSE_BYTES + 1)
         except HTTPError as exc:
-            raise AdapterError(
-                "provider_http_error",
-                f"provider returned HTTP status {exc.code}",
-            ) from None
+            diagnostic = _safe_provider_diagnostic(exc.read(8192))
+            message = f"provider returned HTTP status {exc.code}"
+            if diagnostic is not None:
+                message = f"{message}: {diagnostic}"
+            raise AdapterError("provider_http_error", message) from None
         except (TimeoutError, OSError):
             raise AdapterError(
                 "provider_transport_error",
@@ -436,6 +445,31 @@ def parse_chat_completion(body: bytes | str) -> SentinelOpinion:
             "malformed_provider_response",
             "provider response did not contain one valid Sentinel opinion",
         ) from None
+
+
+def _safe_provider_diagnostic(body: bytes) -> str | None:
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    value: object | None = None
+    error = payload.get("error")
+    if isinstance(error, dict):
+        value = error.get("message") or error.get("detail") or error.get("type")
+    if value is None:
+        value = payload.get("message") or payload.get("detail") or payload.get("title")
+    if not isinstance(value, str):
+        return None
+
+    message = " ".join(value.split())[:_MAX_PROVIDER_DIAGNOSTIC_CHARS]
+    if not message:
+        return None
+    if detect_sensitive_text(message):
+        return "provider diagnostic redacted by Sentinel"
+    return message
 
 
 def _load_api_key(name: str | None) -> str | None:
