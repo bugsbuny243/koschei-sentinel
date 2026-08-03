@@ -4,7 +4,7 @@ Evidence-grounded Web3 security model, dataset, training, evaluation, and infere
 
 Koschei Sentinel is not allowed to replace a signed deterministic verdict. Its job is to explain bounded evidence, surface limitations, and produce structured commentary that can be checked automatically.
 
-## v0.5.0 — Together Low-Cost Evaluation Lane
+## v0.5.1 — Together Structured Inference
 
 The repository now provides:
 
@@ -21,6 +21,7 @@ The repository now provides:
 - baseline, replay, OpenAI-compatible, and provider-locked Together adapters;
 - network-deny-by-default provider execution and private-endpoint controls;
 - preflight request-count and conservative USD budget enforcement;
+- Together JSON Schema outputs with explicit reasoning controls;
 - deterministic candidate ranking and atomic comparison artifacts;
 - secrets-free CI planning plus a manually triggered live Together workflow;
 - a baseline inference engine and FastAPI boundary.
@@ -121,7 +122,7 @@ sentinel-compare \
   --plan-only
 ```
 
-The initial low-cost lane contains `openai/gpt-oss-20b` and `Qwen/Qwen3.5-9B`. Each candidate has a four-request limit, 512 maximum output tokens per request, and a `$0.01` preflight budget ceiling. The planner is intentionally conservative and performs no network request.
+The initial low-cost lane contains `openai/gpt-oss-20b` and `Qwen/Qwen3.5-9B`. Each candidate has a four-request limit and a `$0.01` preflight budget ceiling. GPT-OSS uses low reasoning effort with a 1,024-token output ceiling; Qwen runs with reasoning disabled and a 512-token ceiling. Both receive the exact `SentinelOpinion` JSON Schema in the prompt and response format. The planner is intentionally conservative and performs no network request.
 
 Run one candidate after setting the key locally:
 
