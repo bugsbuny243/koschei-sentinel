@@ -37,3 +37,7 @@ jobs:
           --suite fixtures/evals/suite.safe.jsonl
           --registry fixtures/models/candidates.together.low-cost.json
           --plan-only
+      - run: >-
+          sentinel-train
+          --config fixtures/training/config.safe.json
+          --plan-output build/training/fixture.plan.json
