@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -8,8 +9,10 @@ from pydantic import ValidationError
 from koschei_sentinel.adapters import (
     AdapterError,
     CandidateSpec,
+    _request_payload,
     build_adapter,
     load_candidate_registry,
+    parse_chat_completion,
     plan_registry_costs,
     select_candidates,
 )
@@ -49,6 +52,20 @@ def test_together_candidate_requires_named_key_and_cost_policy() -> None:
         CandidateSpec.model_validate(raw)
 
 
+def test_together_candidate_requires_json_schema_output() -> None:
+    raw = together_spec().model_dump(mode="json")
+    raw["json_mode"] = "json-object"
+    with pytest.raises(ValidationError, match="json-schema"):
+        CandidateSpec.model_validate(raw)
+
+
+def test_reasoning_controls_are_mutually_exclusive() -> None:
+    raw = together_spec().model_dump(mode="json")
+    raw["reasoning_enabled"] = False
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        CandidateSpec.model_validate(raw)
+
+
 def test_low_cost_registry_plan_stays_below_one_cent_per_candidate() -> None:
     registry = load_candidate_registry(REGISTRY_PATH)
     plan = plan_registry_costs(registry, suite())
@@ -63,6 +80,38 @@ def test_together_preset_uses_fixed_official_endpoint() -> None:
         base_dir=REGISTRY_PATH.parent,
     )
     assert adapter.spec.base_url == "https://api.together.ai/v1"
+
+
+def test_together_payload_uses_schema_and_reasoning_budget() -> None:
+    registry = load_candidate_registry(REGISTRY_PATH)
+    gpt_oss, qwen = registry.candidates
+
+    gpt_payload = _request_payload(gpt_oss, suite()[0])
+    assert gpt_payload["reasoning_effort"] == "low"
+    assert gpt_payload["max_tokens"] == 1024
+    assert gpt_payload["response_format"]["type"] == "json_schema"
+    assert gpt_payload["response_format"]["json_schema"]["name"] == "sentinel_opinion"
+    system_prompt = gpt_payload["messages"][0]["content"]
+    assert "Required JSON Schema" in system_prompt
+    assert "No triggered rule" in system_prompt
+
+    qwen_payload = _request_payload(qwen, suite()[0])
+    assert qwen_payload["reasoning"] == {"enabled": False}
+    assert "reasoning_effort" not in qwen_payload
+
+
+def test_truncated_reasoning_output_gets_specific_error() -> None:
+    response = {
+        "choices": [
+            {
+                "finish_reason": "length",
+                "message": {"content": ""},
+            }
+        ]
+    }
+    with pytest.raises(AdapterError) as error:
+        parse_chat_completion(json.dumps(response))
+    assert error.value.code == "provider_output_truncated"
 
 
 def test_request_limit_fails_before_key_or_network_call() -> None:

@@ -8,9 +8,10 @@
       "model": "openai/gpt-oss-20b",
       "api_key_env": "TOGETHER_API_KEY",
       "timeout_seconds": 90,
-      "max_output_tokens": 512,
+      "max_output_tokens": 1024,
       "temperature": 0.0,
-      "json_mode": "json-object",
+      "json_mode": "json-schema",
+      "reasoning_effort": "low",
       "cost_policy": {
         "pricing_as_of": "2026-08-03",
         "input_usd_per_million_tokens": 0.05,
@@ -28,7 +29,8 @@
       "timeout_seconds": 90,
       "max_output_tokens": 512,
       "temperature": 0.0,
-      "json_mode": "json-object",
+      "json_mode": "json-schema",
+      "reasoning_enabled": false,
       "cost_policy": {
         "pricing_as_of": "2026-08-03",
         "input_usd_per_million_tokens": 0.17,
