@@ -22,6 +22,19 @@ jobs:
       - run: ruff check .
       - run: pytest
       - run: >-
+          sentinel-dataset-readiness
+          --release fixtures/training/release
+          --policy fixtures/readiness/policy.fixture.json
+      - name: Validate private dataset build without materializing
+        env:
+          SENTINEL_DATASET_SALT: ci-fixture-salt-never-use-in-production
+        run: >-
+          sentinel-dataset-build
+          --input fixtures/arvis.source.safe.json
+          --salt-version ci-fixture-v1
+          --policy fixtures/readiness/policy.fixture.json
+          --dry-run
+      - run: >-
           sentinel-eval
           --suite fixtures/evals/suite.safe.jsonl
           --candidate sentinel-baseline-v0.4
