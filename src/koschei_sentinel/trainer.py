@@ -218,4 +218,16 @@ def _load_dependencies() -> dict[str, Any]:
         raise RuntimeError(
             "training dependencies are missing; install the project with .[training]"
         ) from exc
-    return locals()
+    return {
+        "torch": torch,
+        "Dataset": Dataset,
+        "PeftLoraConfig": PeftLoraConfig,
+        "get_peft_model": get_peft_model,
+        "prepare_model_for_kbit_training": prepare_model_for_kbit_training,
+        "AutoModelForCausalLM": AutoModelForCausalLM,
+        "AutoTokenizer": AutoTokenizer,
+        "BitsAndBytesConfig": BitsAndBytesConfig,
+        "DataCollatorForSeq2Seq": DataCollatorForSeq2Seq,
+        "Trainer": Trainer,
+        "TrainingArguments": TrainingArguments,
+    }
