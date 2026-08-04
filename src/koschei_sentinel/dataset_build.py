@@ -4,8 +4,9 @@ import json
 import os
 import shutil
 import tempfile
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -47,6 +48,30 @@ def build_dataset_release(
     paths = sorted((Path(value) for value in input_paths), key=lambda value: str(value))
     if not paths:
         raise ValueError("at least one ARVIS export input is required")
+    records = [record for path in paths for record in load_records(path)]
+    return build_dataset_release_from_records(
+        records,
+        input_files=len(paths),
+        output_dir=output_dir,
+        salt_version=salt_version,
+        policy=policy,
+        split_config=split_config,
+        dry_run=dry_run,
+    )
+
+
+def build_dataset_release_from_records(
+    records: Iterable[Mapping[str, Any]],
+    *,
+    input_files: int,
+    output_dir: str | Path | None,
+    salt_version: str,
+    policy: ReadinessPolicy | None = None,
+    split_config: SplitConfig | None = None,
+    dry_run: bool = False,
+) -> DatasetBuildManifest:
+    if input_files < 1:
+        raise ValueError("input_files must describe at least one private source")
     if not dry_run and output_dir is None:
         raise ValueError("output_dir is required unless dry_run is enabled")
 
@@ -54,9 +79,9 @@ def build_dataset_release(
     if destination is not None and destination.exists():
         raise FileExistsError(f"output directory already exists: {destination}")
 
-    records = [record for path in paths for record in load_records(path)]
+    source_records = [dict(record) for record in records]
     export_manifest = export_jsonl(
-        records,
+        source_records,
         output_path=None,
         dry_run=True,
     ).model_copy(update={"dry_run": dry_run})
@@ -67,14 +92,14 @@ def build_dataset_release(
             dry_run=dry_run,
             materialized=False,
             salt_version=salt_version,
-            input_files=len(paths),
-            input_records=len(records),
+            input_files=input_files,
+            input_records=len(source_records),
             export_manifest=export_manifest,
             split_seed=active_split.seed,
         )
 
     salt = require_dataset_salt()
-    examples = [export_record(record, salt=salt) for record in records]
+    examples = [export_record(record, salt=salt) for record in source_records]
     active_policy = policy or ReadinessPolicy()
     staging_parent = destination.parent if destination is not None else Path(tempfile.gettempdir())
     staging_parent.mkdir(parents=True, exist_ok=True)
@@ -99,8 +124,8 @@ def build_dataset_release(
             dry_run=dry_run,
             materialized=materialized,
             salt_version=salt_version,
-            input_files=len(paths),
-            input_records=len(records),
+            input_files=input_files,
+            input_records=len(source_records),
             export_manifest=export_manifest,
             split_seed=active_split.seed,
             output_dir=str(destination) if materialized and destination is not None else None,
