@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "koschei-sentinel"
-version = "0.8.1"
+version = "0.9.0"
 description = "Evidence-grounded Web3 security model platform for Koschei"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,19 +41,19 @@ sentinel-dataset-build = "koschei_sentinel.dataset_build_cli:main"
 sentinel-dataset-readiness = "koschei_sentinel.readiness_cli:main"
 sentinel-neon-build = "koschei_sentinel.neon_cli:main"
 sentinel-eval = "koschei_sentinel.eval_cli:main"
-sentinel-compare = "koschei_sentinel.matrix_cli:main"
+sentinel-compare = "koschei_sentinel.compare_cli:main"
 sentinel-train = "koschei_sentinel.train_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
 
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
-
-[tool.ruff]
-target-version = "py311"
-line-length = 100
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
