@@ -1,7 +1,10 @@
-.PHONY: install install-training check test lint format run dataset-dry-run dataset-release-dry-run dataset-build-dry-run dataset-readiness benchmark compare together-plan training-plan training-execute
+.PHONY: install install-neon install-training check test lint format run dataset-dry-run dataset-release-dry-run dataset-build-dry-run dataset-readiness neon-dataset-dry-run benchmark compare together-plan training-plan training-execute
 
 install:
 	python -m pip install -e '.[dev]'
+
+install-neon:
+	python -m pip install -e '.[dev,neon]'
 
 install-training:
 	python -m pip install -e '.[dev,training]'
@@ -44,6 +47,11 @@ dataset-readiness:
 	sentinel-dataset-readiness \
 		--release fixtures/training/release \
 		--policy fixtures/readiness/policy.fixture.json
+
+neon-dataset-dry-run:
+	sentinel-neon-build \
+		--salt-version neon-v1 \
+		--dry-run
 
 benchmark:
 	sentinel-eval \
