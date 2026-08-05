@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Koschei" }]
 dependencies = [
+  "cryptography>=42",
   "fastapi>=0.110,<2",
   "pydantic>=2.7,<3",
   "uvicorn[standard]>=0.29,<1",
@@ -48,6 +49,7 @@ sentinel-register-candidate = "koschei_sentinel.incubation_registry_cli:main"
 sentinel-job-plan = "koschei_sentinel.offline_job_cli:main"
 sentinel-job-receipt = "koschei_sentinel.offline_receipt_cli:main"
 sentinel-finalize-candidate = "koschei_sentinel.candidate_finalization_cli:main"
+sentinel-promotion = "koschei_sentinel.promotion_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
