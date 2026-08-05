@@ -2,16 +2,18 @@
 
 Koschei Sentinel is trained for one primary domain: evidence-grounded Solana security analysis.
 
-It is not a renamed general chat model and it is not the final judge of an ARVIS case. The long-term objective is a Koschei-owned model lineage trained on Koschei's privacy-safe Solana security corpus, evaluated against independent security benchmarks and deployed behind a sealed inference boundary.
+It is not a renamed general chat model and it is not the final judge of an ARVIS case. The long-term objective is a Koschei-owned model lineage trained on Koschei's privacy-safe Solana security corpus, evaluated against independent security benchmarks and deployed behind a sealed inference boundary only after maturity is proven.
+
+Current Web3 status: `incubation_only`. Sentinel may train from approved read-only Web3 snapshots in the background, but it is not connected to customer requests, verdicts, publications, production writes, startup or deployment. See [`WEB3_INTEGRATION_GATES.md`](WEB3_INTEGRATION_GATES.md).
 
 ## Ecosystem role
 
 | Component | Authority |
 | --- | --- |
 | Koschei Web3 Hub / ARVIS | Collects and verifies evidence, preserves history, runs deterministic rules and signs the final verdict |
-| Koschei Sentinel | Explains evidence, relates verified historical patterns, surfaces limitations and proposes investigation leads |
-| Koschei language | Provides an independent capability-secure programming language and future bounded integration surface |
-| KOSCH | Coordinates ecosystem access and participation; never changes evidence or model promotion gates |
+| Koschei Sentinel | During incubation, trains and evaluates offline; any future explanation role remains non-authoritative and optional |
+| Koschei language | Provides an independent capability-secure programming language and offline future integration research |
+| KOSCH | Coordinates ecosystem access and participation; never changes evidence, model promotion or integration readiness |
 
 Web3 Hub repository: `https://github.com/bugsbuny243/Koschei-Web3-Hub`  
 Language repository: `https://github.com/bugsbuny243/koschei-lang`
@@ -71,7 +73,7 @@ The current repository is in Stage 1. The engineering path may advance toward St
 
 ## Required ARVIS-native training material
 
-Sentinel should receive privacy-safe exports of:
+Sentinel may receive privacy-safe offline exports of:
 
 - verified actor entities and relations;
 - funding-cluster events and lifecycle summaries;
@@ -88,7 +90,7 @@ Related actors, funding clusters, token families and incident families must rema
 
 ## Output contract
 
-Every production response must preserve:
+Every evaluated output must preserve:
 
 - immutable case identity;
 - immutable deterministic verdict fields;
@@ -98,11 +100,11 @@ Every production response must preserve:
 - separation between verified, observed, inferred and unavailable information;
 - refusal to make real-world identity claims from wallet relations alone.
 
-Sentinel may rank investigation leads. It may not convert a lead into verified evidence.
+Sentinel may rank investigation leads during offline evaluation. It may not convert a lead into verified evidence.
 
 ## Solana security benchmark families
 
-Promotion should require independent suites covering:
+Promotion research should require independent suites covering:
 
 1. authority and extension interpretation;
 2. actor-graph relation grounding;
@@ -129,11 +131,12 @@ KOSCH may support transparent ecosystem access, capacity, bounties or community 
 - raise claim confidence;
 - remove limitations;
 - unlock raw production data;
-- buy a favorable ARVIS verdict.
+- buy a favorable ARVIS verdict;
+- authorize premature Web3 runtime integration.
 
 Model and dataset governance remain evidence- and policy-driven regardless of holdings.
 
-## Integration milestones
+## Incubation milestones
 
 ### Milestone A — contract complete
 
@@ -155,15 +158,20 @@ Model and dataset governance remain evidence- and policy-driven regardless of ho
 - train on the expanded Solana curriculum;
 - run independent hard-gate benchmarks;
 - compare against the deterministic baseline and prior candidate;
-- preserve full adapter, dataset and evaluation digests.
+- preserve full adapter, dataset and evaluation digests;
+- retain the result as an incubation candidate rather than deploying it.
 
-### Milestone D — production integration
+### Milestone D — maturity evidence
 
-- serve Sentinel behind the sealed inference envelope;
-- expose explanations separately from signed ARVIS verdicts;
-- log model/version metadata without secrets;
-- fail closed when evidence citations or immutable-field checks fail.
+- demonstrate repeated benchmark passes across independently built candidates;
+- prove privacy, prompt-injection, poisoning, rollback, latency and cost controls;
+- run historical and shadow evaluation with no customer output or verdict authority;
+- prepare a separate future integration proposal.
+
+### Milestone E — separately approved future integration
+
+This milestone is not active and is not automatic. It may begin only after the gates in `WEB3_INTEGRATION_GATES.md` pass and the owner explicitly approves the next stage. Any future use remains optional, removable and subordinate to deterministic ARVIS verdicts.
 
 ## Final rule
 
-Sentinel becomes valuable by remembering and explaining Solana security evidence better than a generic model—not by pretending uncertainty disappeared.
+Sentinel becomes valuable by remembering and explaining Solana security evidence better than a generic model—not by pretending uncertainty disappeared or by entering production before it is mature.
