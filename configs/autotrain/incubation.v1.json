@@ -1,0 +1,11 @@
+{
+  "automatic_promotion": false,
+  "automatic_training_execution": false,
+  "candidate_stage": "incubation_candidate",
+  "integration_state": "incubation_only",
+  "max_training_warnings": 0,
+  "production_deployment": false,
+  "require_ready_dataset": true,
+  "require_training_readiness_binding": true,
+  "schema_version": "sentinel.autotrain-policy.v1"
+}
