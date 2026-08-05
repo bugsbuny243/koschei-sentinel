@@ -47,6 +47,7 @@ sentinel-autotrain = "koschei_sentinel.autotrain_cli:main"
 sentinel-register-candidate = "koschei_sentinel.incubation_registry_cli:main"
 sentinel-job-plan = "koschei_sentinel.offline_job_cli:main"
 sentinel-job-receipt = "koschei_sentinel.offline_receipt_cli:main"
+sentinel-finalize-candidate = "koschei_sentinel.candidate_finalization_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
