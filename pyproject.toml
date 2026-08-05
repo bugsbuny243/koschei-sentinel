@@ -45,6 +45,7 @@ sentinel-compare = "koschei_sentinel.matrix_cli:main"
 sentinel-train = "koschei_sentinel.train_cli:main"
 sentinel-autotrain = "koschei_sentinel.autotrain_cli:main"
 sentinel-register-candidate = "koschei_sentinel.incubation_registry_cli:main"
+sentinel-job-plan = "koschei_sentinel.offline_job_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
