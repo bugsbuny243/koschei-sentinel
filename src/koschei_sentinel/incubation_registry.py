@@ -99,7 +99,9 @@ def build_candidate_record(
     if candidate_id not in comparison.eligible_candidates:
         raise CandidateRegistrationBlocked("candidate is not listed as benchmark eligible")
     if outcome.report.suite_digest != comparison.suite_digest:
-        raise CandidateRegistrationBlocked("candidate report suite does not match comparison matrix")
+        raise CandidateRegistrationBlocked(
+            "candidate report suite does not match comparison matrix"
+        )
 
     payload = {
         "schema_version": "sentinel.incubation-candidate.v1",
