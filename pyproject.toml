@@ -50,6 +50,7 @@ sentinel-job-plan = "koschei_sentinel.offline_job_cli:main"
 sentinel-job-receipt = "koschei_sentinel.offline_receipt_cli:main"
 sentinel-finalize-candidate = "koschei_sentinel.candidate_finalization_cli:main"
 sentinel-promotion = "koschei_sentinel.promotion_cli:main"
+sentinel-shadow-plan = "koschei_sentinel.shadow_replay_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
