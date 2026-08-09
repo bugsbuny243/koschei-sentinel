@@ -5,9 +5,9 @@
   "automatic_promotion_allowed": false,
   "integration_state": "incubation_only",
   "owner_signature_required": true,
-  "policy_id": "shadow-research-2026-08",
+  "policy_id": "shadow-research-2026-08-v2",
   "production_deployment_allowed": false,
-  "required_benchmark_suite_digest": "d41325ac38dd3be1c5fc817526019bb1086e4570957e73c478c896b4d9e0728b",
+  "required_benchmark_suite_digest": "dcf17bcbc66e5a49bf24dd4e9bcbb08bc27f15e93b69668d6bd8c7d0217161a5",
   "schema_version": "sentinel.promotion-policy.v1",
   "web3_runtime_integration_allowed": false
 }
