@@ -18,6 +18,10 @@ from koschei_sentinel.shadow_baseline import (
     verify_shadow_baseline_lineage,
     write_shadow_baseline_artifact,
 )
+from koschei_sentinel.shadow_baseline_claim import (
+    build_shadow_baseline_successor_claim,
+    claim_shadow_baseline_successor,
+)
 from koschei_sentinel.shadow_receipt import load_shadow_replay_receipt
 from koschei_sentinel.shadow_regression import load_shadow_regression_report
 from koschei_sentinel.shadow_review import load_shadow_review_scorecard
@@ -48,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--approval", required=True)
     apply.add_argument("--owner-public-key", required=True)
     apply.add_argument("--lineage")
+    apply.add_argument(
+        "--claim-dir",
+        required=True,
+        help="Shared canonical directory that atomically consumes each predecessor digest once",
+    )
     apply.add_argument("--output", required=True)
 
     verify = commands.add_parser(
@@ -80,15 +89,21 @@ def main(argv: list[str] | None = None) -> int:
             write_shadow_baseline_artifact(artifact, args.output)
             result = artifact.model_dump(mode="json")
         elif args.command == "apply":
+            proposal = load_shadow_baseline_proposal(args.proposal)
+            lineage = _load_optional_lineage(args.lineage)
             artifact = apply_shadow_baseline_advance(
-                load_shadow_baseline_proposal(args.proposal),
+                proposal,
                 load_shadow_baseline_approval(args.approval),
                 *_load_evidence(args),
                 load_owner_public_key(args.owner_public_key),
-                lineage=_load_optional_lineage(args.lineage),
+                lineage=lineage,
             )
+            claim = build_shadow_baseline_successor_claim(proposal, artifact)
+            claim_path = claim_shadow_baseline_successor(claim, args.claim_dir)
             write_shadow_baseline_artifact(artifact, args.output)
             result = artifact.model_dump(mode="json")
+            result["successor_claim_digest"] = claim.claim_digest
+            result["successor_claim_path"] = str(claim_path)
         else:
             artifact = verify_shadow_baseline_lineage(
                 load_shadow_baseline_lineage(args.lineage),
