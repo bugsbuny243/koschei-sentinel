@@ -53,6 +53,7 @@ sentinel-promotion = "koschei_sentinel.promotion_cli:main"
 sentinel-shadow-plan = "koschei_sentinel.shadow_replay_cli:main"
 sentinel-shadow-receipt = "koschei_sentinel.shadow_receipt_cli:main"
 sentinel-shadow-review = "koschei_sentinel.shadow_review_cli:main"
+sentinel-shadow-regression = "koschei_sentinel.shadow_regression_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
