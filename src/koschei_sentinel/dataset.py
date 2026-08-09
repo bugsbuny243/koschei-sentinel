@@ -68,8 +68,15 @@ class DatasetExample(StrictModel):
     schema_version: Literal["sentinel.dataset.v1"] = "sentinel.dataset.v1"
     example_id: str
     group_ref: str
+    lineage_refs: list[str] = Field(default_factory=list, max_length=64)
     source_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     case: SecurityCase
+
+    @model_validator(mode="after")
+    def lineage_refs_are_unique(self) -> DatasetExample:
+        if len(self.lineage_refs) != len(set(self.lineage_refs)):
+            raise ValueError("lineage_refs must be unique")
+        return self
 
 
 class RejectedRecord(StrictModel):
@@ -110,6 +117,10 @@ def export_record(raw: Mapping[str, Any], *, salt: str | None = None) -> Dataset
     ]
 
     group_material = source.lineage_ids or [source.target]
+    lineage_refs = [
+        pseudonymize(item, active_salt, prefix="lineage")
+        for item in sorted(set(group_material))
+    ]
     group_ref = pseudonymize("\x1f".join(sorted(group_material)), active_salt, prefix="group")
     case_id = pseudonymize(source.case_id, active_salt, prefix="case")
 
@@ -131,6 +142,7 @@ def export_record(raw: Mapping[str, Any], *, salt: str | None = None) -> Dataset
     return DatasetExample(
         example_id=pseudonymize(source.case_id, active_salt, prefix="example"),
         group_ref=group_ref,
+        lineage_refs=lineage_refs,
         source_digest=source_digest,
         case=case,
     )
