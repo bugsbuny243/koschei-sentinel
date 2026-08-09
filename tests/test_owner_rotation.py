@@ -180,7 +180,7 @@ def test_wrong_next_key_and_same_key_rotation_fail_closed() -> None:
     owner = Ed25519PrivateKey.generate()
     successor = Ed25519PrivateKey.generate()
     lineage, checkpoint = _checkpoint(owner, successor)
-    with pytest.raises(OwnerRotationBlocked, match="next public key"):
+    with pytest.raises(OwnerRotationBlocked, match="checkpoint next owner key"):
         verify_owner_rotation_checkpoint(
             checkpoint,
             lineage,
@@ -197,6 +197,21 @@ def test_approver_identity_tamper_breaks_current_owner_signature() -> None:
     lineage, checkpoint = _checkpoint(owner, successor)
     payload = checkpoint.model_dump(mode="json")
     payload["current_approver_id"] = "attacker@koschei"
+    forged_approval_payload = {
+        "schema_version": "sentinel.owner-key-rotation-current-approval.v1",
+        "state": "current_owner_signed_handoff",
+        "authority": "governance_evidence_only",
+        "approver_id": payload["current_approver_id"],
+        "current_owner_key_fingerprint": payload["current_owner_key_fingerprint"],
+        "next_owner_key_fingerprint": payload["next_owner_key_fingerprint"],
+        "proposal_digest": payload["proposal_digest"],
+        "signature_algorithm": "ed25519",
+        "signature_base64": payload["current_owner_signature_base64"],
+        "signature_verified": True,
+        "automatic_key_activation_allowed": False,
+        "production_deployment_allowed": False,
+    }
+    payload["current_approval_digest"] = _digest(forged_approval_payload)
     payload.pop("checkpoint_digest")
     tampered = checkpoint.model_validate({**payload, "checkpoint_digest": _digest(payload)})
     with pytest.raises(OwnerRotationBlocked, match="current owner rotation signature"):
