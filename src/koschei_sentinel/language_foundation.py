@@ -387,7 +387,19 @@ def _expected_family(path_value: str, kind: str) -> str:
                 f"Koschei source is outside examples/: {path_value}"
             )
         return f"example:{parts[1]}"
-    return f"reference:{path_value}"
+    return f"reference:{_reference_family_path(path_value)}"
+
+
+def _reference_family_path(relative: str) -> str:
+    if relative in {"README.md", "README.tr.md"}:
+        return "README"
+    path = Path(relative)
+    name = path.name
+    for suffix in (".tr.md", ".en.md"):
+        if name.endswith(suffix):
+            base = name[: -len(suffix)] + ".md"
+            return path.with_name(base).as_posix()
+    return relative
 
 
 def _document_id(document: SourceLanguageDocument | LanguageFoundationDocument) -> str:
