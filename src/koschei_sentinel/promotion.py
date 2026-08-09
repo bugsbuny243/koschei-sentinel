@@ -21,12 +21,29 @@ from koschei_sentinel.models import StrictModel
 
 _DIGEST = r"^[a-f0-9]{64}$"
 _CANDIDATE_ID = r"^[a-z0-9][a-z0-9._-]{0,127}$"
+_POLICY_ID = r"^[a-z0-9][a-z0-9._-]{0,127}$"
 _APPROVER_ID = r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$"
 _SIGNATURE_CONTEXT = b"koschei-sentinel-shadow-promotion-v1\0"
 
 
 class PromotionBlocked(ValueError):
     """Raised when a signed shadow-promotion artifact fails closed."""
+
+
+class PromotionPolicy(StrictModel):
+    schema_version: Literal["sentinel.promotion-policy.v1"] = (
+        "sentinel.promotion-policy.v1"
+    )
+    policy_id: str = Field(pattern=_POLICY_ID)
+    integration_state: Literal["incubation_only"] = "incubation_only"
+    allowed_stage: Literal["shadow_research_candidate"] = "shadow_research_candidate"
+    authority: Literal["explanation_only"] = "explanation_only"
+    required_benchmark_suite_digest: str = Field(pattern=_DIGEST)
+    owner_signature_required: Literal[True] = True
+    automatic_promotion_allowed: Literal[False] = False
+    automatic_deployment_allowed: Literal[False] = False
+    production_deployment_allowed: Literal[False] = False
+    web3_runtime_integration_allowed: Literal[False] = False
 
 
 class PromotionProposal(StrictModel):
@@ -44,6 +61,7 @@ class PromotionProposal(StrictModel):
     benchmark_suite_digest: str = Field(pattern=_DIGEST)
     benchmark_report_digest: str = Field(pattern=_DIGEST)
     registry_digest: str = Field(pattern=_DIGEST)
+    promotion_policy_digest: str = Field(pattern=_DIGEST)
     owner_key_fingerprint: str = Field(pattern=_DIGEST)
     owner_signature_required: Literal[True] = True
     automatic_promotion_allowed: Literal[False] = False
@@ -67,6 +85,7 @@ class PromotionApproval(StrictModel):
     authority: Literal["explanation_only"] = "explanation_only"
     approver_id: str = Field(pattern=_APPROVER_ID)
     owner_key_fingerprint: str = Field(pattern=_DIGEST)
+    promotion_policy_digest: str = Field(pattern=_DIGEST)
     proposal_digest: str = Field(pattern=_DIGEST)
     signature_algorithm: Literal["ed25519"] = "ed25519"
     signature_base64: str = Field(min_length=80, max_length=128)
@@ -87,6 +106,13 @@ def load_candidate_finalization(path: str | Path) -> CandidateFinalization:
         raise ValueError("invalid candidate finalization") from exc
     _require_model_digest(finalization, "finalization_digest", "candidate finalization")
     return finalization
+
+
+def load_promotion_policy(path: str | Path) -> PromotionPolicy:
+    try:
+        return PromotionPolicy.model_validate_json(Path(path).read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ValueError("invalid promotion policy") from exc
 
 
 def load_promotion_proposal(path: str | Path) -> PromotionProposal:
@@ -125,15 +151,22 @@ def load_owner_private_key(path: str | Path) -> Ed25519PrivateKey:
     return key
 
 
+def promotion_policy_digest(policy: PromotionPolicy) -> str:
+    return _digest(policy.model_dump(mode="json"))
+
+
 def build_promotion_proposal(
     finalization: CandidateFinalization,
     owner_public_key: Ed25519PublicKey,
+    policy: PromotionPolicy,
 ) -> PromotionProposal:
     _require_model_digest(finalization, "finalization_digest", "candidate finalization")
     if finalization.state != "finalized_incubation":
         raise PromotionBlocked("candidate is not finalized for incubation")
     if finalization.authority != "explanation_only":
         raise PromotionBlocked("candidate authority exceeds explanation-only scope")
+    if finalization.benchmark_suite_digest != policy.required_benchmark_suite_digest:
+        raise PromotionBlocked("benchmark suite is not authorized by promotion policy")
 
     payload = {
         "schema_version": "sentinel.promotion-proposal.v1",
@@ -146,6 +179,7 @@ def build_promotion_proposal(
         "benchmark_suite_digest": finalization.benchmark_suite_digest,
         "benchmark_report_digest": finalization.benchmark_report_digest,
         "registry_digest": finalization.updated_registry_digest,
+        "promotion_policy_digest": promotion_policy_digest(policy),
         "owner_key_fingerprint": public_key_fingerprint(owner_public_key),
         "owner_signature_required": True,
         "automatic_promotion_allowed": False,
@@ -161,10 +195,12 @@ def build_promotion_proposal(
 def approve_promotion_proposal(
     proposal: PromotionProposal,
     owner_private_key: Ed25519PrivateKey,
+    policy: PromotionPolicy,
     *,
     approver_id: str,
 ) -> PromotionApproval:
     _require_model_digest(proposal, "proposal_digest", "promotion proposal")
+    _require_policy_binding(proposal, policy)
     public_key = owner_private_key.public_key()
     fingerprint = public_key_fingerprint(public_key)
     if fingerprint != proposal.owner_key_fingerprint:
@@ -180,6 +216,7 @@ def approve_promotion_proposal(
         "authority": "explanation_only",
         "approver_id": approver_id,
         "owner_key_fingerprint": fingerprint,
+        "promotion_policy_digest": proposal.promotion_policy_digest,
         "proposal_digest": proposal.proposal_digest,
         "signature_algorithm": "ed25519",
         "signature_base64": base64.b64encode(signature).decode("ascii"),
@@ -198,9 +235,11 @@ def verify_promotion_approval(
     proposal: PromotionProposal,
     approval: PromotionApproval,
     owner_public_key: Ed25519PublicKey,
+    policy: PromotionPolicy,
 ) -> PromotionApproval:
     _require_model_digest(proposal, "proposal_digest", "promotion proposal")
     _require_model_digest(approval, "approval_digest", "promotion approval")
+    _require_policy_binding(proposal, policy)
     fingerprint = public_key_fingerprint(owner_public_key)
     if proposal.owner_key_fingerprint != fingerprint:
         raise PromotionBlocked("public key does not match promotion proposal")
@@ -210,6 +249,8 @@ def verify_promotion_approval(
         raise PromotionBlocked("approval candidate does not match proposal")
     if approval.proposal_digest != proposal.proposal_digest:
         raise PromotionBlocked("approval does not bind the supplied proposal")
+    if approval.promotion_policy_digest != proposal.promotion_policy_digest:
+        raise PromotionBlocked("approval does not bind the promotion policy")
 
     try:
         signature = base64.b64decode(approval.signature_base64, validate=True)
@@ -249,6 +290,16 @@ def write_artifact(model: StrictModel, path: str | Path) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+def _require_policy_binding(
+    proposal: PromotionProposal,
+    policy: PromotionPolicy,
+) -> None:
+    if proposal.promotion_policy_digest != promotion_policy_digest(policy):
+        raise PromotionBlocked("promotion proposal does not match the supplied policy")
+    if proposal.benchmark_suite_digest != policy.required_benchmark_suite_digest:
+        raise PromotionBlocked("promotion proposal benchmark suite is not policy-authorized")
 
 
 def _require_model_digest(model: StrictModel, field: str, label: str) -> None:
