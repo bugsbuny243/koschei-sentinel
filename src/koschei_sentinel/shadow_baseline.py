@@ -15,7 +15,10 @@ from pydantic import Field
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.promotion import public_key_fingerprint
 from koschei_sentinel.shadow_receipt import ShadowReplayReceipt
-from koschei_sentinel.shadow_regression import ShadowRegressionReport
+from koschei_sentinel.shadow_regression import (
+    ShadowRegressionReport,
+    build_shadow_regression_report,
+)
 from koschei_sentinel.shadow_review import ShadowReviewScorecard
 
 _DIGEST = r"^[a-f0-9]{64}$"
@@ -185,7 +188,9 @@ def approve_shadow_baseline_proposal(
     fingerprint = public_key_fingerprint(owner_private_key.public_key())
     if fingerprint != proposal.owner_key_fingerprint:
         raise ShadowBaselineBlocked("private key does not match baseline proposal owner key")
-    signature = owner_private_key.sign(_signature_message(proposal.proposal_digest))
+    signature = owner_private_key.sign(
+        _signature_message(proposal.proposal_digest, approver_id)
+    )
     payload = _approval_payload(
         candidate_id=proposal.candidate_id,
         approver_id=approver_id,
@@ -214,7 +219,12 @@ def verify_shadow_baseline_approval(
         raise ShadowBaselineBlocked("approval candidate does not match proposal")
     if approval.proposal_digest != proposal.proposal_digest:
         raise ShadowBaselineBlocked("approval does not bind supplied baseline proposal")
-    _verify_signature(owner_public_key, proposal.proposal_digest, approval.signature_base64)
+    _verify_signature(
+        owner_public_key,
+        proposal.proposal_digest,
+        approval.approver_id,
+        approval.signature_base64,
+    )
     return approval
 
 
@@ -375,35 +385,18 @@ def _verify_evidence_bundle(
     _require_model_digest(candidate_receipt, "receipt_digest", "candidate receipt")
     if not baseline_scorecard.gate_passed or not candidate_scorecard.gate_passed:
         raise ShadowBaselineBlocked("baseline lineage requires passing human review scorecards")
-    if report.baseline_candidate_id != baseline_scorecard.candidate_id:
-        raise ShadowBaselineBlocked("regression baseline candidate does not match scorecard")
-    if report.candidate_id != candidate_scorecard.candidate_id:
-        raise ShadowBaselineBlocked("regression candidate does not match scorecard")
-    bindings = (
-        (
-            report.baseline_scorecard_digest,
-            baseline_scorecard.scorecard_digest,
-            "baseline scorecard",
-        ),
-        (
-            report.candidate_scorecard_digest,
-            candidate_scorecard.scorecard_digest,
-            "candidate scorecard",
-        ),
-        (report.baseline_receipt_digest, baseline_receipt.receipt_digest, "baseline receipt"),
-        (report.candidate_receipt_digest, candidate_receipt.receipt_digest, "candidate receipt"),
+
+    expected_report = build_shadow_regression_report(
+        baseline_scorecard,
+        baseline_receipt,
+        candidate_scorecard,
+        candidate_receipt,
+        tolerance=report.tolerance,
     )
-    for claimed, observed, label in bindings:
-        if claimed != observed:
-            raise ShadowBaselineBlocked(f"regression report does not bind supplied {label}")
-    if baseline_scorecard.receipt_digest != baseline_receipt.receipt_digest:
-        raise ShadowBaselineBlocked("baseline scorecard does not bind supplied receipt")
-    if candidate_scorecard.receipt_digest != candidate_receipt.receipt_digest:
-        raise ShadowBaselineBlocked("candidate scorecard does not bind supplied receipt")
-    if baseline_receipt.replay_sha256 != report.replay_sha256:
-        raise ShadowBaselineBlocked("baseline receipt uses a different sealed replay")
-    if candidate_receipt.replay_sha256 != report.replay_sha256:
-        raise ShadowBaselineBlocked("candidate receipt uses a different sealed replay")
+    if expected_report.model_dump(mode="json") != report.model_dump(mode="json"):
+        raise ShadowBaselineBlocked(
+            "shadow regression report does not match supplied scorecards and receipts"
+        )
 
 
 def _verify_seed_entry(entry: ShadowBaselineEntry) -> None:
@@ -484,7 +477,7 @@ def _verify_advance_entry(
     )
     if approval_digest != _digest(approval_payload):
         raise ShadowBaselineBlocked("baseline lineage approval digest is inconsistent")
-    _verify_signature(owner_public_key, expected_proposal, signature)
+    _verify_signature(owner_public_key, expected_proposal, approver, signature)
 
 
 def _advance_entry(
@@ -624,17 +617,26 @@ def _require_model_digest(model: StrictModel, field: str, label: str) -> None:
 def _verify_signature(
     owner_public_key: Ed25519PublicKey,
     proposal_digest: str,
+    approver_id: str,
     signature_base64: str,
 ) -> None:
     try:
         signature = base64.b64decode(signature_base64, validate=True)
-        owner_public_key.verify(signature, _signature_message(proposal_digest))
+        owner_public_key.verify(
+            signature,
+            _signature_message(proposal_digest, approver_id),
+        )
     except (InvalidSignature, ValueError) as exc:
         raise ShadowBaselineBlocked("baseline owner signature verification failed") from exc
 
 
-def _signature_message(proposal_digest: str) -> bytes:
-    return _SIGNATURE_CONTEXT + proposal_digest.encode("ascii")
+def _signature_message(proposal_digest: str, approver_id: str) -> bytes:
+    return (
+        _SIGNATURE_CONTEXT
+        + proposal_digest.encode("ascii")
+        + b"\0"
+        + approver_id.encode("utf-8")
+    )
 
 
 def _digest(value: object) -> str:
