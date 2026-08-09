@@ -20,6 +20,7 @@ RELEASE_SCHEMA = "sentinel.language-foundation-release.v1"
 DOCUMENT_SCHEMA = "sentinel.language-foundation-document.v1"
 _SPLITS = ("train", "validation", "test")
 _COMMIT_RE = re.compile(r"^[a-f0-9]{40}$")
+_SHA_RE = re.compile(r"^[a-f0-9]{64}$")
 
 
 class LanguageFoundationBlocked(ValueError):
@@ -60,7 +61,7 @@ class SourceLanguageCorpus(StrictModel):
 
 
 class LanguageFoundationDocument(StrictModel):
-    schema_version: Literal["sentinel.language-foundation-document.v1"] = DOCUMENT_SCHEMA
+    schema_version: Literal["sentinel.language-foundation-document.v1"]
     document_id: str = Field(pattern=r"^[a-f0-9]{64}$")
     family: str = Field(min_length=1, max_length=1024)
     kind: Literal["reference", "koschei_source"]
@@ -77,15 +78,15 @@ class LanguageFoundationSplit(StrictModel):
 
 
 class LanguageFoundationReleaseManifest(StrictModel):
-    schema_version: Literal["sentinel.language-foundation-release.v1"] = RELEASE_SCHEMA
-    source_schema: Literal["koschei.language-foundation-corpus.v1"] = SOURCE_SCHEMA
-    source_generator: Literal["koschei-foundation-export/v1"] = SOURCE_GENERATOR
-    source_repository: Literal["bugsbuny243/koschei-lang"] = SOURCE_REPOSITORY
+    schema_version: Literal["sentinel.language-foundation-release.v1"]
+    source_schema: Literal["koschei.language-foundation-corpus.v1"]
+    source_generator: Literal["koschei-foundation-export/v1"]
+    source_repository: Literal["bugsbuny243/koschei-lang"]
     source_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     source_corpus_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     source_total_bytes: int = Field(ge=1)
     split_seed: str = Field(min_length=1, max_length=256)
-    leakage_detected: Literal[False] = False
+    leakage_detected: Literal[False]
     documents: int = Field(ge=3)
     families: int = Field(ge=3)
     splits: dict[str, LanguageFoundationSplit]
@@ -152,22 +153,29 @@ def build_language_foundation_release(
     corpus_path: str | Path,
     *,
     output_dir: str | Path,
+    expected_source_commit: str,
+    expected_source_corpus_sha256: str,
     split_seed: str = "koschei-language-foundation-v1",
-    expected_source_commit: str | None = None,
 ) -> LanguageFoundationReleaseManifest:
     if not split_seed or len(split_seed) > 256:
         raise LanguageFoundationBlocked("split seed must contain 1..256 characters")
-    if expected_source_commit is not None and not _COMMIT_RE.fullmatch(
-        expected_source_commit
-    ):
+    if not _COMMIT_RE.fullmatch(expected_source_commit):
         raise LanguageFoundationBlocked(
             "expected source commit must be a lowercase 40-character SHA"
         )
+    if not _SHA_RE.fullmatch(expected_source_corpus_sha256):
+        raise LanguageFoundationBlocked(
+            "expected source corpus SHA256 must be a lowercase 64-character digest"
+        )
 
     corpus = load_source_corpus(corpus_path)
-    if expected_source_commit is not None and corpus.source_commit != expected_source_commit:
+    if corpus.source_commit != expected_source_commit:
         raise LanguageFoundationBlocked(
             "source corpus commit does not match the expected Koschei commit"
+        )
+    if corpus.corpus_sha256 != expected_source_corpus_sha256:
+        raise LanguageFoundationBlocked(
+            "source corpus digest does not match the trusted expected digest"
         )
     if corpus.family_count < 3:
         raise LanguageFoundationBlocked(
@@ -184,6 +192,7 @@ def build_language_foundation_release(
     for source in corpus.documents:
         rows[assignments[source.family]].append(
             LanguageFoundationDocument(
+                schema_version=DOCUMENT_SCHEMA,
                 document_id=source.document_id,
                 family=source.family,
                 kind=source.kind,
@@ -223,10 +232,15 @@ def build_language_foundation_release(
             )
 
         manifest = LanguageFoundationReleaseManifest(
+            schema_version=RELEASE_SCHEMA,
+            source_schema=SOURCE_SCHEMA,
+            source_generator=SOURCE_GENERATOR,
+            source_repository=SOURCE_REPOSITORY,
             source_commit=corpus.source_commit,
             source_corpus_sha256=corpus.corpus_sha256,
             source_total_bytes=corpus.total_bytes,
             split_seed=split_seed,
+            leakage_detected=False,
             documents=corpus.document_count,
             families=corpus.family_count,
             splits=split_reports,
@@ -238,9 +252,7 @@ def build_language_foundation_release(
         )
         verify_language_foundation_release(release)
         _fsync_tree(release)
-        if destination.exists():
-            raise FileExistsError(f"language foundation release already exists: {destination}")
-        os.replace(release, destination)
+        _publish_directory_no_replace(release, destination)
         return manifest
     finally:
         shutil.rmtree(staging, ignore_errors=True)
@@ -499,6 +511,41 @@ def _verify_relative_path(value: str) -> None:
         raise LanguageFoundationBlocked(f"unsafe source path: {value}")
 
 
+def _publish_directory_no_replace(source: Path, destination: Path) -> None:
+    """Reserve the destination atomically, then link files without replacement."""
+
+    try:
+        destination.mkdir()
+    except FileExistsError:
+        raise FileExistsError(
+            f"language foundation release already exists: {destination}"
+        ) from None
+
+    created: list[Path] = []
+    try:
+        for child in sorted(source.iterdir(), key=lambda item: item.name):
+            if not child.is_file() or child.is_symlink():
+                raise LanguageFoundationBlocked(
+                    f"unexpected staged release entry: {child.name}"
+                )
+            target = destination / child.name
+            os.link(child, target)
+            created.append(target)
+        _fsync_directory(destination)
+        _fsync_directory(destination.parent)
+    except Exception:
+        for target in reversed(created):
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+        try:
+            destination.rmdir()
+        except OSError:
+            pass
+        raise
+
+
 def _fsync_tree(root: Path) -> None:
     for path in sorted(root.rglob("*")):
         if path.is_file():
@@ -510,8 +557,12 @@ def _fsync_tree(root: Path) -> None:
         reverse=True,
     )
     for directory in [*directories, root]:
-        descriptor = os.open(directory, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        _fsync_directory(directory)
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
