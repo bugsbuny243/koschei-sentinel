@@ -10,6 +10,7 @@ import pytest
 from koschei_sentinel.language_foundation import (
     LanguageFoundationBlocked,
     _publish_directory_no_replace,
+    _reference_family_path,
     build_language_foundation_release,
     canonical_json,
     load_source_corpus,
@@ -17,8 +18,8 @@ from koschei_sentinel.language_foundation import (
 )
 
 
-def _reference_family_path(relative: str) -> str:
-    if relative in {"README.md", "README.tr.md"}:
+def _fixture_reference_family_path(relative: str) -> str:
+    if relative in {"README.md", "README.tr.md", "README.en.md"}:
         return "README"
     path = Path(relative)
     name = path.name
@@ -34,7 +35,7 @@ def _source_document(path: str, text: str, *, kind: str) -> dict[str, str]:
         parts = Path(path).parts
         family = f"example:{parts[1]}" if len(parts) >= 3 else "example:top-level"
     else:
-        family = f"reference:{_reference_family_path(path)}"
+        family = f"reference:{_fixture_reference_family_path(path)}"
     document_id = hashlib.sha256(
         f"{kind}\0{family}\0{path}\0{source_sha}".encode()
     ).hexdigest()
@@ -179,6 +180,12 @@ def test_release_is_deterministic_and_has_no_family_leakage() -> None:
         verify_language_foundation_release(first)
 
 
+def test_all_readme_variants_share_one_reference_family() -> None:
+    assert _reference_family_path("README.md") == "README"
+    assert _reference_family_path("README.tr.md") == "README"
+    assert _reference_family_path("README.en.md") == "README"
+
+
 def test_source_tampering_is_rejected_before_split() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -307,6 +314,32 @@ def test_release_directory_is_no_replace() -> None:
         _trusted_build(corpus, release)
         with pytest.raises(FileExistsError):
             _trusted_build(corpus, release)
+
+
+def test_atomic_publish_moves_only_a_complete_staged_directory() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        staged = root / "staged"
+        staged.mkdir()
+        expected = {
+            "train.jsonl": "train\n",
+            "validation.jsonl": "validation\n",
+            "test.jsonl": "test\n",
+            "language-foundation-manifest.json": "manifest\n",
+        }
+        for name, text in expected.items():
+            (staged / name).write_text(text, encoding="utf-8")
+        destination = root / "release"
+        assert not destination.exists()
+
+        _publish_directory_no_replace(staged, destination)
+
+        assert not staged.exists()
+        assert destination.is_dir()
+        assert {
+            path.name: path.read_text(encoding="utf-8")
+            for path in destination.iterdir()
+        } == expected
 
 
 def test_publish_never_replaces_a_raced_destination_directory() -> None:
