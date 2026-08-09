@@ -15,12 +15,23 @@ from koschei_sentinel.language_foundation import (
 )
 
 
+def _reference_family_path(relative: str) -> str:
+    if relative in {"README.md", "README.tr.md"}:
+        return "README"
+    path = Path(relative)
+    name = path.name
+    for suffix in (".tr.md", ".en.md"):
+        if name.endswith(suffix):
+            return path.with_name(name[: -len(suffix)] + ".md").as_posix()
+    return relative
+
+
 def _source_document(path: str, text: str, *, kind: str) -> dict[str, str]:
     source_sha = hashlib.sha256(text.encode()).hexdigest()
     if kind == "koschei_source":
         family = f"example:{Path(path).parts[1]}"
     else:
-        family = f"reference:{path}"
+        family = f"reference:{_reference_family_path(path)}"
     document_id = hashlib.sha256(
         f"{kind}\0{family}\0{path}\0{source_sha}".encode()
     ).hexdigest()
@@ -109,7 +120,10 @@ def test_release_is_deterministic_and_has_no_family_leakage() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         corpus = root / "corpus.json"
-        _write_source_corpus(corpus)
+        payload = _write_source_corpus(corpus)
+        assert {
+            item["family"] for item in payload["documents"] if item["path"].startswith("README")
+        } == {"reference:README"}
         first = root / "release-a"
         second = root / "release-b"
         first_manifest = build_language_foundation_release(
