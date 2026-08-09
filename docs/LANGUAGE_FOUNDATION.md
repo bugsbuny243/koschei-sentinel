@@ -4,7 +4,7 @@ Koschei Sentinel's first new specialization is the Koschei programming language 
 
 ## Input trust boundary
 
-The only accepted v1 source is a verified `koschei.language-foundation-corpus.v1` artifact exported by `bugsbuny243/koschei-lang` from a clean, exact Git checkout.
+The only accepted v1 source is a verified `koschei.language-foundation-corpus.v1` artifact exported by `bugsbuny243/koschei-lang` from an exact Git commit.
 
 The importer verifies:
 
@@ -44,11 +44,11 @@ test.jsonl
 language-foundation-manifest.json
 ```
 
-Splitting is deterministic from the configured seed and happens at the `family` level, never per file. Multi-file examples under one example directory stay together, all top-level `.ks` examples stay together, and translated reference documents share one family. This prevents sibling modules or translated near-duplicates from crossing train/evaluation boundaries.
+Splitting is deterministic from the configured seed and happens at the `family` level, never per file. Multi-file examples under one example directory stay together, all top-level `.ks` examples stay together, and translated reference documents share one family. `README.md`, `README.tr.md`, and `README.en.md` normalize to the same README family. This prevents sibling modules or translated near-duplicates from crossing train/evaluation boundaries.
 
 Each split is SHA-256 bound in the manifest. `sentinel-language-foundation verify <release>` re-hashes every split, rejects ambiguous duplicate JSON members, re-validates every document, reconstructs the original canonical source-corpus digest, replays the seed-derived family assignment, and fails if a family appears in more than one split.
 
-Release publication never replaces an existing destination. The destination directory is reserved with an atomic create and every staged file is linked with no-replace semantics.
+Release publication never exposes a partially populated destination. All split files and the manifest are written, verified and fsynced in a hidden staging directory first. Publication then uses one atomic no-replace directory rename; if the platform or filesystem cannot provide that primitive, the operation fails closed rather than weakening the boundary. Any pre-existing destination causes publication to fail without replacing it.
 
 ## What this does not do yet
 
