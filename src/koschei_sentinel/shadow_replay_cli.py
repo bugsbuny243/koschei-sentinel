@@ -7,6 +7,7 @@ from koschei_sentinel.shadow_replay import (
     ShadowReplayBlocked,
     build_shadow_replay_plan,
     load_promotion_approval,
+    load_promotion_policy,
     load_promotion_proposal,
     write_shadow_replay_plan,
 )
@@ -21,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--proposal", required=True)
     parser.add_argument("--approval", required=True)
+    parser.add_argument("--policy", required=True)
     parser.add_argument("--owner-public-key", required=True)
     parser.add_argument("--replay", required=True)
     parser.add_argument("--output-dir", required=True)
@@ -35,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         plan = build_shadow_replay_plan(
             load_promotion_proposal(args.proposal),
             load_promotion_approval(args.approval),
+            load_promotion_policy(args.policy),
             owner_public_key_path=args.owner_public_key,
             replay_path=args.replay,
             output_dir=args.output_dir,
@@ -49,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
                     "state": plan.state,
                     "replay_cases": plan.replay_cases,
                     "replay_sha256": plan.replay_sha256,
+                    "promotion_policy_digest": plan.promotion_policy_digest,
                     "plan_digest": plan.plan_digest,
                     "manual_dispatch_required": True,
                     "network_access_allowed": False,

@@ -11,6 +11,7 @@ from koschei_sentinel.promotion import (
     load_owner_private_key,
     load_owner_public_key,
     load_promotion_approval,
+    load_promotion_policy,
     load_promotion_proposal,
     verify_promotion_approval,
     write_artifact,
@@ -32,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     propose.add_argument("--finalization", required=True)
     propose.add_argument("--owner-public-key", required=True)
+    propose.add_argument("--policy", required=True)
     propose.add_argument("--output", required=True)
 
     approve = commands.add_parser(
@@ -40,16 +42,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     approve.add_argument("--proposal", required=True)
     approve.add_argument("--owner-private-key", required=True)
+    approve.add_argument("--policy", required=True)
     approve.add_argument("--approver-id", required=True)
     approve.add_argument("--output", required=True)
 
     verify = commands.add_parser(
         "verify",
-        help="Verify an owner approval against its proposal and public key",
+        help="Verify an owner approval against its proposal, public key, and policy",
     )
     verify.add_argument("--proposal", required=True)
     verify.add_argument("--approval", required=True)
     verify.add_argument("--owner-public-key", required=True)
+    verify.add_argument("--policy", required=True)
     verify.add_argument("--json", action="store_true")
     return parser
 
@@ -61,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             artifact = build_promotion_proposal(
                 load_candidate_finalization(args.finalization),
                 load_owner_public_key(args.owner_public_key),
+                load_promotion_policy(args.policy),
             )
             write_artifact(artifact, args.output)
             result = artifact.model_dump(mode="json")
@@ -68,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             artifact = approve_promotion_proposal(
                 load_promotion_proposal(args.proposal),
                 load_owner_private_key(args.owner_private_key),
+                load_promotion_policy(args.policy),
                 approver_id=args.approver_id,
             )
             write_artifact(artifact, args.output)
@@ -77,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
                 load_promotion_proposal(args.proposal),
                 load_promotion_approval(args.approval),
                 load_owner_public_key(args.owner_public_key),
+                load_promotion_policy(args.policy),
             )
             result = {
                 "ok": True,
@@ -86,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
                 "authority": artifact.authority,
                 "approver_id": artifact.approver_id,
                 "owner_key_fingerprint": artifact.owner_key_fingerprint,
+                "promotion_policy_digest": artifact.promotion_policy_digest,
                 "proposal_digest": artifact.proposal_digest,
                 "approval_digest": artifact.approval_digest,
                 "production_deployment_allowed": False,
