@@ -79,30 +79,36 @@ def split_dataset(
     if privacy_findings:
         raise ValueError("privacy quality gate failed: " + "; ".join(privacy_findings))
 
-    grouped: dict[str, list[DatasetExample]] = defaultdict(list)
-    for example in validated:
-        grouped[example.group_ref].append(example)
+    grouped = _lineage_components(validated)
 
-    assigned: dict[SplitName, list[DatasetExample]] = {
-        "train": [],
-        "validation": [],
-        "test": [],
+    assigned: dict[SplitName, dict[str, list[DatasetExample]]] = {
+        "train": {},
+        "validation": {},
+        "test": {},
     }
-    for group_ref, members in grouped.items():
-        assigned[_assign_split(group_ref, active_config)].extend(members)
+    for component_ref, members in grouped.items():
+        split_name = _assign_split(component_ref, active_config)
+        assigned[split_name][component_ref] = members
 
     payloads: dict[SplitName, str] = {}
     reports: dict[str, SplitReport] = {}
     warnings: list[str] = []
     for split_name in ("train", "validation", "test"):
-        members = sorted(assigned[split_name], key=lambda item: item.example_id)
+        members = sorted(
+            (
+                item
+                for component_members in assigned[split_name].values()
+                for item in component_members
+            ),
+            key=lambda item: item.example_id,
+        )
         payload = "".join(
             _canonical_json(item.model_dump(mode="json")) + "\n" for item in members
         )
         payloads[split_name] = payload
         reports[split_name] = SplitReport(
             examples=len(members),
-            groups=len({item.group_ref for item in members}),
+            groups=len(assigned[split_name]),
             digest=hashlib.sha256(payload.encode()).hexdigest(),
         )
         if not members:
@@ -170,6 +176,48 @@ def _assign_split(group_ref: str, config: SplitConfig) -> SplitName:
     return "test"
 
 
+def _lineage_components(examples: list[DatasetExample]) -> dict[str, list[DatasetExample]]:
+    """Collapse transitive lineage overlap so related families cannot cross splits."""
+
+    parents = list(range(len(examples)))
+    owners: dict[str, int] = {}
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parents[max(left_root, right_root)] = min(left_root, right_root)
+
+    for index, example in enumerate(examples):
+        identities = [f"group:{example.group_ref}"]
+        identities.extend(f"lineage:{item}" for item in example.lineage_refs)
+        for identity in identities:
+            previous = owners.get(identity)
+            if previous is None:
+                owners[identity] = index
+            else:
+                union(index, previous)
+
+    components: dict[int, list[DatasetExample]] = defaultdict(list)
+    for index, example in enumerate(examples):
+        components[find(index)].append(example)
+
+    result: dict[str, list[DatasetExample]] = {}
+    for members in components.values():
+        component_ref = min(
+            [item.group_ref for item in members]
+            + [lineage for item in members for lineage in item.lineage_refs]
+        )
+        result[component_ref] = members
+    return result
+
+
 def _validate_uniqueness(examples: list[DatasetExample]) -> None:
     example_ids = [item.example_id for item in examples]
     source_digests = [item.source_digest for item in examples]
@@ -189,6 +237,12 @@ def _privacy_findings(examples: list[DatasetExample]) -> list[str]:
             "target_ref": example.case.target_ref,
             "signature": example.case.signed_verdict.signature,
         }
+        identifiers.update(
+            {
+                f"lineage_ref[{index}]": value
+                for index, value in enumerate(example.lineage_refs)
+            }
+        )
         identifiers.update(
             {
                 f"evidence_id[{index}]": item.evidence_id
