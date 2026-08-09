@@ -99,6 +99,12 @@ def build_shadow_regression_report(
     _require_scorecard_receipt_binding(baseline, baseline_receipt, "baseline")
     _require_scorecard_receipt_binding(candidate, candidate_receipt, "candidate")
 
+    if baseline.candidate_id == candidate.candidate_id:
+        raise ShadowRegressionBlocked("candidate must be different from the baseline")
+    if baseline.scorecard_digest == candidate.scorecard_digest:
+        raise ShadowRegressionBlocked("candidate scorecard must differ from the baseline")
+    if baseline_receipt.receipt_digest == candidate_receipt.receipt_digest:
+        raise ShadowRegressionBlocked("candidate receipt must differ from the baseline")
     if baseline_receipt.replay_sha256 != candidate_receipt.replay_sha256:
         raise ShadowRegressionBlocked("shadow scorecards use different sealed replay bytes")
     if baseline_receipt.replay_cases != candidate_receipt.replay_cases:
@@ -290,8 +296,6 @@ def _require_history_digest(history: ShadowRegressionHistory) -> None:
 
 def _write_once(payload: object, path: str | Path, label: str) -> None:
     destination = Path(path)
-    if destination.exists():
-        raise FileExistsError(f"{label} already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     descriptor, temporary_name = tempfile.mkstemp(
@@ -303,13 +307,15 @@ def _write_once(payload: object, path: str | Path, label: str) -> None:
             handle.write(serialized)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary_name, destination)
-    except Exception:
+        try:
+            os.link(temporary_name, destination)
+        except FileExistsError as exc:
+            raise FileExistsError(f"{label} already exists: {destination}") from exc
+    finally:
         try:
             os.unlink(temporary_name)
         except FileNotFoundError:
             pass
-        raise
 
 
 def _stable_delta(current: float, baseline: float) -> float:
