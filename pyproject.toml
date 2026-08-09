@@ -55,6 +55,7 @@ sentinel-shadow-receipt = "koschei_sentinel.shadow_receipt_cli:main"
 sentinel-shadow-review = "koschei_sentinel.shadow_review_cli:main"
 sentinel-shadow-regression = "koschei_sentinel.shadow_regression_cli:main"
 sentinel-shadow-baseline = "koschei_sentinel.shadow_baseline_cli:main"
+sentinel-owner-rotation = "koschei_sentinel.owner_rotation_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
