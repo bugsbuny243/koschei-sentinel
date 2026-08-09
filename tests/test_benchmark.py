@@ -26,7 +26,7 @@ def test_baseline_passes_all_hard_gates() -> None:
     cases = suite()
     report = evaluate_benchmark(cases, baseline_predictions(cases))
     assert report.gate_passed
-    assert report.total_cases == 3
+    assert report.total_cases == len(cases)
     assert report.failed_cases == 0
     assert report.grounding_score == 1.0
     assert report.abstention_score == 1.0
