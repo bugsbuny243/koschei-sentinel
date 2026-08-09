@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.candidate_finalization import CandidateFinalization
 from koschei_sentinel.promotion import (
+    PromotionPolicy,
     approve_promotion_proposal,
     build_promotion_proposal,
 )
@@ -59,6 +60,13 @@ def _finalization() -> CandidateFinalization:
     )
 
 
+def _policy() -> PromotionPolicy:
+    return PromotionPolicy(
+        policy_id="shadow-research-2026-08",
+        required_benchmark_suite_digest="8" * 64,
+    )
+
+
 def _approval(tmp_path: Path):
     private_key = Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
@@ -69,17 +77,19 @@ def _approval(tmp_path: Path):
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
     )
-    proposal = build_promotion_proposal(_finalization(), public_key)
+    policy = _policy()
+    proposal = build_promotion_proposal(_finalization(), public_key, policy)
     approval = approve_promotion_proposal(
         proposal,
         private_key,
+        policy,
         approver_id="owner@koschei",
     )
-    return proposal, approval, public_path
+    return proposal, approval, policy, public_path
 
 
 def test_signed_approval_creates_only_an_offline_shadow_plan(tmp_path: Path) -> None:
-    proposal, approval, public_path = _approval(tmp_path)
+    proposal, approval, policy, public_path = _approval(tmp_path)
     replay = tmp_path / "replay.jsonl"
     replay.write_text(
         '{"case_id":"case-1","evidence":[]}\n'
@@ -90,6 +100,7 @@ def test_signed_approval_creates_only_an_offline_shadow_plan(tmp_path: Path) -> 
     plan = build_shadow_replay_plan(
         proposal,
         approval,
+        policy,
         owner_public_key_path=public_path,
         replay_path=replay,
         output_dir=tmp_path / "shadow-output",
@@ -98,6 +109,7 @@ def test_signed_approval_creates_only_an_offline_shadow_plan(tmp_path: Path) -> 
 
     assert plan.stage == "shadow_research_candidate"
     assert plan.replay_cases == 2
+    assert plan.promotion_policy_digest == proposal.promotion_policy_digest
     assert plan.manual_dispatch_required is True
     assert plan.network_access_allowed is False
     assert plan.live_chain_reads_allowed is False
@@ -108,7 +120,7 @@ def test_signed_approval_creates_only_an_offline_shadow_plan(tmp_path: Path) -> 
 
 
 def test_wrong_owner_key_blocks_shadow_plan(tmp_path: Path) -> None:
-    proposal, approval, _ = _approval(tmp_path)
+    proposal, approval, policy, _ = _approval(tmp_path)
     wrong_public = Ed25519PrivateKey.generate().public_key()
     wrong_path = tmp_path / "wrong-owner.pem"
     wrong_path.write_bytes(
@@ -124,6 +136,7 @@ def test_wrong_owner_key_blocks_shadow_plan(tmp_path: Path) -> None:
         build_shadow_replay_plan(
             proposal,
             approval,
+            policy,
             owner_public_key_path=wrong_path,
             replay_path=replay,
             output_dir=tmp_path / "output",
@@ -131,8 +144,26 @@ def test_wrong_owner_key_blocks_shadow_plan(tmp_path: Path) -> None:
         )
 
 
+def test_wrong_policy_blocks_shadow_plan(tmp_path: Path) -> None:
+    proposal, approval, _, public_path = _approval(tmp_path)
+    replay = tmp_path / "replay.jsonl"
+    replay.write_text('{"case_id":"case-1"}\n', encoding="utf-8")
+    wrong_policy = _policy().model_copy(update={"policy_id": "shadow-research-next"})
+
+    with pytest.raises(ValueError, match="policy"):
+        build_shadow_replay_plan(
+            proposal,
+            approval,
+            wrong_policy,
+            owner_public_key_path=public_path,
+            replay_path=replay,
+            output_dir=tmp_path / "output",
+            root=tmp_path,
+        )
+
+
 def test_duplicate_replay_identifiers_fail_closed(tmp_path: Path) -> None:
-    proposal, approval, public_path = _approval(tmp_path)
+    proposal, approval, policy, public_path = _approval(tmp_path)
     replay = tmp_path / "replay.jsonl"
     replay.write_text(
         '{"case_id":"same"}\n{"case_id":"same"}\n',
@@ -143,6 +174,7 @@ def test_duplicate_replay_identifiers_fail_closed(tmp_path: Path) -> None:
         build_shadow_replay_plan(
             proposal,
             approval,
+            policy,
             owner_public_key_path=public_path,
             replay_path=replay,
             output_dir=tmp_path / "output",
@@ -151,12 +183,13 @@ def test_duplicate_replay_identifiers_fail_closed(tmp_path: Path) -> None:
 
 
 def test_plan_digest_tampering_and_overwrite_are_rejected(tmp_path: Path) -> None:
-    proposal, approval, public_path = _approval(tmp_path)
+    proposal, approval, policy, public_path = _approval(tmp_path)
     replay = tmp_path / "replay.jsonl"
     replay.write_text('{"test_id":"test-1"}\n', encoding="utf-8")
     plan = build_shadow_replay_plan(
         proposal,
         approval,
+        policy,
         owner_public_key_path=public_path,
         replay_path=replay,
         output_dir=tmp_path / "output",
