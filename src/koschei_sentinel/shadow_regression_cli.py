@@ -51,11 +51,14 @@ def main(argv: list[str] | None = None) -> int:
                 max_followup_case_increase=args.max_followup_case_increase,
             ),
         )
-        write_shadow_regression_report(report, args.output)
+
         history = None
         if args.history_out:
             previous = load_shadow_regression_history(args.history_in) if args.history_in else None
             history = append_shadow_regression_history(report, previous)
+
+        write_shadow_regression_report(report, args.output)
+        if history is not None:
             write_shadow_regression_history(history, args.history_out)
     except (OSError, ValueError, ShadowRegressionBlocked) as exc:
         print(f"shadow regression rejected: {exc}", file=sys.stderr)
