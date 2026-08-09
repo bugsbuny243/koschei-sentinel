@@ -15,6 +15,7 @@ from koschei_sentinel.shadow_regression import (
     load_shadow_regression_history,
     write_shadow_regression_history,
 )
+from koschei_sentinel.shadow_regression_cli import main as regression_main
 from koschei_sentinel.shadow_review import ShadowReviewScorecard, ShadowReviewThresholds
 
 
@@ -100,6 +101,11 @@ def _scorecard(
     return ShadowReviewScorecard.model_validate({**payload, "scorecard_digest": _digest(payload)})
 
 
+def _write_model(path: Path, model: object) -> None:
+    payload = model.model_dump(mode="json")  # type: ignore[attr-defined]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_identical_or_better_candidate_passes_and_records_history(tmp_path: Path) -> None:
     baseline_receipt = _receipt("baseline", results="b" * 64)
     candidate_receipt = _receipt("candidate", results="d" * 64)
@@ -123,6 +129,15 @@ def test_identical_or_better_candidate_passes_and_records_history(tmp_path: Path
 
     with pytest.raises(ShadowRegressionBlocked, match="already exists"):
         append_shadow_regression_history(report, loaded)
+    with pytest.raises(FileExistsError):
+        write_shadow_regression_history(history, path)
+
+
+def test_baseline_cannot_be_reused_as_candidate() -> None:
+    receipt = _receipt("baseline")
+    scorecard = _scorecard(receipt)
+    with pytest.raises(ShadowRegressionBlocked, match="different from the baseline"):
+        build_shadow_regression_report(scorecard, receipt, scorecard, receipt)
 
 
 def test_score_drop_or_followup_growth_fails_closed() -> None:
@@ -184,6 +199,55 @@ def test_different_replay_or_thresholds_are_not_comparable() -> None:
             candidate,
             candidate_receipt,
         )
+
+
+def test_invalid_history_is_rejected_before_report_publication(tmp_path: Path) -> None:
+    baseline_receipt = _receipt("baseline")
+    candidate_receipt = _receipt("candidate", results="d" * 64)
+    baseline_scorecard = _scorecard(baseline_receipt)
+    candidate_scorecard = _scorecard(candidate_receipt)
+    report = build_shadow_regression_report(
+        baseline_scorecard,
+        baseline_receipt,
+        candidate_scorecard,
+        candidate_receipt,
+    )
+    history = append_shadow_regression_history(report)
+
+    baseline_receipt_path = tmp_path / "baseline.receipt.json"
+    candidate_receipt_path = tmp_path / "candidate.receipt.json"
+    baseline_scorecard_path = tmp_path / "baseline.scorecard.json"
+    candidate_scorecard_path = tmp_path / "candidate.scorecard.json"
+    history_in = tmp_path / "history-in.json"
+    history_out = tmp_path / "history-out.json"
+    output = tmp_path / "report.json"
+    _write_model(baseline_receipt_path, baseline_receipt)
+    _write_model(candidate_receipt_path, candidate_receipt)
+    _write_model(baseline_scorecard_path, baseline_scorecard)
+    _write_model(candidate_scorecard_path, candidate_scorecard)
+    _write_model(history_in, history)
+
+    status = regression_main(
+        [
+            "--baseline-scorecard",
+            str(baseline_scorecard_path),
+            "--baseline-receipt",
+            str(baseline_receipt_path),
+            "--candidate-scorecard",
+            str(candidate_scorecard_path),
+            "--candidate-receipt",
+            str(candidate_receipt_path),
+            "--output",
+            str(output),
+            "--history-in",
+            str(history_in),
+            "--history-out",
+            str(history_out),
+        ]
+    )
+    assert status == 2
+    assert not output.exists()
+    assert not history_out.exists()
 
 
 def test_tampered_scorecard_and_history_are_rejected(tmp_path: Path) -> None:
