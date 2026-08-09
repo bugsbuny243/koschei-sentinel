@@ -87,7 +87,10 @@ class ShadowBaselineEntry(StrictModel):
     receipt_digest: str = Field(pattern=_DIGEST)
     replay_sha256: str = Field(pattern=_DIGEST)
     regression_report_digest: str = Field(pattern=_DIGEST)
-    owner_approval_digest: str = Field(pattern=_DIGEST)
+    proposal_digest: str | None = Field(default=None, pattern=_DIGEST)
+    approver_id: str | None = Field(default=None, pattern=_APPROVER_ID)
+    owner_signature_base64: str | None = Field(default=None, min_length=80, max_length=128)
+    owner_approval_digest: str | None = Field(default=None, pattern=_DIGEST)
 
 
 class ShadowBaselineLineage(StrictModel):
@@ -103,8 +106,9 @@ class ShadowBaselineLineage(StrictModel):
     head_candidate_id: str = Field(pattern=_CANDIDATE_ID)
     head_scorecard_digest: str = Field(pattern=_DIGEST)
     head_receipt_digest: str = Field(pattern=_DIGEST)
-    entries: list[ShadowBaselineEntry] = Field(min_length=1, max_length=_MAX_LINEAGE)
+    entries: list[ShadowBaselineEntry] = Field(min_length=2, max_length=_MAX_LINEAGE)
     owner_signature_required_for_advance: Literal[True] = True
+    historical_signatures_verified: Literal[True] = True
     manual_review_required: Literal[True] = True
     automatic_baseline_selection_allowed: Literal[False] = False
     automatic_promotion_allowed: Literal[False] = False
@@ -139,9 +143,7 @@ def build_shadow_baseline_proposal(
         previous_digest = _EMPTY_DIGEST
         previous_head = None
     else:
-        verify_shadow_baseline_lineage(lineage)
-        if lineage.owner_key_fingerprint != fingerprint:
-            raise ShadowBaselineBlocked("owner key does not match existing baseline lineage")
+        verify_shadow_baseline_lineage(lineage, owner_public_key)
         if lineage.replay_sha256 != report.replay_sha256:
             raise ShadowBaselineBlocked("baseline lineage uses a different sealed replay")
         if lineage.head_candidate_id != report.baseline_candidate_id:
@@ -155,30 +157,19 @@ def build_shadow_baseline_proposal(
         previous_digest = lineage.lineage_digest
         previous_head = lineage.head_candidate_id
 
-    payload = {
-        "schema_version": "sentinel.shadow-baseline-proposal.v1",
-        "state": "awaiting_owner_signature",
-        "authority": "explanation_only",
-        "baseline_candidate_id": report.baseline_candidate_id,
-        "candidate_id": report.candidate_id,
-        "replay_sha256": report.replay_sha256,
-        "regression_report_digest": report.report_digest,
-        "baseline_scorecard_digest": report.baseline_scorecard_digest,
-        "baseline_receipt_digest": report.baseline_receipt_digest,
-        "candidate_scorecard_digest": report.candidate_scorecard_digest,
-        "candidate_receipt_digest": report.candidate_receipt_digest,
-        "previous_lineage_digest": previous_digest,
-        "previous_head_candidate_id": previous_head,
-        "owner_key_fingerprint": fingerprint,
-        "owner_signature_required": True,
-        "manual_review_required": True,
-        "automatic_baseline_selection_allowed": False,
-        "automatic_promotion_allowed": False,
-        "automatic_deployment_allowed": False,
-        "production_deployment_allowed": False,
-        "web3_runtime_integration_allowed": False,
-        "verdict_mutation_allowed": False,
-    }
+    payload = _proposal_payload(
+        baseline_candidate_id=report.baseline_candidate_id,
+        candidate_id=report.candidate_id,
+        replay_sha256=report.replay_sha256,
+        regression_report_digest=report.report_digest,
+        baseline_scorecard_digest=report.baseline_scorecard_digest,
+        baseline_receipt_digest=report.baseline_receipt_digest,
+        candidate_scorecard_digest=report.candidate_scorecard_digest,
+        candidate_receipt_digest=report.candidate_receipt_digest,
+        previous_lineage_digest=previous_digest,
+        previous_head_candidate_id=previous_head,
+        owner_key_fingerprint=fingerprint,
+    )
     return ShadowBaselineProposal.model_validate(
         {**payload, "proposal_digest": _digest(payload)}
     )
@@ -195,22 +186,13 @@ def approve_shadow_baseline_proposal(
     if fingerprint != proposal.owner_key_fingerprint:
         raise ShadowBaselineBlocked("private key does not match baseline proposal owner key")
     signature = owner_private_key.sign(_signature_message(proposal.proposal_digest))
-    payload = {
-        "schema_version": "sentinel.shadow-baseline-approval.v1",
-        "state": "owner_approved_baseline_advance",
-        "authority": "explanation_only",
-        "candidate_id": proposal.candidate_id,
-        "approver_id": approver_id,
-        "owner_key_fingerprint": fingerprint,
-        "proposal_digest": proposal.proposal_digest,
-        "signature_algorithm": "ed25519",
-        "signature_base64": base64.b64encode(signature).decode("ascii"),
-        "signature_verified": True,
-        "automatic_baseline_selection_allowed": False,
-        "automatic_promotion_allowed": False,
-        "production_deployment_allowed": False,
-        "web3_runtime_integration_allowed": False,
-    }
+    payload = _approval_payload(
+        candidate_id=proposal.candidate_id,
+        approver_id=approver_id,
+        owner_key_fingerprint=fingerprint,
+        proposal_digest=proposal.proposal_digest,
+        signature_base64=base64.b64encode(signature).decode("ascii"),
+    )
     return ShadowBaselineApproval.model_validate(
         {**payload, "approval_digest": _digest(payload)}
     )
@@ -232,11 +214,7 @@ def verify_shadow_baseline_approval(
         raise ShadowBaselineBlocked("approval candidate does not match proposal")
     if approval.proposal_digest != proposal.proposal_digest:
         raise ShadowBaselineBlocked("approval does not bind supplied baseline proposal")
-    try:
-        signature = base64.b64decode(approval.signature_base64, validate=True)
-        owner_public_key.verify(signature, _signature_message(proposal.proposal_digest))
-    except (InvalidSignature, ValueError) as exc:
-        raise ShadowBaselineBlocked("baseline owner signature verification failed") from exc
+    _verify_signature(owner_public_key, proposal.proposal_digest, approval.signature_base64)
     return approval
 
 
@@ -265,6 +243,7 @@ def apply_shadow_baseline_advance(
         raise ShadowBaselineBlocked("baseline proposal does not match supplied verified evidence")
     verify_shadow_baseline_approval(proposal, approval, owner_public_key)
 
+    advance = _advance_entry(proposal, approval)
     if lineage is None:
         entries = [
             ShadowBaselineEntry(
@@ -275,70 +254,37 @@ def apply_shadow_baseline_advance(
                 scorecard_digest=report.baseline_scorecard_digest,
                 receipt_digest=report.baseline_receipt_digest,
                 replay_sha256=report.replay_sha256,
-                regression_report_digest=report.report_digest,
-                owner_approval_digest=approval.approval_digest,
+                regression_report_digest=_EMPTY_DIGEST,
             ),
-            ShadowBaselineEntry(
-                ordinal=1,
-                kind="advance",
-                candidate_id=report.candidate_id,
-                parent_candidate_id=report.baseline_candidate_id,
-                scorecard_digest=report.candidate_scorecard_digest,
-                receipt_digest=report.candidate_receipt_digest,
-                replay_sha256=report.replay_sha256,
-                regression_report_digest=report.report_digest,
-                owner_approval_digest=approval.approval_digest,
-            ),
+            advance,
         ]
     else:
-        verify_shadow_baseline_lineage(lineage)
+        verify_shadow_baseline_lineage(lineage, owner_public_key)
         entries = [
             *lineage.entries,
-            ShadowBaselineEntry(
-                ordinal=len(lineage.entries),
-                kind="advance",
-                candidate_id=report.candidate_id,
-                parent_candidate_id=lineage.head_candidate_id,
-                scorecard_digest=report.candidate_scorecard_digest,
-                receipt_digest=report.candidate_receipt_digest,
-                replay_sha256=report.replay_sha256,
-                regression_report_digest=report.report_digest,
-                owner_approval_digest=approval.approval_digest,
-            ),
+            advance.model_copy(update={"ordinal": len(lineage.entries)}),
         ]
     if len(entries) > _MAX_LINEAGE:
         raise ShadowBaselineBlocked("baseline lineage exceeds its entry limit")
 
-    payload = {
-        "schema_version": "sentinel.shadow-baseline-lineage.v1",
-        "state": "owner_curated_shadow_baseline_lineage",
-        "authority": "explanation_only",
-        "owner_key_fingerprint": proposal.owner_key_fingerprint,
-        "replay_sha256": report.replay_sha256,
-        "head_candidate_id": report.candidate_id,
-        "head_scorecard_digest": report.candidate_scorecard_digest,
-        "head_receipt_digest": report.candidate_receipt_digest,
-        "entries": [entry.model_dump(mode="json") for entry in entries],
-        "owner_signature_required_for_advance": True,
-        "manual_review_required": True,
-        "automatic_baseline_selection_allowed": False,
-        "automatic_promotion_allowed": False,
-        "automatic_deployment_allowed": False,
-        "production_deployment_allowed": False,
-        "web3_runtime_integration_allowed": False,
-        "verdict_mutation_allowed": False,
-    }
-    result = ShadowBaselineLineage.model_validate(
-        {**payload, "lineage_digest": _digest(payload)}
+    result = _make_lineage(
+        owner_key_fingerprint=proposal.owner_key_fingerprint,
+        replay_sha256=report.replay_sha256,
+        entries=entries,
     )
-    verify_shadow_baseline_lineage(result)
+    verify_shadow_baseline_lineage(result, owner_public_key)
     return result
 
 
-def verify_shadow_baseline_lineage(lineage: ShadowBaselineLineage) -> ShadowBaselineLineage:
+def verify_shadow_baseline_lineage(
+    lineage: ShadowBaselineLineage,
+    owner_public_key: Ed25519PublicKey,
+) -> ShadowBaselineLineage:
     _require_model_digest(lineage, "lineage_digest", "baseline lineage")
-    if not lineage.entries:
-        raise ShadowBaselineBlocked("baseline lineage must not be empty")
+    fingerprint = public_key_fingerprint(owner_public_key)
+    if lineage.owner_key_fingerprint != fingerprint:
+        raise ShadowBaselineBlocked("public key does not match baseline lineage owner")
+
     seen: set[str] = set()
     previous: ShadowBaselineEntry | None = None
     for ordinal, entry in enumerate(lineage.entries):
@@ -350,14 +296,19 @@ def verify_shadow_baseline_lineage(lineage: ShadowBaselineLineage) -> ShadowBase
             raise ShadowBaselineBlocked("baseline lineage contains a candidate cycle")
         seen.add(entry.candidate_id)
         if ordinal == 0:
-            if entry.kind != "seed" or entry.parent_candidate_id is not None:
-                raise ShadowBaselineBlocked("baseline lineage root is invalid")
+            _verify_seed_entry(entry)
         else:
-            if entry.kind != "advance" or previous is None:
-                raise ShadowBaselineBlocked("baseline lineage advance entry is invalid")
-            if entry.parent_candidate_id != previous.candidate_id:
-                raise ShadowBaselineBlocked("baseline lineage parent chain is broken")
+            if previous is None:
+                raise ShadowBaselineBlocked("baseline lineage advance has no parent")
+            _verify_advance_entry(
+                lineage,
+                entry,
+                previous,
+                owner_public_key,
+                prefix_entries=lineage.entries[:ordinal],
+            )
         previous = entry
+
     head = lineage.entries[-1]
     if lineage.head_candidate_id != head.candidate_id:
         raise ShadowBaselineBlocked("baseline lineage head candidate is inconsistent")
@@ -382,7 +333,8 @@ def load_shadow_baseline_approval(path: str | Path) -> ShadowBaselineApproval:
 
 def load_shadow_baseline_lineage(path: str | Path) -> ShadowBaselineLineage:
     lineage = _load_model(path, ShadowBaselineLineage, "baseline lineage")
-    return verify_shadow_baseline_lineage(lineage)
+    _require_model_digest(lineage, "lineage_digest", "baseline lineage")
+    return lineage
 
 
 def write_shadow_baseline_artifact(model: StrictModel, path: str | Path) -> None:
@@ -454,6 +406,207 @@ def _verify_evidence_bundle(
         raise ShadowBaselineBlocked("candidate receipt uses a different sealed replay")
 
 
+def _verify_seed_entry(entry: ShadowBaselineEntry) -> None:
+    if entry.kind != "seed" or entry.parent_candidate_id is not None:
+        raise ShadowBaselineBlocked("baseline lineage root is invalid")
+    if entry.regression_report_digest != _EMPTY_DIGEST:
+        raise ShadowBaselineBlocked("baseline lineage seed must not claim a regression")
+    if any(
+        value is not None
+        for value in (
+            entry.proposal_digest,
+            entry.approver_id,
+            entry.owner_signature_base64,
+            entry.owner_approval_digest,
+        )
+    ):
+        raise ShadowBaselineBlocked("baseline lineage seed must not claim owner approval")
+
+
+def _verify_advance_entry(
+    lineage: ShadowBaselineLineage,
+    entry: ShadowBaselineEntry,
+    previous: ShadowBaselineEntry,
+    owner_public_key: Ed25519PublicKey,
+    *,
+    prefix_entries: list[ShadowBaselineEntry],
+) -> None:
+    if entry.kind != "advance" or entry.parent_candidate_id != previous.candidate_id:
+        raise ShadowBaselineBlocked("baseline lineage parent chain is broken")
+    if None in (
+        entry.proposal_digest,
+        entry.approver_id,
+        entry.owner_signature_base64,
+        entry.owner_approval_digest,
+    ):
+        raise ShadowBaselineBlocked("baseline lineage advance lacks owner approval evidence")
+
+    if entry.ordinal == 1:
+        previous_digest = _EMPTY_DIGEST
+        previous_head: str | None = None
+    else:
+        previous_snapshot = _make_lineage(
+            owner_key_fingerprint=lineage.owner_key_fingerprint,
+            replay_sha256=lineage.replay_sha256,
+            entries=prefix_entries,
+        )
+        previous_digest = previous_snapshot.lineage_digest
+        previous_head = previous.candidate_id
+
+    proposal_payload = _proposal_payload(
+        baseline_candidate_id=previous.candidate_id,
+        candidate_id=entry.candidate_id,
+        replay_sha256=lineage.replay_sha256,
+        regression_report_digest=entry.regression_report_digest,
+        baseline_scorecard_digest=previous.scorecard_digest,
+        baseline_receipt_digest=previous.receipt_digest,
+        candidate_scorecard_digest=entry.scorecard_digest,
+        candidate_receipt_digest=entry.receipt_digest,
+        previous_lineage_digest=previous_digest,
+        previous_head_candidate_id=previous_head,
+        owner_key_fingerprint=lineage.owner_key_fingerprint,
+    )
+    expected_proposal = _digest(proposal_payload)
+    if entry.proposal_digest != expected_proposal:
+        raise ShadowBaselineBlocked("baseline lineage proposal digest is inconsistent")
+
+    signature = entry.owner_signature_base64
+    approver = entry.approver_id
+    approval_digest = entry.owner_approval_digest
+    if not isinstance(signature, str) or not isinstance(approver, str):
+        raise ShadowBaselineBlocked("baseline lineage owner approval is malformed")
+    approval_payload = _approval_payload(
+        candidate_id=entry.candidate_id,
+        approver_id=approver,
+        owner_key_fingerprint=lineage.owner_key_fingerprint,
+        proposal_digest=expected_proposal,
+        signature_base64=signature,
+    )
+    if approval_digest != _digest(approval_payload):
+        raise ShadowBaselineBlocked("baseline lineage approval digest is inconsistent")
+    _verify_signature(owner_public_key, expected_proposal, signature)
+
+
+def _advance_entry(
+    proposal: ShadowBaselineProposal,
+    approval: ShadowBaselineApproval,
+) -> ShadowBaselineEntry:
+    return ShadowBaselineEntry(
+        ordinal=1,
+        kind="advance",
+        candidate_id=proposal.candidate_id,
+        parent_candidate_id=proposal.baseline_candidate_id,
+        scorecard_digest=proposal.candidate_scorecard_digest,
+        receipt_digest=proposal.candidate_receipt_digest,
+        replay_sha256=proposal.replay_sha256,
+        regression_report_digest=proposal.regression_report_digest,
+        proposal_digest=proposal.proposal_digest,
+        approver_id=approval.approver_id,
+        owner_signature_base64=approval.signature_base64,
+        owner_approval_digest=approval.approval_digest,
+    )
+
+
+def _make_lineage(
+    *,
+    owner_key_fingerprint: str,
+    replay_sha256: str,
+    entries: list[ShadowBaselineEntry],
+) -> ShadowBaselineLineage:
+    if len(entries) < 2:
+        raise ShadowBaselineBlocked("baseline lineage needs a seed and an approved advance")
+    head = entries[-1]
+    payload = {
+        "schema_version": "sentinel.shadow-baseline-lineage.v1",
+        "state": "owner_curated_shadow_baseline_lineage",
+        "authority": "explanation_only",
+        "owner_key_fingerprint": owner_key_fingerprint,
+        "replay_sha256": replay_sha256,
+        "head_candidate_id": head.candidate_id,
+        "head_scorecard_digest": head.scorecard_digest,
+        "head_receipt_digest": head.receipt_digest,
+        "entries": [entry.model_dump(mode="json") for entry in entries],
+        "owner_signature_required_for_advance": True,
+        "historical_signatures_verified": True,
+        "manual_review_required": True,
+        "automatic_baseline_selection_allowed": False,
+        "automatic_promotion_allowed": False,
+        "automatic_deployment_allowed": False,
+        "production_deployment_allowed": False,
+        "web3_runtime_integration_allowed": False,
+        "verdict_mutation_allowed": False,
+    }
+    return ShadowBaselineLineage.model_validate(
+        {**payload, "lineage_digest": _digest(payload)}
+    )
+
+
+def _proposal_payload(
+    *,
+    baseline_candidate_id: str,
+    candidate_id: str,
+    replay_sha256: str,
+    regression_report_digest: str,
+    baseline_scorecard_digest: str,
+    baseline_receipt_digest: str,
+    candidate_scorecard_digest: str,
+    candidate_receipt_digest: str,
+    previous_lineage_digest: str,
+    previous_head_candidate_id: str | None,
+    owner_key_fingerprint: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": "sentinel.shadow-baseline-proposal.v1",
+        "state": "awaiting_owner_signature",
+        "authority": "explanation_only",
+        "baseline_candidate_id": baseline_candidate_id,
+        "candidate_id": candidate_id,
+        "replay_sha256": replay_sha256,
+        "regression_report_digest": regression_report_digest,
+        "baseline_scorecard_digest": baseline_scorecard_digest,
+        "baseline_receipt_digest": baseline_receipt_digest,
+        "candidate_scorecard_digest": candidate_scorecard_digest,
+        "candidate_receipt_digest": candidate_receipt_digest,
+        "previous_lineage_digest": previous_lineage_digest,
+        "previous_head_candidate_id": previous_head_candidate_id,
+        "owner_key_fingerprint": owner_key_fingerprint,
+        "owner_signature_required": True,
+        "manual_review_required": True,
+        "automatic_baseline_selection_allowed": False,
+        "automatic_promotion_allowed": False,
+        "automatic_deployment_allowed": False,
+        "production_deployment_allowed": False,
+        "web3_runtime_integration_allowed": False,
+        "verdict_mutation_allowed": False,
+    }
+
+
+def _approval_payload(
+    *,
+    candidate_id: str,
+    approver_id: str,
+    owner_key_fingerprint: str,
+    proposal_digest: str,
+    signature_base64: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": "sentinel.shadow-baseline-approval.v1",
+        "state": "owner_approved_baseline_advance",
+        "authority": "explanation_only",
+        "candidate_id": candidate_id,
+        "approver_id": approver_id,
+        "owner_key_fingerprint": owner_key_fingerprint,
+        "proposal_digest": proposal_digest,
+        "signature_algorithm": "ed25519",
+        "signature_base64": signature_base64,
+        "signature_verified": True,
+        "automatic_baseline_selection_allowed": False,
+        "automatic_promotion_allowed": False,
+        "production_deployment_allowed": False,
+        "web3_runtime_integration_allowed": False,
+    }
+
+
 def _load_model(path: str | Path, model_type: type[StrictModel], label: str) -> StrictModel:
     try:
         return model_type.model_validate_json(Path(path).read_text(encoding="utf-8"))
@@ -466,6 +619,18 @@ def _require_model_digest(model: StrictModel, field: str, label: str) -> None:
     claimed = payload.pop(field)
     if claimed != _digest(payload):
         raise ShadowBaselineBlocked(f"{label} digest does not match contents")
+
+
+def _verify_signature(
+    owner_public_key: Ed25519PublicKey,
+    proposal_digest: str,
+    signature_base64: str,
+) -> None:
+    try:
+        signature = base64.b64decode(signature_base64, validate=True)
+        owner_public_key.verify(signature, _signature_message(proposal_digest))
+    except (InvalidSignature, ValueError) as exc:
+        raise ShadowBaselineBlocked("baseline owner signature verification failed") from exc
 
 
 def _signature_message(proposal_digest: str) -> bytes:
