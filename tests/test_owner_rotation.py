@@ -176,6 +176,18 @@ def test_dual_signed_rotation_checkpoint_is_non_activating() -> None:
     assert verified.production_deployment_allowed is False
 
 
+def test_lineage_rejection_is_translated_to_rotation_block() -> None:
+    owner = Ed25519PrivateKey.generate()
+    successor = Ed25519PrivateKey.generate()
+    lineage = _lineage(owner)
+    with pytest.raises(OwnerRotationBlocked, match="baseline lineage verification failed"):
+        build_owner_rotation_proposal(
+            lineage,
+            Ed25519PrivateKey.generate().public_key(),
+            successor.public_key(),
+        )
+
+
 def test_wrong_next_key_and_same_key_rotation_fail_closed() -> None:
     owner = Ed25519PrivateKey.generate()
     successor = Ed25519PrivateKey.generate()
@@ -223,13 +235,60 @@ def test_approver_identity_tamper_breaks_current_owner_signature() -> None:
         )
 
 
+def test_claim_verifies_checkpoint_before_writing(tmp_path) -> None:
+    owner = Ed25519PrivateKey.generate()
+    successor = Ed25519PrivateKey.generate()
+    lineage, checkpoint = _checkpoint(owner, successor)
+    payload = checkpoint.model_dump(mode="json")
+    payload["current_approver_id"] = "attacker@koschei"
+    forged_approval_payload = {
+        "schema_version": "sentinel.owner-key-rotation-current-approval.v1",
+        "state": "current_owner_signed_handoff",
+        "authority": "governance_evidence_only",
+        "approver_id": payload["current_approver_id"],
+        "current_owner_key_fingerprint": payload["current_owner_key_fingerprint"],
+        "next_owner_key_fingerprint": payload["next_owner_key_fingerprint"],
+        "proposal_digest": payload["proposal_digest"],
+        "signature_algorithm": "ed25519",
+        "signature_base64": payload["current_owner_signature_base64"],
+        "signature_verified": True,
+        "automatic_key_activation_allowed": False,
+        "production_deployment_allowed": False,
+    }
+    payload["current_approval_digest"] = _digest(forged_approval_payload)
+    payload.pop("checkpoint_digest")
+    tampered = checkpoint.model_validate({**payload, "checkpoint_digest": _digest(payload)})
+
+    with pytest.raises(OwnerRotationBlocked, match="current owner rotation signature"):
+        claim_owner_rotation(
+            tampered,
+            lineage,
+            owner.public_key(),
+            successor.public_key(),
+            tmp_path,
+        )
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_canonical_claim_rejects_two_successors_for_same_lineage(tmp_path) -> None:
     owner = Ed25519PrivateKey.generate()
     first = Ed25519PrivateKey.generate()
     second = Ed25519PrivateKey.generate()
     lineage, first_checkpoint = _checkpoint(owner, first)
-    claim_owner_rotation(first_checkpoint, tmp_path)
-    claim_owner_rotation(first_checkpoint, tmp_path)
+    claim_owner_rotation(
+        first_checkpoint,
+        lineage,
+        owner.public_key(),
+        first.public_key(),
+        tmp_path,
+    )
+    claim_owner_rotation(
+        first_checkpoint,
+        lineage,
+        owner.public_key(),
+        first.public_key(),
+        tmp_path,
+    )
 
     proposal = build_owner_rotation_proposal(lineage, owner.public_key(), second.public_key())
     approval = approve_owner_rotation_proposal(proposal, owner, approver_id="owner@koschei")
@@ -249,4 +308,10 @@ def test_canonical_claim_rejects_two_successors_for_same_lineage(tmp_path) -> No
         second.public_key(),
     )
     with pytest.raises(OwnerRotationBlocked, match="different owner rotation claim"):
-        claim_owner_rotation(second_checkpoint, tmp_path)
+        claim_owner_rotation(
+            second_checkpoint,
+            lineage,
+            owner.public_key(),
+            second.public_key(),
+            tmp_path,
+        )
