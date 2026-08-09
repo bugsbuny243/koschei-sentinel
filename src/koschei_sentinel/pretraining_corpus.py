@@ -296,11 +296,15 @@ def _is_digest(value: str) -> bool:
 
 def _is_pseudonym(value: str) -> bool:
     prefix, separator, digest = value.rpartition("_")
+    prefix_is_valid = all(
+        character.islower() or character.isdigit() or character == "_"
+        for character in prefix
+    )
     return bool(
         separator
         and prefix
         and prefix[0].isalpha()
-        and all(character.islower() or character.isdigit() or character == "_" for character in prefix)
+        and prefix_is_valid
         and len(digest) == 24
         and all(character in "0123456789abcdef" for character in digest)
     )
