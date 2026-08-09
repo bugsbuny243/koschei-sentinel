@@ -12,9 +12,11 @@ from pydantic import Field
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.promotion import (
     PromotionApproval,
+    PromotionPolicy,
     PromotionProposal,
     load_owner_public_key,
     load_promotion_approval,
+    load_promotion_policy,
     load_promotion_proposal,
     verify_promotion_approval,
 )
@@ -39,6 +41,7 @@ class ShadowReplayPlan(StrictModel):
     authority: Literal["explanation_only"] = "explanation_only"
     proposal_digest: str = Field(pattern=_DIGEST)
     approval_digest: str = Field(pattern=_DIGEST)
+    promotion_policy_digest: str = Field(pattern=_DIGEST)
     finalization_digest: str = Field(pattern=_DIGEST)
     adapter_digest: str = Field(pattern=_DIGEST)
     benchmark_suite_digest: str = Field(pattern=_DIGEST)
@@ -64,6 +67,7 @@ class ShadowReplayPlan(StrictModel):
 def build_shadow_replay_plan(
     proposal: PromotionProposal,
     approval: PromotionApproval,
+    policy: PromotionPolicy,
     *,
     owner_public_key_path: str | Path,
     replay_path: str | Path,
@@ -71,7 +75,7 @@ def build_shadow_replay_plan(
     root: str | Path = ".",
 ) -> ShadowReplayPlan:
     owner_public_key = load_owner_public_key(owner_public_key_path)
-    verify_promotion_approval(proposal, approval, owner_public_key)
+    verify_promotion_approval(proposal, approval, owner_public_key, policy)
 
     if proposal.requested_stage != "shadow_research_candidate":
         raise ShadowReplayBlocked("proposal does not authorize shadow research")
@@ -98,6 +102,7 @@ def build_shadow_replay_plan(
         "authority": "explanation_only",
         "proposal_digest": proposal.proposal_digest,
         "approval_digest": approval.approval_digest,
+        "promotion_policy_digest": proposal.promotion_policy_digest,
         "finalization_digest": proposal.finalization_digest,
         "adapter_digest": proposal.adapter_digest,
         "benchmark_suite_digest": proposal.benchmark_suite_digest,
@@ -238,6 +243,7 @@ __all__ = [
     "ShadowReplayPlan",
     "build_shadow_replay_plan",
     "load_promotion_approval",
+    "load_promotion_policy",
     "load_promotion_proposal",
     "load_shadow_replay_plan",
     "write_shadow_replay_plan",
