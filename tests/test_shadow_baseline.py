@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.shadow_baseline import (
     ShadowBaselineBlocked,
+    ShadowBaselineLineage,
     apply_shadow_baseline_advance,
     approve_shadow_baseline_proposal,
     build_shadow_baseline_proposal,
@@ -136,6 +137,8 @@ def test_owner_signed_lineage_seeds_and_advances_without_automatic_selection() -
     )
     assert [entry.candidate_id for entry in lineage.entries] == ["candidate-a", "candidate-b"]
     assert lineage.entries[0].kind == "seed"
+    assert lineage.entries[1].owner_signature_base64 == approval_ab.signature_base64
+    assert lineage.historical_signatures_verified is True
     assert lineage.head_candidate_id == "candidate-b"
     assert lineage.automatic_baseline_selection_allowed is False
     assert lineage.production_deployment_allowed is False
@@ -175,7 +178,7 @@ def test_owner_signed_lineage_seeds_and_advances_without_automatic_selection() -
     ]
     assert advanced.entries[-1].parent_candidate_id == "candidate-b"
     assert advanced.head_candidate_id == "candidate-c"
-    verify_shadow_baseline_lineage(advanced)
+    verify_shadow_baseline_lineage(advanced, public_key)
 
 
 def test_failed_regression_cannot_become_baseline_proposal() -> None:
@@ -267,8 +270,58 @@ def test_tampered_lineage_and_wrong_owner_key_fail_closed() -> None:
 
     tampered = lineage.model_copy(update={"head_candidate_id": "candidate-x"})
     with pytest.raises(ShadowBaselineBlocked, match="digest"):
-        verify_shadow_baseline_lineage(tampered)
+        verify_shadow_baseline_lineage(tampered, public_key)
 
     wrong_key = Ed25519PrivateKey.generate().public_key()
     with pytest.raises(ShadowBaselineBlocked, match="public key"):
         verify_shadow_baseline_approval(proposal, approval, wrong_key)
+    with pytest.raises(ShadowBaselineBlocked, match="public key"):
+        verify_shadow_baseline_lineage(lineage, wrong_key)
+
+
+def test_forged_historical_signature_fails_even_with_recomputed_lineage_digest() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    receipt_a = _receipt("candidate-a", "1" * 64)
+    receipt_b = _receipt("candidate-b", "2" * 64)
+    report, score_a, score_b = _passing_report(receipt_a, receipt_b)
+    proposal = build_shadow_baseline_proposal(
+        report, score_a, receipt_a, score_b, receipt_b, public_key
+    )
+    approval = approve_shadow_baseline_proposal(proposal, private_key, approver_id="owner")
+    lineage = apply_shadow_baseline_advance(
+        proposal,
+        approval,
+        report,
+        score_a,
+        receipt_a,
+        score_b,
+        receipt_b,
+        public_key,
+    )
+
+    payload = lineage.model_dump(mode="json")
+    payload.pop("lineage_digest")
+    payload["entries"][1]["owner_signature_base64"] = "A" * 88
+    approval_payload = {
+        "schema_version": "sentinel.shadow-baseline-approval.v1",
+        "state": "owner_approved_baseline_advance",
+        "authority": "explanation_only",
+        "candidate_id": payload["entries"][1]["candidate_id"],
+        "approver_id": payload["entries"][1]["approver_id"],
+        "owner_key_fingerprint": payload["owner_key_fingerprint"],
+        "proposal_digest": payload["entries"][1]["proposal_digest"],
+        "signature_algorithm": "ed25519",
+        "signature_base64": "A" * 88,
+        "signature_verified": True,
+        "automatic_baseline_selection_allowed": False,
+        "automatic_promotion_allowed": False,
+        "production_deployment_allowed": False,
+        "web3_runtime_integration_allowed": False,
+    }
+    payload["entries"][1]["owner_approval_digest"] = _digest(approval_payload)
+    forged = ShadowBaselineLineage.model_validate(
+        {**payload, "lineage_digest": _digest(payload)}
+    )
+    with pytest.raises(ShadowBaselineBlocked, match="signature verification"):
+        verify_shadow_baseline_lineage(forged, public_key)
