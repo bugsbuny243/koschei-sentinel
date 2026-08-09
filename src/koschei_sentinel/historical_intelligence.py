@@ -176,7 +176,7 @@ class HistoricalIntelligenceBundle(StrictModel):
                 raise ValueError(f"multiple current verdicts for case {case_ref}")
             if current and current[0].revision != ordered[-1].revision:
                 raise ValueError(f"current verdict is not latest for case {case_ref}")
-            for previous, item in zip(ordered, ordered[1:], strict=True):
+            for previous, item in zip(ordered[:-1], ordered[1:], strict=True):
                 if item.supersedes_signature != previous.verdict_signature:
                     raise ValueError(
                         f"verdict supersession chain is broken for case {case_ref}"
