@@ -93,15 +93,24 @@ def main(argv: list[str] | None = None) -> int:
             write_owner_rotation_artifact(artifact, args.output)
             result = artifact.model_dump(mode="json")
         elif args.command == "checkpoint":
+            lineage = load_shadow_baseline_lineage(args.lineage)
+            current_key = load_owner_public_key(args.current_owner_public_key)
+            next_key = load_owner_public_key(args.next_owner_public_key)
             artifact = build_owner_rotation_checkpoint(
                 load_owner_rotation_proposal(args.proposal),
                 load_current_owner_rotation_approval(args.current_approval),
                 load_next_owner_rotation_acceptance(args.next_acceptance),
-                load_shadow_baseline_lineage(args.lineage),
-                load_owner_public_key(args.current_owner_public_key),
-                load_owner_public_key(args.next_owner_public_key),
+                lineage,
+                current_key,
+                next_key,
             )
-            claim_path = claim_owner_rotation(artifact, args.claim_dir)
+            claim_path = claim_owner_rotation(
+                artifact,
+                lineage,
+                current_key,
+                next_key,
+                args.claim_dir,
+            )
             write_owner_rotation_artifact(artifact, args.output)
             result = artifact.model_dump(mode="json")
             result["rotation_claim_path"] = str(claim_path)
