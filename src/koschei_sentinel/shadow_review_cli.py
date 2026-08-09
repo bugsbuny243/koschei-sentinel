@@ -6,7 +6,6 @@ import sys
 
 from koschei_sentinel.shadow_receipt import load_shadow_replay_receipt
 from koschei_sentinel.shadow_review import (
-    ShadowReviewBlocked,
     ShadowReviewThresholds,
     build_shadow_review_scorecard,
     write_shadow_review_scorecard,
@@ -49,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         write_shadow_review_scorecard(scorecard, args.output)
-    except (OSError, ValueError, ShadowReviewBlocked) as exc:
+    except (OSError, ValueError) as exc:
         print(f"shadow review rejected: {exc}", file=sys.stderr)
         return 2
 
