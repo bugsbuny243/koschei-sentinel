@@ -50,8 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--lineage")
     apply.add_argument("--output", required=True)
 
-    verify = commands.add_parser("verify", help="Verify a baseline lineage digest and chain")
+    verify = commands.add_parser(
+        "verify",
+        help="Verify lineage digest, parent chain, proposal digests, and all owner signatures",
+    )
     verify.add_argument("--lineage", required=True)
+    verify.add_argument("--owner-public-key", required=True)
     verify.add_argument("--json", action="store_true")
     return parser
 
@@ -87,7 +91,8 @@ def main(argv: list[str] | None = None) -> int:
             result = artifact.model_dump(mode="json")
         else:
             artifact = verify_shadow_baseline_lineage(
-                load_shadow_baseline_lineage(args.lineage)
+                load_shadow_baseline_lineage(args.lineage),
+                load_owner_public_key(args.owner_public_key),
             )
             result = {
                 "ok": True,
@@ -95,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
                 "entries": len(artifact.entries),
                 "replay_sha256": artifact.replay_sha256,
                 "lineage_digest": artifact.lineage_digest,
+                "historical_signatures_verified": True,
                 "automatic_baseline_selection_allowed": False,
                 "production_deployment_allowed": False,
                 "web3_runtime_integration_allowed": False,
