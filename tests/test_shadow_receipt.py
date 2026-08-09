@@ -41,6 +41,7 @@ def _plan(tmp_path: Path) -> ShadowReplayPlan:
         "authority": "explanation_only",
         "proposal_digest": "1" * 64,
         "approval_digest": "2" * 64,
+        "promotion_policy_digest": "0" * 64,
         "finalization_digest": "3" * 64,
         "adapter_digest": "4" * 64,
         "benchmark_suite_digest": "5" * 64,
