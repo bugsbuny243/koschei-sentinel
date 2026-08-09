@@ -4,7 +4,7 @@ Koschei Sentinel's first new specialization is the Koschei programming language 
 
 ## Input trust boundary
 
-The only accepted v1 source is a verified `koschei.language-foundation-corpus.v1` artifact exported by `bugsbuny243/koschei-lang`.
+The only accepted v1 source is a verified `koschei.language-foundation-corpus.v1` artifact exported by `bugsbuny243/koschei-lang` from a clean, exact Git checkout.
 
 The importer verifies:
 
@@ -16,7 +16,12 @@ The importer verifies:
 - the family derived from the repository path;
 - the complete canonical corpus SHA-256.
 
-A caller may additionally require `--expect-source-commit`; a corpus from any other commit is rejected.
+Self-declared hashes are not treated as authentication. Release creation additionally requires two trusted values obtained from the authoritative language export ceremony:
+
+- `--expect-source-commit`;
+- `--expect-source-corpus-sha256`.
+
+A corpus whose commit or canonical digest differs from either trusted pin is rejected even if an altered artifact is internally re-hashed consistently.
 
 ## Leakage-safe release
 
@@ -26,7 +31,8 @@ Build a release with:
 sentinel-language-foundation build \
   --corpus build/koschei-language-foundation.json \
   --output build/language-foundation-v1 \
-  --expect-source-commit <exact-koschei-lang-commit>
+  --expect-source-commit <exact-koschei-lang-commit> \
+  --expect-source-corpus-sha256 <trusted-corpus-sha256>
 ```
 
 The builder emits:
@@ -38,11 +44,11 @@ test.jsonl
 language-foundation-manifest.json
 ```
 
-Splitting is deterministic from the configured seed and happens at the `family` level, never per file. A multi-file Koschei program therefore cannot be divided across train and test.
+Splitting is deterministic from the configured seed and happens at the `family` level, never per file. Multi-file examples under one example directory stay together, all top-level `.ks` examples stay together, and translated reference documents share one family. This prevents sibling modules or translated near-duplicates from crossing train/evaluation boundaries.
 
-Each split is SHA-256 bound in the manifest. `sentinel-language-foundation verify <release>` re-hashes every split, re-validates every document and fails if a family appears in more than one split.
+Each split is SHA-256 bound in the manifest. `sentinel-language-foundation verify <release>` re-hashes every split, rejects ambiguous duplicate JSON members, re-validates every document, reconstructs the original canonical source-corpus digest, replays the seed-derived family assignment, and fails if a family appears in more than one split.
 
-The output directory is no-replace.
+Release publication never replaces an existing destination. The destination directory is reserved with an atomic create and every staged file is linked with no-replace semantics.
 
 ## What this does not do yet
 
