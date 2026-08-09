@@ -74,7 +74,10 @@ class ShadowRegressionHistory(StrictModel):
     schema_version: Literal["sentinel.shadow-regression-history.v1"] = (
         "sentinel.shadow-regression-history.v1"
     )
-    entries: list[ShadowRegressionHistoryEntry] = Field(default_factory=list, max_length=_MAX_HISTORY)
+    entries: list[ShadowRegressionHistoryEntry] = Field(
+        default_factory=list,
+        max_length=_MAX_HISTORY,
+    )
     automatic_promotion_allowed: Literal[False] = False
     production_deployment_allowed: Literal[False] = False
     web3_runtime_integration_allowed: Literal[False] = False
@@ -111,11 +114,11 @@ def build_shadow_regression_report(
 
     active = tolerance or ShadowRegressionTolerance()
     deltas = {
-        "case_pass_rate_delta": candidate.case_pass_rate - baseline.case_pass_rate,
-        "authority_score_delta": candidate.authority_score - baseline.authority_score,
-        "grounding_score_delta": candidate.grounding_score - baseline.grounding_score,
-        "abstention_score_delta": candidate.abstention_score - baseline.abstention_score,
-        "privacy_score_delta": candidate.privacy_score - baseline.privacy_score,
+        "case_pass_rate_delta": _stable_delta(candidate.case_pass_rate, baseline.case_pass_rate),
+        "authority_score_delta": _stable_delta(candidate.authority_score, baseline.authority_score),
+        "grounding_score_delta": _stable_delta(candidate.grounding_score, baseline.grounding_score),
+        "abstention_score_delta": _stable_delta(candidate.abstention_score, baseline.abstention_score),
+        "privacy_score_delta": _stable_delta(candidate.privacy_score, baseline.privacy_score),
         "failed_case_delta": candidate.failed_cases - baseline.failed_cases,
         "followup_case_delta": len(candidate.followup_cases) - len(baseline.followup_cases),
     }
@@ -200,7 +203,9 @@ def append_shadow_regression_history(
 
 def load_shadow_regression_report(path: str | Path) -> ShadowRegressionReport:
     try:
-        report = ShadowRegressionReport.model_validate_json(Path(path).read_text(encoding="utf-8"))
+        report = ShadowRegressionReport.model_validate_json(
+            Path(path).read_text(encoding="utf-8")
+        )
     except ValueError as exc:
         raise ValueError("invalid shadow regression report") from exc
     _require_report_digest(report)
@@ -209,7 +214,9 @@ def load_shadow_regression_report(path: str | Path) -> ShadowRegressionReport:
 
 def load_shadow_regression_history(path: str | Path) -> ShadowRegressionHistory:
     try:
-        history = ShadowRegressionHistory.model_validate_json(Path(path).read_text(encoding="utf-8"))
+        history = ShadowRegressionHistory.model_validate_json(
+            Path(path).read_text(encoding="utf-8")
+        )
     except ValueError as exc:
         raise ValueError("invalid shadow regression history") from exc
     _require_history_digest(history)
@@ -284,7 +291,10 @@ def _write_once(payload: object, path: str | Path, label: str) -> None:
         raise FileExistsError(f"{label} already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        dir=destination.parent,
+    )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(serialized)
@@ -297,6 +307,10 @@ def _write_once(payload: object, path: str | Path, label: str) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+def _stable_delta(current: float, baseline: float) -> float:
+    return round(current - baseline, 12)
 
 
 def _digest(value: object) -> str:
