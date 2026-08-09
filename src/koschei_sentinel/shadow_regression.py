@@ -117,7 +117,10 @@ def build_shadow_regression_report(
         "case_pass_rate_delta": _stable_delta(candidate.case_pass_rate, baseline.case_pass_rate),
         "authority_score_delta": _stable_delta(candidate.authority_score, baseline.authority_score),
         "grounding_score_delta": _stable_delta(candidate.grounding_score, baseline.grounding_score),
-        "abstention_score_delta": _stable_delta(candidate.abstention_score, baseline.abstention_score),
+        "abstention_score_delta": _stable_delta(
+            candidate.abstention_score,
+            baseline.abstention_score,
+        ),
         "privacy_score_delta": _stable_delta(candidate.privacy_score, baseline.privacy_score),
         "failed_case_delta": candidate.failed_cases - baseline.failed_cases,
         "followup_case_delta": len(candidate.followup_cases) - len(baseline.followup_cases),
