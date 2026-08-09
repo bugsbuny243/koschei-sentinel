@@ -518,12 +518,12 @@ def _verify_relative_path(value: str) -> None:
 def _publish_directory_no_replace(source: Path, destination: Path) -> None:
     """Atomically publish a complete staged directory without replacing a destination."""
 
-    if source.parent.parent != destination.parent:
-        raise LanguageFoundationBlocked(
-            "staged release and destination must share the same parent filesystem"
-        )
     if not source.is_dir() or source.is_symlink():
         raise LanguageFoundationBlocked("staged release must be a real directory")
+    if os.stat(source).st_dev != os.stat(destination.parent).st_dev:
+        raise LanguageFoundationBlocked(
+            "staged release and destination must share the same filesystem"
+        )
 
     if os.name == "nt":
         try:
@@ -559,7 +559,13 @@ def _renameat2_no_replace(source: Path, destination: Path) -> None:
             "atomic no-replace directory publication requires renameat2"
         ) from exc
 
-    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    ]
     renameat2.restype = ctypes.c_int
     source_bytes = os.fsencode(source)
     destination_bytes = os.fsencode(destination)
