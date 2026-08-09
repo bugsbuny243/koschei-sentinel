@@ -148,7 +148,9 @@ def build_owner_rotation_proposal(
         current_owner_key_fingerprint=current,
         next_owner_key_fingerprint=next_fingerprint,
     )
-    return OwnerRotationProposal.model_validate({**payload, "proposal_digest": _digest(payload)})
+    return OwnerRotationProposal.model_validate(
+        {**payload, "proposal_digest": _digest(payload)}
+    )
 
 
 def approve_owner_rotation_proposal(
@@ -189,7 +191,9 @@ def verify_current_owner_rotation_approval(
     if approval.current_owner_key_fingerprint != proposal.current_owner_key_fingerprint:
         raise OwnerRotationBlocked("current approval owner fingerprint does not match proposal")
     if approval.next_owner_key_fingerprint != proposal.next_owner_key_fingerprint:
-        raise OwnerRotationBlocked("current approval next owner fingerprint does not match proposal")
+        raise OwnerRotationBlocked(
+            "current approval next owner fingerprint does not match proposal"
+        )
     if approval.proposal_digest != proposal.proposal_digest:
         raise OwnerRotationBlocked("current approval does not bind rotation proposal")
     _verify_signature(
@@ -399,7 +403,10 @@ def claim_owner_rotation(checkpoint: OwnerRotationCheckpoint, claim_dir: str | P
     if destination.exists():
         _accept_same_or_reject_rotation_fork(destination, claim)
         return destination
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=root)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        dir=root,
+    )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(serialized)
@@ -452,7 +459,10 @@ def write_owner_rotation_artifact(model: StrictModel, path: str | Path) -> None:
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     serialized = json.dumps(model.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        dir=destination.parent,
+    )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(serialized)
@@ -589,7 +599,12 @@ def _checkpoint_payload(
 
 
 def _current_signature_message(proposal_digest: str, approver_id: str) -> bytes:
-    return _CURRENT_SIGNATURE_CONTEXT + proposal_digest.encode("ascii") + b"\0" + approver_id.encode()
+    return (
+        _CURRENT_SIGNATURE_CONTEXT
+        + proposal_digest.encode("ascii")
+        + b"\0"
+        + approver_id.encode()
+    )
 
 
 def _next_signature_message(
@@ -633,9 +648,14 @@ def _load_model(
     return model
 
 
-def _accept_same_or_reject_rotation_fork(destination: Path, expected: OwnerRotationClaim) -> None:
+def _accept_same_or_reject_rotation_fork(
+    destination: Path,
+    expected: OwnerRotationClaim,
+) -> None:
     try:
-        existing = OwnerRotationClaim.model_validate_json(destination.read_text(encoding="utf-8"))
+        existing = OwnerRotationClaim.model_validate_json(
+            destination.read_text(encoding="utf-8")
+        )
     except ValueError as exc:
         raise OwnerRotationBlocked("existing owner rotation claim is invalid") from exc
     _require_model_digest(existing, "claim_digest", "owner rotation claim")
