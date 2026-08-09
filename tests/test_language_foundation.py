@@ -16,13 +16,13 @@ from koschei_sentinel.language_foundation import (
 
 
 def _source_document(path: str, text: str, *, kind: str) -> dict[str, str]:
-    source_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    source_sha = hashlib.sha256(text.encode()).hexdigest()
     if kind == "koschei_source":
         family = f"example:{Path(path).parts[1]}"
     else:
         family = f"reference:{path}"
     document_id = hashlib.sha256(
-        f"{kind}\0{family}\0{path}\0{source_sha}".encode("utf-8")
+        f"{kind}\0{family}\0{path}\0{source_sha}".encode()
     ).hexdigest()
     return {
         "document_id": document_id,
@@ -38,18 +38,50 @@ def _write_source_corpus(path: Path, *, commit: str = "a" * 40) -> dict[str, obj
     documents = [
         _source_document("README.md", "# Koschei\n", kind="reference"),
         _source_document("README.tr.md", "# Koschei TR\n", kind="reference"),
-        _source_document("docs/capabilities.md", "No ambient authority.\n", kind="reference"),
+        _source_document(
+            "docs/capabilities.md",
+            "No ambient authority.\n",
+            kind="reference",
+        ),
         _source_document("docs/types.md", "Option and Result.\n", kind="reference"),
-        _source_document("examples/hello/main.ks", 'fn main() { println("hello") }\n', kind="koschei_source"),
-        _source_document("examples/loops/main.ks", "fn main() { let mut x = 3 }\n", kind="koschei_source"),
-        _source_document("examples/supply_chain/analytics.ks", "fn track() { }\n", kind="koschei_source"),
-        _source_document("examples/supply_chain/main.ks", "import analytics\n", kind="koschei_source"),
-        _source_document("examples/maps/main.ks", "fn main() { }\n", kind="koschei_source"),
-        _source_document("examples/options/main.ks", "fn main() { let x = None }\n", kind="koschei_source"),
-        _source_document("examples/results/main.ks", "fn main() { }\n", kind="koschei_source"),
+        _source_document(
+            "examples/hello/main.ks",
+            'fn main() { println("hello") }\n',
+            kind="koschei_source",
+        ),
+        _source_document(
+            "examples/loops/main.ks",
+            "fn main() { let mut x = 3 }\n",
+            kind="koschei_source",
+        ),
+        _source_document(
+            "examples/supply_chain/analytics.ks",
+            "fn track() { }\n",
+            kind="koschei_source",
+        ),
+        _source_document(
+            "examples/supply_chain/main.ks",
+            "import analytics\n",
+            kind="koschei_source",
+        ),
+        _source_document(
+            "examples/maps/main.ks",
+            "fn main() { }\n",
+            kind="koschei_source",
+        ),
+        _source_document(
+            "examples/options/main.ks",
+            "fn main() { let x = None }\n",
+            kind="koschei_source",
+        ),
+        _source_document(
+            "examples/results/main.ks",
+            "fn main() { }\n",
+            kind="koschei_source",
+        ),
     ]
     documents.sort(key=lambda item: item["path"])
-    total_bytes = sum(len(item["text"].encode("utf-8")) for item in documents)
+    total_bytes = sum(len(item["text"].encode()) for item in documents)
     payload = {
         "schema_version": "koschei.language-foundation-corpus.v1",
         "generator_version": "koschei-foundation-export/v1",
@@ -60,7 +92,7 @@ def _write_source_corpus(path: Path, *, commit: str = "a" * 40) -> dict[str, obj
         "total_bytes": total_bytes,
         "documents": documents,
     }
-    payload["corpus_sha256"] = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    payload["corpus_sha256"] = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return payload
 
@@ -80,8 +112,16 @@ def test_release_is_deterministic_and_has_no_family_leakage() -> None:
         _write_source_corpus(corpus)
         first = root / "release-a"
         second = root / "release-b"
-        first_manifest = build_language_foundation_release(corpus, output_dir=first, split_seed="seed-v1")
-        second_manifest = build_language_foundation_release(corpus, output_dir=second, split_seed="seed-v1")
+        first_manifest = build_language_foundation_release(
+            corpus,
+            output_dir=first,
+            split_seed="seed-v1",
+        )
+        second_manifest = build_language_foundation_release(
+            corpus,
+            output_dir=second,
+            split_seed="seed-v1",
+        )
         assert first_manifest.model_dump(mode="json") == second_manifest.model_dump(mode="json")
         train = _families(first, "train")
         validation = _families(first, "validation")
@@ -127,6 +167,21 @@ def test_release_tampering_is_detected() -> None:
         train = release / "train.jsonl"
         train.write_text(train.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         with pytest.raises(LanguageFoundationBlocked, match="digest mismatch"):
+            verify_language_foundation_release(release)
+
+
+def test_manifest_corpus_digest_must_match_released_documents() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        corpus = root / "corpus.json"
+        _write_source_corpus(corpus)
+        release = root / "release"
+        build_language_foundation_release(corpus, output_dir=release)
+        manifest_path = release / "language-foundation-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["source_corpus_sha256"] = "f" * 64
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with pytest.raises(LanguageFoundationBlocked, match="reconstruct"):
             verify_language_foundation_release(release)
 
 
