@@ -16,13 +16,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    build = subcommands.add_parser("build", help="Build train/validation/test from a pinned corpus")
+    build = subcommands.add_parser(
+        "build",
+        help="Build train/validation/test from a pinned corpus",
+    )
     build.add_argument("--corpus", required=True)
     build.add_argument("--output", required=True)
     build.add_argument("--seed", default="koschei-language-foundation-v1")
     build.add_argument("--expect-source-commit")
 
-    verify = subcommands.add_parser("verify", help="Verify a materialized language foundation release")
+    verify = subcommands.add_parser(
+        "verify",
+        help="Verify a materialized language foundation release",
+    )
     verify.add_argument("release")
     return parser
 
