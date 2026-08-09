@@ -24,7 +24,12 @@ def _digest(value: object) -> str:
     ).hexdigest()
 
 
-def _receipt(candidate: str, *, replay: str = "a" * 64, results: str = "b" * 64) -> ShadowReplayReceipt:
+def _receipt(
+    candidate: str,
+    *,
+    replay: str = "a" * 64,
+    results: str = "b" * 64,
+) -> ShadowReplayReceipt:
     payload = {
         "schema_version": "sentinel.shadow-replay-receipt.v1",
         "candidate_id": candidate,
