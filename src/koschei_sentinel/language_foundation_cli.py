@@ -23,7 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--corpus", required=True)
     build.add_argument("--output", required=True)
     build.add_argument("--seed", default="koschei-language-foundation-v1")
-    build.add_argument("--expect-source-commit")
+    build.add_argument("--expect-source-commit", required=True)
+    build.add_argument("--expect-source-corpus-sha256", required=True)
 
     verify = subcommands.add_parser(
         "verify",
@@ -42,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_dir=args.output,
                 split_seed=args.seed,
                 expected_source_commit=args.expect_source_commit,
+                expected_source_corpus_sha256=args.expect_source_corpus_sha256,
             )
         else:
             manifest = verify_language_foundation_release(args.release)
