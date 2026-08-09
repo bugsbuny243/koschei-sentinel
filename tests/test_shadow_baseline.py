@@ -186,7 +186,7 @@ def test_failed_regression_cannot_become_baseline_proposal() -> None:
     score_b = _scorecard(receipt_b, gate=False)
     report = build_shadow_regression_report(score_a, receipt_a, score_b, receipt_b)
     assert report.regression_passed is False
-    with pytest.raises(ShadowBaselineBlocked, match="did not pass"):
+    with pytest.raises(ShadowBaselineBlocked, match="passing human review scorecards"):
         build_shadow_baseline_proposal(
             report,
             score_a,
