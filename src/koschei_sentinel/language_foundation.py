@@ -7,7 +7,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -103,9 +103,16 @@ class LanguageFoundationReleaseManifest(StrictModel):
 
 def load_source_corpus(path: str | Path) -> SourceLanguageCorpus:
     try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        raw = Path(path).read_bytes()
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise LanguageFoundationBlocked("source corpus is not valid UTF-8") from exc
+    try:
+        payload = _strict_json_loads(text)
     except json.JSONDecodeError as exc:
         raise LanguageFoundationBlocked("source corpus is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise LanguageFoundationBlocked("source corpus must be a JSON object")
     try:
         corpus = SourceLanguageCorpus.model_validate(payload)
     except ValueError as exc:
@@ -249,9 +256,20 @@ def verify_language_foundation_release(
             "release is missing language-foundation-manifest.json"
         )
     try:
-        manifest = LanguageFoundationReleaseManifest.model_validate_json(
-            manifest_path.read_text(encoding="utf-8")
-        )
+        raw_manifest = manifest_path.read_bytes()
+        manifest_text = raw_manifest.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise LanguageFoundationBlocked(
+            "language foundation release manifest is not UTF-8"
+        ) from exc
+    try:
+        manifest_payload = _strict_json_loads(manifest_text)
+    except json.JSONDecodeError as exc:
+        raise LanguageFoundationBlocked(
+            "language foundation release manifest is not valid JSON"
+        ) from exc
+    try:
+        manifest = LanguageFoundationReleaseManifest.model_validate(manifest_payload)
     except ValueError as exc:
         raise LanguageFoundationBlocked(
             "language foundation release manifest is invalid"
@@ -273,6 +291,9 @@ def verify_language_foundation_release(
         documents = _load_release_rows(raw, split_name)
         if len(documents) != report.documents:
             raise LanguageFoundationBlocked(f"{split_name} split document count mismatch")
+        ids = [item.document_id for item in documents]
+        if ids != sorted(ids):
+            raise LanguageFoundationBlocked(f"{split_name} split rows are not canonical")
         families = {item.family for item in documents}
         if len(families) != report.families:
             raise LanguageFoundationBlocked(f"{split_name} split family count mismatch")
@@ -330,6 +351,19 @@ def canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _strict_json_loads(text: str) -> object:
+    return json.loads(text, object_pairs_hook=_unique_object_pairs)
+
+
+def _unique_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise LanguageFoundationBlocked(f"duplicate JSON object member: {key}")
+        result[key] = value
+    return result
+
+
 def _load_release_rows(raw: bytes, split_name: str) -> list[LanguageFoundationDocument]:
     try:
         lines = raw.decode("utf-8").splitlines()
@@ -340,7 +374,12 @@ def _load_release_rows(raw: bytes, split_name: str) -> list[LanguageFoundationDo
         if not line.strip():
             continue
         try:
-            document = LanguageFoundationDocument.model_validate_json(line)
+            payload = _strict_json_loads(line)
+            document = LanguageFoundationDocument.model_validate(payload)
+        except json.JSONDecodeError as exc:
+            raise LanguageFoundationBlocked(
+                f"invalid {split_name} JSON at line {number}"
+            ) from exc
         except ValueError as exc:
             raise LanguageFoundationBlocked(
                 f"invalid {split_name} document at line {number}"
@@ -382,11 +421,13 @@ def _expected_family(path_value: str, kind: str) -> str:
     _verify_relative_path(path_value)
     parts = Path(path_value).parts
     if kind == "koschei_source":
-        if len(parts) < 2 or parts[0] != "examples":
-            raise LanguageFoundationBlocked(
-                f"Koschei source is outside examples/: {path_value}"
-            )
-        return f"example:{parts[1]}"
+        if len(parts) >= 3 and parts[0] == "examples":
+            return f"example:{parts[1]}"
+        if len(parts) == 2 and parts[0] == "examples":
+            return "example:top-level"
+        raise LanguageFoundationBlocked(
+            f"Koschei source is outside examples/: {path_value}"
+        )
     return f"reference:{_reference_family_path(path_value)}"
 
 
