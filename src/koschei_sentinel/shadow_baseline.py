@@ -428,8 +428,16 @@ def _verify_evidence_bundle(
     if report.candidate_id != candidate_scorecard.candidate_id:
         raise ShadowBaselineBlocked("regression candidate does not match scorecard")
     bindings = (
-        (report.baseline_scorecard_digest, baseline_scorecard.scorecard_digest, "baseline scorecard"),
-        (report.candidate_scorecard_digest, candidate_scorecard.scorecard_digest, "candidate scorecard"),
+        (
+            report.baseline_scorecard_digest,
+            baseline_scorecard.scorecard_digest,
+            "baseline scorecard",
+        ),
+        (
+            report.candidate_scorecard_digest,
+            candidate_scorecard.scorecard_digest,
+            "candidate scorecard",
+        ),
         (report.baseline_receipt_digest, baseline_receipt.receipt_digest, "baseline receipt"),
         (report.candidate_receipt_digest, candidate_receipt.receipt_digest, "candidate receipt"),
     )
