@@ -13,6 +13,7 @@ from koschei_sentinel.candidate_finalization import CandidateFinalization
 from koschei_sentinel.promotion import (
     PromotionApproval,
     PromotionBlocked,
+    PromotionPolicy,
     approve_promotion_proposal,
     build_promotion_proposal,
     load_promotion_approval,
@@ -60,6 +61,13 @@ def _finalization() -> CandidateFinalization:
     )
 
 
+def _policy(*, suite_digest: str = "8" * 64) -> PromotionPolicy:
+    return PromotionPolicy(
+        policy_id="shadow-research-2026-08",
+        required_benchmark_suite_digest=suite_digest,
+    )
+
+
 def _keys(tmp_path: Path) -> tuple[Ed25519PrivateKey, Path, Path]:
     private = Ed25519PrivateKey.generate()
     private_path = tmp_path / "owner-private.pem"
@@ -82,14 +90,21 @@ def _keys(tmp_path: Path) -> tuple[Ed25519PrivateKey, Path, Path]:
 
 def test_owner_signature_approves_shadow_research_only(tmp_path: Path) -> None:
     private, _, _ = _keys(tmp_path)
-    proposal = build_promotion_proposal(_finalization(), private.public_key())
+    policy = _policy()
+    proposal = build_promotion_proposal(_finalization(), private.public_key(), policy)
     approval = approve_promotion_proposal(
         proposal,
         private,
+        policy,
         approver_id="owner@koschei",
     )
 
-    verified = verify_promotion_approval(proposal, approval, private.public_key())
+    verified = verify_promotion_approval(
+        proposal,
+        approval,
+        private.public_key(),
+        policy,
+    )
 
     assert verified.state == "owner_approved_shadow_research"
     assert verified.approved_stage == "shadow_research_candidate"
@@ -101,36 +116,75 @@ def test_owner_signature_approves_shadow_research_only(tmp_path: Path) -> None:
     assert verified.web3_runtime_integration_allowed is False
 
 
+def test_unapproved_benchmark_suite_cannot_create_proposal(tmp_path: Path) -> None:
+    private, _, _ = _keys(tmp_path)
+    with pytest.raises(PromotionBlocked, match="benchmark suite"):
+        build_promotion_proposal(
+            _finalization(),
+            private.public_key(),
+            _policy(suite_digest="f" * 64),
+        )
+
+
+def test_stale_policy_cannot_approve_existing_proposal(tmp_path: Path) -> None:
+    private, _, _ = _keys(tmp_path)
+    proposal = build_promotion_proposal(
+        _finalization(),
+        private.public_key(),
+        _policy(),
+    )
+    changed_policy = _policy()
+    changed_policy = changed_policy.model_copy(update={"policy_id": "shadow-research-next"})
+
+    with pytest.raises(PromotionBlocked, match="does not match the supplied policy"):
+        approve_promotion_proposal(
+            proposal,
+            private,
+            changed_policy,
+            approver_id="owner",
+        )
+
+
 def test_wrong_private_key_cannot_approve_proposal(tmp_path: Path) -> None:
     owner, _, _ = _keys(tmp_path)
     attacker = Ed25519PrivateKey.generate()
-    proposal = build_promotion_proposal(_finalization(), owner.public_key())
+    policy = _policy()
+    proposal = build_promotion_proposal(_finalization(), owner.public_key(), policy)
 
     with pytest.raises(PromotionBlocked, match="does not match proposal"):
         approve_promotion_proposal(
             proposal,
             attacker,
+            policy,
             approver_id="not-owner",
         )
 
 
 def test_proposal_tampering_is_detected_before_signing(tmp_path: Path) -> None:
     private, _, _ = _keys(tmp_path)
-    proposal = build_promotion_proposal(_finalization(), private.public_key())
+    policy = _policy()
+    proposal = build_promotion_proposal(_finalization(), private.public_key(), policy)
     tampered = proposal.model_copy(update={"adapter_digest": "f" * 64})
 
     with pytest.raises(PromotionBlocked, match="digest"):
         approve_promotion_proposal(
             tampered,
             private,
+            policy,
             approver_id="owner",
         )
 
 
 def test_signature_cannot_be_reused_for_another_proposal(tmp_path: Path) -> None:
     private, _, _ = _keys(tmp_path)
-    proposal = build_promotion_proposal(_finalization(), private.public_key())
-    approval = approve_promotion_proposal(proposal, private, approver_id="owner")
+    policy = _policy()
+    proposal = build_promotion_proposal(_finalization(), private.public_key(), policy)
+    approval = approve_promotion_proposal(
+        proposal,
+        private,
+        policy,
+        approver_id="owner",
+    )
     changed = proposal.model_copy(
         update={
             "benchmark_report_digest": "e" * 64,
@@ -139,13 +193,19 @@ def test_signature_cannot_be_reused_for_another_proposal(tmp_path: Path) -> None
     )
 
     with pytest.raises(PromotionBlocked):
-        verify_promotion_approval(changed, approval, private.public_key())
+        verify_promotion_approval(changed, approval, private.public_key(), policy)
 
 
 def test_schema_cannot_enable_production_deployment(tmp_path: Path) -> None:
     private, _, _ = _keys(tmp_path)
-    proposal = build_promotion_proposal(_finalization(), private.public_key())
-    approval = approve_promotion_proposal(proposal, private, approver_id="owner")
+    policy = _policy()
+    proposal = build_promotion_proposal(_finalization(), private.public_key(), policy)
+    approval = approve_promotion_proposal(
+        proposal,
+        private,
+        policy,
+        approver_id="owner",
+    )
     payload = approval.model_dump(mode="json")
     payload["production_deployment_allowed"] = True
 
@@ -155,8 +215,14 @@ def test_schema_cannot_enable_production_deployment(tmp_path: Path) -> None:
 
 def test_written_artifacts_are_digest_checked_on_load(tmp_path: Path) -> None:
     private, _, _ = _keys(tmp_path)
-    proposal = build_promotion_proposal(_finalization(), private.public_key())
-    approval = approve_promotion_proposal(proposal, private, approver_id="owner")
+    policy = _policy()
+    proposal = build_promotion_proposal(_finalization(), private.public_key(), policy)
+    approval = approve_promotion_proposal(
+        proposal,
+        private,
+        policy,
+        approver_id="owner",
+    )
     proposal_path = tmp_path / "proposal.json"
     approval_path = tmp_path / "approval.json"
     write_artifact(proposal, proposal_path)
