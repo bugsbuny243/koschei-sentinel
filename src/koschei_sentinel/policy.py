@@ -64,11 +64,16 @@ def validate_opinion(case: SecurityCase, opinion: SentinelOpinion) -> list[str]:
 
 
 def baseline_opinion(case: SecurityCase) -> SentinelOpinion:
-    """Create a deterministic, non-generative opinion for contract testing."""
+    """Create deterministic supervision without treating evidence text as instructions.
+
+    Evidence statements are intentionally not copied into assistant text. They remain
+    available in the input case and are referenced only through known evidence IDs.
+    This keeps untrusted provider/on-chain text from becoming executable-looking
+    supervision when it contains prompt-injection or verdict-tampering instructions.
+    """
 
     by_rule: dict[str, list[str]] = defaultdict(list)
     confidence_by_id = {item.evidence_id: item.confidence for item in case.evidence}
-    statement_by_id = {item.evidence_id: item.statement for item in case.evidence}
 
     for item in case.evidence:
         for rule_id in item.rule_ids:
@@ -83,10 +88,12 @@ def baseline_opinion(case: SecurityCase) -> SentinelOpinion:
             limitations.append(f"Triggered rule {rule_id} has no attached evidence item.")
             continue
         weakest = _weakest_confidence(confidence_by_id[evidence_id] for evidence_id in evidence_ids)
-        summaries = "; ".join(statement_by_id[evidence_id] for evidence_id in evidence_ids[:3])
         claims.append(
             EvidenceClaim(
-                text=f"Rule {rule_id} is supported by the supplied evidence: {summaries}",
+                text=(
+                    f"Rule {rule_id} is supported by the supplied evidence IDs: "
+                    f"{', '.join(evidence_ids)}."
+                ),
                 evidence_ids=evidence_ids,
                 confidence=weakest,
             )
