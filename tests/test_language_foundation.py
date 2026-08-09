@@ -11,6 +11,7 @@ from koschei_sentinel.language_foundation import (
     LanguageFoundationBlocked,
     build_language_foundation_release,
     canonical_json,
+    load_source_corpus,
     verify_language_foundation_release,
 )
 
@@ -29,7 +30,8 @@ def _reference_family_path(relative: str) -> str:
 def _source_document(path: str, text: str, *, kind: str) -> dict[str, str]:
     source_sha = hashlib.sha256(text.encode()).hexdigest()
     if kind == "koschei_source":
-        family = f"example:{Path(path).parts[1]}"
+        parts = Path(path).parts
+        family = f"example:{parts[1]}" if len(parts) >= 3 else "example:top-level"
     else:
         family = f"reference:{_reference_family_path(path)}"
     document_id = hashlib.sha256(
@@ -55,6 +57,16 @@ def _write_source_corpus(path: Path, *, commit: str = "a" * 40) -> dict[str, obj
             kind="reference",
         ),
         _source_document("docs/types.md", "Option and Result.\n", kind="reference"),
+        _source_document(
+            "examples/app.ks",
+            "import risk\nfn main() { risk.label(1) }\n",
+            kind="koschei_source",
+        ),
+        _source_document(
+            "examples/risk.ks",
+            "fn label(value: Int) -> Int { return value }\n",
+            kind="koschei_source",
+        ),
         _source_document(
             "examples/hello/main.ks",
             'fn main() { println("hello") }\n',
@@ -121,9 +133,19 @@ def test_release_is_deterministic_and_has_no_family_leakage() -> None:
         root = Path(temporary)
         corpus = root / "corpus.json"
         payload = _write_source_corpus(corpus)
-        assert {
-            item["family"] for item in payload["documents"] if item["path"].startswith("README")
-        } == {"reference:README"}
+        readme_families = {
+            item["family"]
+            for item in payload["documents"]
+            if item["path"].startswith("README")
+        }
+        assert readme_families == {"reference:README"}
+        top_level_families = {
+            item["family"]
+            for item in payload["documents"]
+            if item["path"] in {"examples/app.ks", "examples/risk.ks"}
+        }
+        assert top_level_families == {"example:top-level"}
+
         first = root / "release-a"
         second = root / "release-b"
         first_manifest = build_language_foundation_release(
@@ -144,6 +166,7 @@ def test_release_is_deterministic_and_has_no_family_leakage() -> None:
         assert train.isdisjoint(test)
         assert validation.isdisjoint(test)
         assert "example:supply_chain" in train | validation | test
+        assert "example:top-level" in train | validation | test
         verify_language_foundation_release(first)
 
 
@@ -156,6 +179,17 @@ def test_source_tampering_is_rejected_before_split() -> None:
         corpus.write_text(json.dumps(payload), encoding="utf-8")
         with pytest.raises(LanguageFoundationBlocked, match="hash mismatch"):
             build_language_foundation_release(corpus, output_dir=root / "release")
+
+
+def test_duplicate_source_json_members_fail_closed() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        corpus = Path(temporary) / "corpus.json"
+        corpus.write_text(
+            '{"schema_version":"one","schema_version":"two"}',
+            encoding="utf-8",
+        )
+        with pytest.raises(LanguageFoundationBlocked, match="duplicate JSON"):
+            load_source_corpus(corpus)
 
 
 def test_expected_source_commit_is_a_hard_pin() -> None:
