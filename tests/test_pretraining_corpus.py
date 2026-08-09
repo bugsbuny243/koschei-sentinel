@@ -151,7 +151,7 @@ def test_duplicate_content_cannot_inflate_corpus_size() -> None:
     )
     assert audit.ready is False
     assert audit.duplicate_content_digests == [documents[0].content_digest]
-    assert "duplicate document content" in audit.violations
+    assert "duplicate document content" in " ".join(audit.violations)
 
 
 def test_single_family_dominance_is_rejected() -> None:
