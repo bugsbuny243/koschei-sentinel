@@ -14,7 +14,11 @@ from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.promotion import public_key_fingerprint
-from koschei_sentinel.shadow_baseline import ShadowBaselineLineage, verify_shadow_baseline_lineage
+from koschei_sentinel.shadow_baseline import (
+    ShadowBaselineBlocked,
+    ShadowBaselineLineage,
+    verify_shadow_baseline_lineage,
+)
 
 _DIGEST = r"^[a-f0-9]{64}$"
 _CANDIDATE_ID = r"^[a-z0-9][a-z0-9._-]{0,127}$"
@@ -136,7 +140,11 @@ def build_owner_rotation_proposal(
     current_owner_public_key: Ed25519PublicKey,
     next_owner_public_key: Ed25519PublicKey,
 ) -> OwnerRotationProposal:
-    verify_shadow_baseline_lineage(lineage, current_owner_public_key)
+    try:
+        verify_shadow_baseline_lineage(lineage, current_owner_public_key)
+    except ShadowBaselineBlocked as exc:
+        raise OwnerRotationBlocked("current baseline lineage verification failed") from exc
+
     current = public_key_fingerprint(current_owner_public_key)
     next_fingerprint = public_key_fingerprint(next_owner_public_key)
     if current == next_fingerprint:
@@ -389,10 +397,24 @@ def build_owner_rotation_claim(checkpoint: OwnerRotationCheckpoint) -> OwnerRota
         "automatic_key_activation_allowed": False,
         "production_deployment_allowed": False,
     }
-    return OwnerRotationClaim.model_validate({**payload, "claim_digest": _digest(payload)})
+    return OwnerRotationClaim.model_validate(
+        {**payload, "claim_digest": _digest(payload)}
+    )
 
 
-def claim_owner_rotation(checkpoint: OwnerRotationCheckpoint, claim_dir: str | Path) -> Path:
+def claim_owner_rotation(
+    checkpoint: OwnerRotationCheckpoint,
+    lineage: ShadowBaselineLineage,
+    current_owner_public_key: Ed25519PublicKey,
+    next_owner_public_key: Ed25519PublicKey,
+    claim_dir: str | Path,
+) -> Path:
+    verify_owner_rotation_checkpoint(
+        checkpoint,
+        lineage,
+        current_owner_public_key,
+        next_owner_public_key,
+    )
     claim = build_owner_rotation_claim(checkpoint)
     root = Path(claim_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -425,7 +447,12 @@ def claim_owner_rotation(checkpoint: OwnerRotationCheckpoint, claim_dir: str | P
 
 
 def load_owner_rotation_proposal(path: str | Path) -> OwnerRotationProposal:
-    return _load_model(path, OwnerRotationProposal, "owner rotation proposal", "proposal_digest")
+    return _load_model(
+        path,
+        OwnerRotationProposal,
+        "owner rotation proposal",
+        "proposal_digest",
+    )
 
 
 def load_current_owner_rotation_approval(path: str | Path) -> CurrentOwnerRotationApproval:
@@ -629,7 +656,8 @@ def _verify_signature(
     error_message: str,
 ) -> None:
     try:
-        public_key.verify(base64.b64decode(signature_base64, validate=True), message)
+        signature = base64.b64decode(signature_base64, validate=True)
+        public_key.verify(signature, message)
     except (InvalidSignature, ValueError) as exc:
         raise OwnerRotationBlocked(error_message) from exc
 
