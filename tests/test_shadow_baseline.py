@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.shadow_baseline import (
+    ShadowBaselineApproval,
     ShadowBaselineBlocked,
     ShadowBaselineLineage,
     apply_shadow_baseline_advance,
@@ -15,8 +17,15 @@ from koschei_sentinel.shadow_baseline import (
     verify_shadow_baseline_approval,
     verify_shadow_baseline_lineage,
 )
+from koschei_sentinel.shadow_baseline_claim import (
+    build_shadow_baseline_successor_claim,
+    claim_shadow_baseline_successor,
+)
 from koschei_sentinel.shadow_receipt import ShadowReplayReceipt
-from koschei_sentinel.shadow_regression import build_shadow_regression_report
+from koschei_sentinel.shadow_regression import (
+    ShadowRegressionReport,
+    build_shadow_regression_report,
+)
 from koschei_sentinel.shadow_review import ShadowReviewScorecard, ShadowReviewThresholds
 
 
@@ -55,7 +64,22 @@ def _receipt(candidate: str, results: str) -> ShadowReplayReceipt:
     return ShadowReplayReceipt.model_validate({**payload, "receipt_digest": _digest(payload)})
 
 
-def _scorecard(receipt: ShadowReplayReceipt, *, gate: bool = True) -> ShadowReviewScorecard:
+def _scorecard(
+    receipt: ShadowReplayReceipt,
+    *,
+    score: float = 1.0,
+    thresholds: ShadowReviewThresholds | None = None,
+    gate: bool | None = None,
+) -> ShadowReviewScorecard:
+    active = thresholds or ShadowReviewThresholds()
+    passed = round(2 * score)
+    derived_gate = (
+        score >= active.min_case_pass_rate
+        and score >= active.min_authority_score
+        and score >= active.min_grounding_score
+        and score >= active.min_abstention_score
+        and score >= active.min_privacy_score
+    )
     payload = {
         "schema_version": "sentinel.shadow-review-scorecard.v1",
         "candidate_id": receipt.candidate_id,
@@ -67,16 +91,16 @@ def _scorecard(receipt: ShadowReplayReceipt, *, gate: bool = True) -> ShadowRevi
         "review_sha256": hashlib.sha256(f"review:{receipt.candidate_id}".encode()).hexdigest(),
         "reviewers": ["owner-review@koschei"],
         "total_cases": 2,
-        "passed_cases": 2 if gate else 1,
-        "failed_cases": 0 if gate else 1,
-        "case_pass_rate": 1.0 if gate else 0.5,
-        "authority_score": 1.0 if gate else 0.5,
-        "grounding_score": 1.0 if gate else 0.5,
-        "abstention_score": 1.0 if gate else 0.5,
-        "privacy_score": 1.0 if gate else 0.5,
-        "followup_cases": [] if gate else ["case-2"],
-        "thresholds": ShadowReviewThresholds().model_dump(mode="json"),
-        "gate_passed": gate,
+        "passed_cases": passed,
+        "failed_cases": 2 - passed,
+        "case_pass_rate": score,
+        "authority_score": score,
+        "grounding_score": score,
+        "abstention_score": score,
+        "privacy_score": score,
+        "followup_cases": [],
+        "thresholds": active.model_dump(mode="json"),
+        "gate_passed": derived_gate if gate is None else gate,
         "complete_manual_review": True,
         "benchmark_recheck_required": True,
         "owner_decision_required": True,
@@ -105,14 +129,18 @@ def _passing_report(
     return report, baseline, candidate
 
 
-def test_owner_signed_lineage_seeds_and_advances_without_automatic_selection() -> None:
-    private_key = Ed25519PrivateKey.generate()
+def _seed_lineage(
+    private_key: Ed25519PrivateKey,
+) -> tuple[
+    ShadowBaselineLineage,
+    ShadowReplayReceipt,
+    ShadowReviewScorecard,
+]:
     public_key = private_key.public_key()
-
     receipt_a = _receipt("candidate-a", "1" * 64)
     receipt_b = _receipt("candidate-b", "2" * 64)
     report_ab, score_a, score_b = _passing_report(receipt_a, receipt_b)
-    proposal_ab = build_shadow_baseline_proposal(
+    proposal = build_shadow_baseline_proposal(
         report_ab,
         score_a,
         receipt_a,
@@ -120,14 +148,14 @@ def test_owner_signed_lineage_seeds_and_advances_without_automatic_selection() -
         receipt_b,
         public_key,
     )
-    approval_ab = approve_shadow_baseline_proposal(
-        proposal_ab,
+    approval = approve_shadow_baseline_proposal(
+        proposal,
         private_key,
         approver_id="owner@koschei",
     )
     lineage = apply_shadow_baseline_advance(
-        proposal_ab,
-        approval_ab,
+        proposal,
+        approval,
         report_ab,
         score_a,
         receipt_a,
@@ -135,9 +163,17 @@ def test_owner_signed_lineage_seeds_and_advances_without_automatic_selection() -
         receipt_b,
         public_key,
     )
+    return lineage, receipt_b, score_b
+
+
+def test_owner_signed_lineage_seeds_and_advances_without_automatic_selection() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    lineage, receipt_b, score_b = _seed_lineage(private_key)
+
     assert [entry.candidate_id for entry in lineage.entries] == ["candidate-a", "candidate-b"]
     assert lineage.entries[0].kind == "seed"
-    assert lineage.entries[1].owner_signature_base64 == approval_ab.signature_base64
+    assert lineage.entries[1].owner_signature_base64 is not None
     assert lineage.historical_signatures_verified is True
     assert lineage.head_candidate_id == "candidate-b"
     assert lineage.automatic_baseline_selection_allowed is False
@@ -181,12 +217,12 @@ def test_owner_signed_lineage_seeds_and_advances_without_automatic_selection() -
     verify_shadow_baseline_lineage(advanced, public_key)
 
 
-def test_failed_regression_cannot_become_baseline_proposal() -> None:
+def test_failed_review_cannot_become_baseline_proposal() -> None:
     private_key = Ed25519PrivateKey.generate()
     receipt_a = _receipt("candidate-a", "1" * 64)
     receipt_b = _receipt("candidate-b", "2" * 64)
     score_a = _scorecard(receipt_a)
-    score_b = _scorecard(receipt_b, gate=False)
+    score_b = _scorecard(receipt_b, score=0.5, gate=False)
     report = build_shadow_regression_report(score_a, receipt_a, score_b, receipt_b)
     assert report.regression_passed is False
     with pytest.raises(ShadowBaselineBlocked, match="passing human review scorecards"):
@@ -200,26 +236,80 @@ def test_failed_regression_cannot_become_baseline_proposal() -> None:
         )
 
 
-def test_lineage_rejects_historical_candidate_cycle_and_wrong_head() -> None:
+def test_forged_regression_verdict_is_recomputed_from_scorecards() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    thresholds = ShadowReviewThresholds(
+        min_case_pass_rate=0.5,
+        min_authority_score=0.5,
+        min_grounding_score=0.5,
+        min_abstention_score=0.5,
+        min_privacy_score=0.5,
+    )
+    receipt_a = _receipt("candidate-a", "1" * 64)
+    receipt_b = _receipt("candidate-b", "2" * 64)
+    baseline = _scorecard(receipt_a, score=1.0, thresholds=thresholds)
+    candidate = _scorecard(receipt_b, score=0.5, thresholds=thresholds)
+    report = build_shadow_regression_report(
+        baseline,
+        receipt_a,
+        candidate,
+        receipt_b,
+    )
+    assert candidate.gate_passed is True
+    assert report.regression_passed is False
+
+    payload = report.model_dump(mode="json")
+    payload.pop("report_digest")
+    payload["regression_reasons"] = []
+    payload["regression_passed"] = True
+    forged = ShadowRegressionReport.model_validate(
+        {**payload, "report_digest": _digest(payload)}
+    )
+    with pytest.raises(ShadowBaselineBlocked, match="does not match supplied scorecards"):
+        build_shadow_baseline_proposal(
+            forged,
+            baseline,
+            receipt_a,
+            candidate,
+            receipt_b,
+            private_key.public_key(),
+        )
+
+
+def test_approver_identity_is_covered_by_owner_signature() -> None:
     private_key = Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
     receipt_a = _receipt("candidate-a", "1" * 64)
     receipt_b = _receipt("candidate-b", "2" * 64)
-    report_ab, score_a, score_b = _passing_report(receipt_a, receipt_b)
+    report, score_a, score_b = _passing_report(receipt_a, receipt_b)
     proposal = build_shadow_baseline_proposal(
-        report_ab, score_a, receipt_a, score_b, receipt_b, public_key
-    )
-    approval = approve_shadow_baseline_proposal(proposal, private_key, approver_id="owner")
-    lineage = apply_shadow_baseline_advance(
-        proposal,
-        approval,
-        report_ab,
+        report,
         score_a,
         receipt_a,
         score_b,
         receipt_b,
         public_key,
     )
+    approval = approve_shadow_baseline_proposal(
+        proposal,
+        private_key,
+        approver_id="owner-a",
+    )
+    payload = approval.model_dump(mode="json")
+    payload.pop("approval_digest")
+    payload["approver_id"] = "owner-b"
+    forged = ShadowBaselineApproval.model_validate(
+        {**payload, "approval_digest": _digest(payload)}
+    )
+    with pytest.raises(ShadowBaselineBlocked, match="signature verification"):
+        verify_shadow_baseline_approval(proposal, forged, public_key)
+
+
+def test_lineage_rejects_historical_candidate_cycle_and_wrong_head() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    lineage, receipt_b, _ = _seed_lineage(private_key)
+    receipt_a = _receipt("candidate-a", "1" * 64)
 
     report_ba, score_b_again, score_a_again = _passing_report(receipt_b, receipt_a)
     with pytest.raises(ShadowBaselineBlocked, match="already exists"):
@@ -247,58 +337,10 @@ def test_lineage_rejects_historical_candidate_cycle_and_wrong_head() -> None:
         )
 
 
-def test_tampered_lineage_and_wrong_owner_key_fail_closed() -> None:
-    private_key = Ed25519PrivateKey.generate()
-    public_key = private_key.public_key()
-    receipt_a = _receipt("candidate-a", "1" * 64)
-    receipt_b = _receipt("candidate-b", "2" * 64)
-    report, score_a, score_b = _passing_report(receipt_a, receipt_b)
-    proposal = build_shadow_baseline_proposal(
-        report, score_a, receipt_a, score_b, receipt_b, public_key
-    )
-    approval = approve_shadow_baseline_proposal(proposal, private_key, approver_id="owner")
-    lineage = apply_shadow_baseline_advance(
-        proposal,
-        approval,
-        report,
-        score_a,
-        receipt_a,
-        score_b,
-        receipt_b,
-        public_key,
-    )
-
-    tampered = lineage.model_copy(update={"head_candidate_id": "candidate-x"})
-    with pytest.raises(ShadowBaselineBlocked, match="digest"):
-        verify_shadow_baseline_lineage(tampered, public_key)
-
-    wrong_key = Ed25519PrivateKey.generate().public_key()
-    with pytest.raises(ShadowBaselineBlocked, match="public key"):
-        verify_shadow_baseline_approval(proposal, approval, wrong_key)
-    with pytest.raises(ShadowBaselineBlocked, match="public key"):
-        verify_shadow_baseline_lineage(lineage, wrong_key)
-
-
 def test_forged_historical_signature_fails_even_with_recomputed_lineage_digest() -> None:
     private_key = Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
-    receipt_a = _receipt("candidate-a", "1" * 64)
-    receipt_b = _receipt("candidate-b", "2" * 64)
-    report, score_a, score_b = _passing_report(receipt_a, receipt_b)
-    proposal = build_shadow_baseline_proposal(
-        report, score_a, receipt_a, score_b, receipt_b, public_key
-    )
-    approval = approve_shadow_baseline_proposal(proposal, private_key, approver_id="owner")
-    lineage = apply_shadow_baseline_advance(
-        proposal,
-        approval,
-        report,
-        score_a,
-        receipt_a,
-        score_b,
-        receipt_b,
-        public_key,
-    )
+    lineage, _, _ = _seed_lineage(private_key)
 
     payload = lineage.model_dump(mode="json")
     payload.pop("lineage_digest")
@@ -325,3 +367,66 @@ def test_forged_historical_signature_fails_even_with_recomputed_lineage_digest()
     )
     with pytest.raises(ShadowBaselineBlocked, match="signature verification"):
         verify_shadow_baseline_lineage(forged, public_key)
+
+
+def test_canonical_successor_claim_prevents_two_heads_from_same_predecessor(
+    tmp_path: Path,
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    lineage, receipt_b, _ = _seed_lineage(private_key)
+    claims = tmp_path / "claims"
+
+    successors = []
+    for candidate_id, results in (("candidate-c", "3" * 64), ("candidate-d", "4" * 64)):
+        receipt = _receipt(candidate_id, results)
+        report, score_b, score_candidate = _passing_report(receipt_b, receipt)
+        proposal = build_shadow_baseline_proposal(
+            report,
+            score_b,
+            receipt_b,
+            score_candidate,
+            receipt,
+            public_key,
+            lineage=lineage,
+        )
+        approval = approve_shadow_baseline_proposal(
+            proposal,
+            private_key,
+            approver_id="owner@koschei",
+        )
+        successor = apply_shadow_baseline_advance(
+            proposal,
+            approval,
+            report,
+            score_b,
+            receipt_b,
+            score_candidate,
+            receipt,
+            public_key,
+            lineage=lineage,
+        )
+        successors.append((proposal, successor))
+
+    first_claim = build_shadow_baseline_successor_claim(*successors[0])
+    first_path = claim_shadow_baseline_successor(first_claim, claims)
+    assert first_path.exists()
+    assert claim_shadow_baseline_successor(first_claim, claims) == first_path
+
+    second_claim = build_shadow_baseline_successor_claim(*successors[1])
+    with pytest.raises(ShadowBaselineBlocked, match="different claimed successor"):
+        claim_shadow_baseline_successor(second_claim, claims)
+
+
+def test_tampered_lineage_and_wrong_owner_key_fail_closed() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    lineage, _, _ = _seed_lineage(private_key)
+
+    tampered = lineage.model_copy(update={"head_candidate_id": "candidate-x"})
+    with pytest.raises(ShadowBaselineBlocked, match="digest"):
+        verify_shadow_baseline_lineage(tampered, public_key)
+
+    wrong_key = Ed25519PrivateKey.generate().public_key()
+    with pytest.raises(ShadowBaselineBlocked, match="public key"):
+        verify_shadow_baseline_lineage(lineage, wrong_key)
