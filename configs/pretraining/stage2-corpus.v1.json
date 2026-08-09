@@ -1,0 +1,12 @@
+{
+  "max_single_family_bps": 200,
+  "min_documents": 10000,
+  "min_source_classes": 3,
+  "min_unique_families": 500,
+  "policy_id": "stage2-solana-security-2026-08",
+  "raw_sensitive_text_allowed": false,
+  "require_known_rights_basis": true,
+  "require_zero_holdout_content_overlap": true,
+  "require_zero_holdout_family_overlap": true,
+  "schema_version": "sentinel.pretraining-corpus-policy.v1"
+}
