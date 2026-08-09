@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -21,6 +23,8 @@ DOCUMENT_SCHEMA = "sentinel.language-foundation-document.v1"
 _SPLITS = ("train", "validation", "test")
 _COMMIT_RE = re.compile(r"^[a-f0-9]{40}$")
 _SHA_RE = re.compile(r"^[a-f0-9]{64}$")
+_AT_FDCWD = -100
+_RENAME_NOREPLACE = 1
 
 
 class LanguageFoundationBlocked(ValueError):
@@ -444,7 +448,7 @@ def _expected_family(path_value: str, kind: str) -> str:
 
 
 def _reference_family_path(relative: str) -> str:
-    if relative in {"README.md", "README.tr.md"}:
+    if relative in {"README.md", "README.tr.md", "README.en.md"}:
         return "README"
     path = Path(relative)
     name = path.name
@@ -512,38 +516,75 @@ def _verify_relative_path(value: str) -> None:
 
 
 def _publish_directory_no_replace(source: Path, destination: Path) -> None:
-    """Reserve the destination atomically, then link files without replacement."""
+    """Atomically publish a complete staged directory without replacing a destination."""
 
-    try:
-        destination.mkdir()
-    except FileExistsError:
-        raise FileExistsError(
-            f"language foundation release already exists: {destination}"
-        ) from None
+    if source.parent.parent != destination.parent:
+        raise LanguageFoundationBlocked(
+            "staged release and destination must share the same parent filesystem"
+        )
+    if not source.is_dir() or source.is_symlink():
+        raise LanguageFoundationBlocked("staged release must be a real directory")
 
-    created: list[Path] = []
-    try:
-        for child in sorted(source.iterdir(), key=lambda item: item.name):
-            if not child.is_file() or child.is_symlink():
-                raise LanguageFoundationBlocked(
-                    f"unexpected staged release entry: {child.name}"
-                )
-            target = destination / child.name
-            os.link(child, target)
-            created.append(target)
-        _fsync_directory(destination)
-        _fsync_directory(destination.parent)
-    except Exception:
-        for target in reversed(created):
-            try:
-                target.unlink()
-            except FileNotFoundError:
-                pass
+    if os.name == "nt":
         try:
-            destination.rmdir()
-        except OSError:
-            pass
-        raise
+            os.rename(source, destination)
+        except FileExistsError:
+            raise FileExistsError(
+                f"language foundation release already exists: {destination}"
+            ) from None
+        except OSError as exc:
+            if destination.exists():
+                raise FileExistsError(
+                    f"language foundation release already exists: {destination}"
+                ) from exc
+            raise
+    elif os.name == "posix":
+        _renameat2_no_replace(source, destination)
+    else:
+        raise LanguageFoundationBlocked(
+            "atomic no-replace directory publication is unsupported on this platform"
+        )
+
+    _fsync_directory(destination.parent)
+
+
+def _renameat2_no_replace(source: Path, destination: Path) -> None:
+    """Use Linux renameat2(RENAME_NOREPLACE), failing closed if unavailable."""
+
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = libc.renameat2
+    except (AttributeError, OSError) as exc:
+        raise LanguageFoundationBlocked(
+            "atomic no-replace directory publication requires renameat2"
+        ) from exc
+
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+    result = renameat2(
+        _AT_FDCWD,
+        source_bytes,
+        _AT_FDCWD,
+        destination_bytes,
+        _RENAME_NOREPLACE,
+    )
+    if result == 0:
+        return
+
+    error_number = ctypes.get_errno()
+    if error_number in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise FileExistsError(
+            error_number,
+            f"language foundation release already exists: {destination}",
+            destination,
+        )
+    if error_number in {errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP}:
+        raise LanguageFoundationBlocked(
+            "atomic no-replace directory publication is unsupported by this filesystem"
+        )
+    raise OSError(error_number, os.strerror(error_number), destination)
 
 
 def _fsync_tree(root: Path) -> None:
