@@ -32,7 +32,7 @@ def _plan(tmp_path: Path) -> ShadowReplayPlan:
         '{"case_id":"case-1"}\n{"case_id":"case-2"}\n',
         encoding="utf-8",
     )
-    (tmp_path / "output").mkdir()
+    (tmp_path / "output").mkdir(exist_ok=True)
     payload = {
         "schema_version": "sentinel.shadow-replay-plan.v1",
         "candidate_id": "sentinel-shadow-v1",
