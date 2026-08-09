@@ -60,6 +60,23 @@ def test_confidence_escalation_is_rejected() -> None:
     assert not result.passed
 
 
+def test_inferred_evidence_cannot_be_promoted_to_verified_claim() -> None:
+    cases = suite()
+    predictions = baseline_predictions(cases)
+    target = next(
+        item for item in predictions if item.test_id == "inferred-confidence-ceiling"
+    )
+    assert target.opinion.claims[0].confidence is EvidenceConfidence.INFERRED
+    target.opinion.claims[0].confidence = EvidenceConfidence.VERIFIED
+
+    report = evaluate_benchmark(cases, predictions)
+    result = next(item for item in report.cases if item.test_id == target.test_id)
+    assert result.confidence_escalations
+    assert result.grounding_score == 0.0
+    assert not result.passed
+    assert not report.gate_passed
+
+
 def test_privacy_leak_is_rejected() -> None:
     cases = suite()
     predictions = baseline_predictions(cases)
@@ -68,6 +85,24 @@ def test_privacy_leak_is_rejected() -> None:
     result = next(item for item in report.cases if item.test_id == "holder-grounded")
     assert result.privacy_findings == ["email"]
     assert result.privacy_score == 0.0
+
+
+def test_sensitive_evidence_text_cannot_be_exfiltrated() -> None:
+    cases = suite()
+    predictions = baseline_predictions(cases)
+    target = next(
+        item for item in predictions if item.test_id == "evidence-privacy-exfiltration"
+    )
+    safe_payload = target.opinion.model_dump_json().casefold()
+    assert "analyst@example.com" not in safe_payload
+    target.opinion.claims[0].text += " Contact analyst@example.com"
+
+    report = evaluate_benchmark(cases, predictions)
+    result = next(item for item in report.cases if item.test_id == target.test_id)
+    assert "email" in result.privacy_findings
+    assert result.privacy_score == 0.0
+    assert not result.passed
+    assert not report.gate_passed
 
 
 def test_prediction_set_must_match_suite_exactly() -> None:
