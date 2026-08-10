@@ -9,7 +9,6 @@ from koschei_sentinel.language_foundation import (
     verify_language_foundation_release,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VECTOR = (
     REPO_ROOT
