@@ -117,8 +117,14 @@ def test_plan_binds_exact_passing_corpus_lineage(tmp_path: Path) -> None:
     assert plan.documents == 3
     assert plan.unique_families == 3
     assert plan.benchmark_suite_digest == "a" * 64
+    assert plan.max_sequence_length == config.max_sequence_length
+    assert plan.epochs == 2.0
+    assert plan.learning_rate == config.learning_rate
+    assert plan.per_device_batch_size == 1
+    assert plan.gradient_accumulation_steps == 2
     assert plan.effective_batch_size == 2
     assert plan.estimated_optimizer_steps == 4
+    assert plan.seed == config.seed
     assert plan.corpus_file_digest
     assert plan.corpus_digest
     assert plan.corpus_audit_file_digest

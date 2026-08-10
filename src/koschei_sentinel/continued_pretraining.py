@@ -80,9 +80,14 @@ class ContinuedPretrainingPlan(StrictModel):
     training_config_digest: str = Field(pattern=_DIGEST)
     documents: int = Field(ge=1)
     unique_families: int = Field(ge=0)
+    max_sequence_length: int = Field(ge=512, le=32768)
+    epochs: float = Field(gt=0.0, le=10.0)
+    learning_rate: float = Field(gt=0.0, le=0.01)
+    per_device_batch_size: int = Field(ge=1, le=128)
+    gradient_accumulation_steps: int = Field(ge=1, le=4096)
     effective_batch_size: int = Field(ge=1)
     estimated_optimizer_steps: int = Field(ge=1)
-    max_sequence_length: int
+    seed: int = Field(ge=0, le=2**31 - 1)
     output_dir: str
 
 
@@ -155,9 +160,14 @@ def plan_continued_pretraining(
         training_config_digest=_model_digest(config),
         documents=recomputed.documents,
         unique_families=recomputed.unique_families,
+        max_sequence_length=config.max_sequence_length,
+        epochs=config.epochs,
+        learning_rate=config.learning_rate,
+        per_device_batch_size=config.per_device_batch_size,
+        gradient_accumulation_steps=config.gradient_accumulation_steps,
         effective_batch_size=config.effective_batch_size,
         estimated_optimizer_steps=estimated_steps,
-        max_sequence_length=config.max_sequence_length,
+        seed=config.seed,
         output_dir=config.output_dir,
     )
 
