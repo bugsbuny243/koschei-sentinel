@@ -1,0 +1,133 @@
+{
+  "schema": "sentinel.curriculum.v1",
+  "id": "koschei-language-first-v1",
+  "status": "offline_research_only",
+  "runtime_integration": false,
+  "source_contract": {
+    "repository": "bugsbuny243/koschei-lang",
+    "required_document": "docs/MODEL_TRAINING_CONTRACT.md",
+    "commit_sha_required": true,
+    "compiler_oracle_required": true,
+    "mutable_branch_is_not_provenance": true
+  },
+  "stages": [
+    {
+      "id": "L0",
+      "name": "core_language_semantics",
+      "requires_compiler_labels": true
+    },
+    {
+      "id": "L1",
+      "name": "capability_fundamentals",
+      "requires_compiler_labels": true
+    },
+    {
+      "id": "L2",
+      "name": "adversarial_capability_security",
+      "requires_compiler_labels": true
+    },
+    {
+      "id": "L3",
+      "name": "backend_and_systems_programs",
+      "requires_compiler_labels": true
+    },
+    {
+      "id": "L4",
+      "name": "security_preserving_repair",
+      "requires_compiler_labels": true,
+      "promotion_gate": "language_hard_gate"
+    },
+    {
+      "id": "S0",
+      "name": "general_security_reasoning",
+      "requires": ["language_hard_gate"]
+    },
+    {
+      "id": "S1",
+      "name": "solana_web3_evidence_semantics",
+      "requires": ["language_hard_gate"]
+    },
+    {
+      "id": "S2",
+      "name": "actor_funding_liquidity_history",
+      "requires": ["language_hard_gate"]
+    },
+    {
+      "id": "S3",
+      "name": "attack_defense_behavior",
+      "requires": ["language_hard_gate"]
+    },
+    {
+      "id": "S4",
+      "name": "defense_os_shadow_recommendations",
+      "requires": ["language_hard_gate"],
+      "production_authority": false
+    }
+  ],
+  "language_hard_gate": {
+    "zero_tolerance": [
+      "invented_authority",
+      "capability_rewidening",
+      "dependency_ambient_authority",
+      "compiler_bypass_repair",
+      "hidden_capability_expansion",
+      "false_compile_claim",
+      "unimplemented_feature_claim",
+      "model_confidence_as_permission"
+    ],
+    "required_benchmark_families": [
+      "pure_empty_manifest",
+      "disk_authority",
+      "network_authority",
+      "environment_authority",
+      "process_authority",
+      "capability_narrowing",
+      "dependency_privilege_escalation",
+      "path_traversal",
+      "symlink_escape",
+      "readonly_write_mismatch",
+      "redirect_origin_escape",
+      "secret_exfiltration",
+      "capability_propagation",
+      "minimum_authority_repair",
+      "legitimate_broad_authority"
+    ]
+  },
+  "authority_boundary": {
+    "model_may": [
+      "observe",
+      "classify",
+      "explain",
+      "recommend_restriction",
+      "request_quarantine",
+      "propose_minimum_authority_repair"
+    ],
+    "model_must_never": [
+      "grant_capability",
+      "widen_capability",
+      "bypass_compiler_policy",
+      "bypass_runtime_policy",
+      "mutate_evidence",
+      "override_deterministic_verdict",
+      "promote_itself",
+      "deploy_itself"
+    ]
+  },
+  "kosch_boundary": {
+    "allowed_future_roles": [
+      "authenticated_access",
+      "resource_allocation",
+      "contribution_identity",
+      "bounty_coordination"
+    ],
+    "must_never": [
+      "raise_model_confidence",
+      "suppress_abstention",
+      "weaken_benchmark_policy",
+      "pass_failed_language_gate",
+      "promote_candidate",
+      "deploy_candidate",
+      "grant_compiler_runtime_authority"
+    ]
+  }
+}
