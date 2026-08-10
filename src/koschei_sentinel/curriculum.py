@@ -51,7 +51,7 @@ class CurriculumSourceContract(StrictModel):
     mutable_branch_is_not_provenance: bool
 
     @model_validator(mode="after")
-    def validate_source_authority(self) -> "CurriculumSourceContract":
+    def validate_source_authority(self) -> CurriculumSourceContract:
         if self.repository != "bugsbuny243/koschei-lang":
             raise ValueError("language curriculum repository must be bugsbuny243/koschei-lang")
         if not self.required_document.endswith("MODEL_TRAINING_CONTRACT.md"):
@@ -79,7 +79,7 @@ class LanguageHardGate(StrictModel):
     required_benchmark_families: list[str]
 
     @model_validator(mode="after")
-    def validate_hard_gate(self) -> "LanguageHardGate":
+    def validate_hard_gate(self) -> LanguageHardGate:
         missing = REQUIRED_ZERO_TOLERANCE.difference(self.zero_tolerance)
         if missing:
             raise ValueError(f"language hard gate missing zero-tolerance rules: {sorted(missing)}")
@@ -95,7 +95,7 @@ class ModelAuthorityBoundary(StrictModel):
     model_must_never: list[str]
 
     @model_validator(mode="after")
-    def validate_authority(self) -> "ModelAuthorityBoundary":
+    def validate_authority(self) -> ModelAuthorityBoundary:
         missing = REQUIRED_MODEL_DENIES.difference(self.model_must_never)
         if missing:
             raise ValueError(f"model authority deny set incomplete: {sorted(missing)}")
@@ -109,7 +109,7 @@ class KOSCHBoundary(StrictModel):
     must_never: list[str]
 
     @model_validator(mode="after")
-    def validate_kosch_boundary(self) -> "KOSCHBoundary":
+    def validate_kosch_boundary(self) -> KOSCHBoundary:
         missing = REQUIRED_KOSCH_DENIES.difference(self.must_never)
         if missing:
             raise ValueError(f"KOSCH authority deny set incomplete: {sorted(missing)}")
@@ -128,7 +128,7 @@ class CurriculumPolicy(StrictModel):
     kosch_boundary: KOSCHBoundary
 
     @model_validator(mode="after")
-    def validate_stage_order_and_authority(self) -> "CurriculumPolicy":
+    def validate_stage_order_and_authority(self) -> CurriculumPolicy:
         stage_ids = tuple(stage.id for stage in self.stages)
         if stage_ids != REQUIRED_STAGE_IDS:
             raise ValueError(
