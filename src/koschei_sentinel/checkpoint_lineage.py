@@ -88,6 +88,28 @@ def prepare_execution_envelope(
     return _envelope_from_plan(plan, relative_plan, raw)
 
 
+def load_execution_envelope(path: str | Path) -> ContinuedPretrainingExecutionEnvelope:
+    try:
+        return ContinuedPretrainingExecutionEnvelope.model_validate_json(
+            Path(path).read_bytes()
+        )
+    except ValueError as exc:
+        raise ValueError("invalid continued-pretraining execution envelope") from exc
+
+
+def write_execution_envelope(
+    envelope: ContinuedPretrainingExecutionEnvelope,
+    path: str | Path,
+) -> None:
+    destination = Path(path)
+    if destination.exists():
+        raise FileExistsError(f"execution envelope already exists: {destination}")
+    _atomic_write(
+        destination,
+        json.dumps(envelope.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+    )
+
+
 def finalize_checkpoint(
     envelope: ContinuedPretrainingExecutionEnvelope,
     *,
