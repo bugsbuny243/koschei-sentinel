@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from koschei_sentinel.language_foundation import (
     build_language_foundation_release,
