@@ -1,0 +1,60 @@
+{
+  "corpus_sha256": "873e609284da5e8834bf103659ae42b90cee27710d11d4bc0ad6136200151144",
+  "document_count": 6,
+  "documents": [
+    {
+      "document_id": "c45c56ed5435ef37bed02c5a92215de0d1c2945929c33f6f7e9119f2acbbaca3",
+      "family": "reference:README",
+      "kind": "reference",
+      "path": "README.md",
+      "source_sha256": "ccd18700ce6d461da8dedd314c2071370dc3d0edc5c989e78b52c65c4ba5c32e",
+      "text": "# Koschei\n"
+    },
+    {
+      "document_id": "c3ee3c5a4bee16fc8215e488188010a5ad4a8122790dedb8008c5db3fe97f922",
+      "family": "reference:README",
+      "kind": "reference",
+      "path": "README.tr.md",
+      "source_sha256": "16437fc0034f48ac541e7827b98189f41c25f69498df8cb35e2f8673c599d81e",
+      "text": "# Koschei TR\n"
+    },
+    {
+      "document_id": "965c1493288785ecd75d73afb64424622369b22b783ab50414b65e8df978c0a9",
+      "family": "reference:docs/types.md",
+      "kind": "reference",
+      "path": "docs/types.md",
+      "source_sha256": "c94ea4bf30625fb0ef619fc6e9c5f1fb12518184b0c0386613f3c0db3326c96a",
+      "text": "Option and Result.\n"
+    },
+    {
+      "document_id": "8c412285c39daa22b294582f13e8f51ec9f6976bb0eeea92e6b6707c47325f13",
+      "family": "example:top-level",
+      "kind": "koschei_source",
+      "path": "examples/app.ks",
+      "source_sha256": "5866218004359357d27fddfad46729ee1a4c863307b89844e9097aae2cdbafc9",
+      "text": "fn main() { }\n"
+    },
+    {
+      "document_id": "1fbd84e8864cbd4e827d873720740848b310834a575fee3105322ebb4195e9c9",
+      "family": "example:hello",
+      "kind": "koschei_source",
+      "path": "examples/hello/main.ks",
+      "source_sha256": "8c05af8408fce091b2c929409bdad19b36f37ca276ec82515729d062d6de51c5",
+      "text": "fn main() { println(\"hello\") }\n"
+    },
+    {
+      "document_id": "df8a38a7a4537b742c976109e92b0e9dce6fb05622c727146771f42ef9b2b832",
+      "family": "example:supply",
+      "kind": "koschei_source",
+      "path": "examples/supply/main.ks",
+      "source_sha256": "5866218004359357d27fddfad46729ee1a4c863307b89844e9097aae2cdbafc9",
+      "text": "fn main() { }\n"
+    }
+  ],
+  "family_count": 5,
+  "generator_version": "koschei-foundation-export/v1",
+  "schema_version": "koschei.language-foundation-corpus.v1",
+  "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_repository": "bugsbuny243/koschei-lang",
+  "total_bytes": 101
+}
