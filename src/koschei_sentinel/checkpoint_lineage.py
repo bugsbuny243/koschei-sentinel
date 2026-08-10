@@ -79,43 +79,13 @@ def prepare_execution_envelope(
 ) -> ContinuedPretrainingExecutionEnvelope:
     root_path = Path(root).resolve()
     relative_plan = _relative_path(root_path, plan_path, "plan_path")
-    resolved_plan = _resolve_file(root_path, relative_plan, "continued-pretraining plan")
-    raw = resolved_plan.read_bytes()
-    try:
-        plan = ContinuedPretrainingPlan.model_validate_json(raw)
-    except ValueError as exc:
-        raise ValueError("invalid continued-pretraining plan") from exc
-
+    plan, raw = _load_plan(root_path, relative_plan)
     output_path = _resolve_under_root(root_path, plan.output_dir)
     if output_path.exists():
         raise FileExistsError(
             f"continued-pretraining output already exists: {plan.output_dir}"
         )
-
-    return ContinuedPretrainingExecutionEnvelope(
-        run_id=plan.run_id,
-        plan_path=relative_plan,
-        plan_file_digest=hashlib.sha256(raw).hexdigest(),
-        plan_digest=_model_digest(plan),
-        base_model=plan.base_model,
-        base_revision=plan.base_revision,
-        corpus_file_digest=plan.corpus_file_digest,
-        corpus_digest=plan.corpus_digest,
-        corpus_audit_file_digest=plan.corpus_audit_file_digest,
-        corpus_policy_digest=plan.corpus_policy_digest,
-        holdout_digest=plan.holdout_digest,
-        benchmark_suite_digest=plan.benchmark_suite_digest,
-        training_config_digest=plan.training_config_digest,
-        max_sequence_length=plan.max_sequence_length,
-        epochs=plan.epochs,
-        learning_rate=plan.learning_rate,
-        per_device_batch_size=plan.per_device_batch_size,
-        gradient_accumulation_steps=plan.gradient_accumulation_steps,
-        effective_batch_size=plan.effective_batch_size,
-        estimated_optimizer_steps=plan.estimated_optimizer_steps,
-        seed=plan.seed,
-        output_dir=plan.output_dir,
-    )
+    return _envelope_from_plan(plan, relative_plan, raw)
 
 
 def finalize_checkpoint(
@@ -189,21 +159,58 @@ def verify_checkpoint_manifest(
     return stored
 
 
-def _verify_envelope_plan(
-    envelope: ContinuedPretrainingExecutionEnvelope,
-    root: Path,
-) -> None:
-    plan_path = _resolve_file(root, envelope.plan_path, "continued-pretraining plan")
-    raw = plan_path.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != envelope.plan_file_digest:
-        raise ValueError("continued-pretraining plan file digest changed")
+def _load_plan(root: Path, relative_plan: str) -> tuple[ContinuedPretrainingPlan, bytes]:
+    resolved_plan = _resolve_file(root, relative_plan, "continued-pretraining plan")
+    raw = resolved_plan.read_bytes()
     try:
         plan = ContinuedPretrainingPlan.model_validate_json(raw)
     except ValueError as exc:
         raise ValueError("invalid continued-pretraining plan") from exc
+    return plan, raw
+
+
+def _envelope_from_plan(
+    plan: ContinuedPretrainingPlan,
+    relative_plan: str,
+    raw: bytes,
+) -> ContinuedPretrainingExecutionEnvelope:
+    return ContinuedPretrainingExecutionEnvelope(
+        run_id=plan.run_id,
+        plan_path=relative_plan,
+        plan_file_digest=hashlib.sha256(raw).hexdigest(),
+        plan_digest=_model_digest(plan),
+        base_model=plan.base_model,
+        base_revision=plan.base_revision,
+        corpus_file_digest=plan.corpus_file_digest,
+        corpus_digest=plan.corpus_digest,
+        corpus_audit_file_digest=plan.corpus_audit_file_digest,
+        corpus_policy_digest=plan.corpus_policy_digest,
+        holdout_digest=plan.holdout_digest,
+        benchmark_suite_digest=plan.benchmark_suite_digest,
+        training_config_digest=plan.training_config_digest,
+        max_sequence_length=plan.max_sequence_length,
+        epochs=plan.epochs,
+        learning_rate=plan.learning_rate,
+        per_device_batch_size=plan.per_device_batch_size,
+        gradient_accumulation_steps=plan.gradient_accumulation_steps,
+        effective_batch_size=plan.effective_batch_size,
+        estimated_optimizer_steps=plan.estimated_optimizer_steps,
+        seed=plan.seed,
+        output_dir=plan.output_dir,
+    )
+
+
+def _verify_envelope_plan(
+    envelope: ContinuedPretrainingExecutionEnvelope,
+    root: Path,
+) -> None:
+    plan, raw = _load_plan(root, envelope.plan_path)
+    if hashlib.sha256(raw).hexdigest() != envelope.plan_file_digest:
+        raise ValueError("continued-pretraining plan file digest changed")
     if _model_digest(plan) != envelope.plan_digest:
         raise ValueError("continued-pretraining semantic plan digest changed")
-    if envelope != prepare_execution_envelope(envelope.plan_path, root=root):
+    expected = _envelope_from_plan(plan, envelope.plan_path, raw)
+    if envelope != expected:
         raise ValueError("execution envelope does not match continued-pretraining plan")
 
 
@@ -220,17 +227,24 @@ def _checkpoint_files(output: Path) -> list[CheckpointFile]:
             raise ValueError("checkpoint output contains an unsupported filesystem entry")
         relative = path.relative_to(output).as_posix()
         _validate_artifact_path(relative)
-        raw = path.read_bytes()
         rows.append(
             CheckpointFile(
                 path=relative,
-                sha256=hashlib.sha256(raw).hexdigest(),
-                bytes=len(raw),
+                sha256=_hash_file(path),
+                bytes=path.stat().st_size,
             )
         )
         if len(rows) > _MAX_CHECKPOINT_FILES:
             raise ValueError("checkpoint output contains too many files")
     return rows
+
+
+def _hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1_048_576):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _checkpoint_payload(
