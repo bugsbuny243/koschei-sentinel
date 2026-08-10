@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         policy = load_curriculum_policy(args.config)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         print(f"curriculum rejected: {exc}", file=sys.stderr)
         return 2
 
