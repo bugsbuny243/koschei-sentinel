@@ -1,0 +1,14 @@
+{
+  "automatic_training_allowed": false,
+  "policy_id": "blockchain-stage2-qwen25-7b-2026-08",
+  "production_authority_allowed": false,
+  "require_exact_registry_binding": true,
+  "require_owner_signature": true,
+  "require_passing_preflight": true,
+  "require_verified_release": true,
+  "required_candidate_id": "qwen2.5-coder-7b-base",
+  "required_model_id": "Qwen/Qwen2.5-Coder-7B",
+  "required_model_revision": "0396a76181e127dfc13e5c5ec48a8cee09938b02",
+  "schema_version": "sentinel.blockchain-training-authorization-policy.v1",
+  "web3_runtime_authority_allowed": false
+}
