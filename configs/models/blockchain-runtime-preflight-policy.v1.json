@@ -14,6 +14,7 @@
   "require_forward": true,
   "require_lora_attach": true,
   "require_native_transformers": true,
+  "require_single_device_fit": true,
   "schema_version": "sentinel.blockchain-runtime-preflight-policy.v1",
   "vram_safety_bps": 14000
 }
