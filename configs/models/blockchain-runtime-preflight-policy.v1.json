@@ -1,0 +1,19 @@
+{
+  "allow_trust_remote_code": false,
+  "checkpoint_bytes_per_parameter": 2.0,
+  "disk_safety_bps": 11500,
+  "host_ram_safety_bps": 12000,
+  "min_free_disk_margin_mb": 8192,
+  "min_host_ram_margin_mb": 4096,
+  "policy_id": "blockchain-runtime-preflight-v1",
+  "probe_sequence_tokens": 256,
+  "quantization_bits": 4,
+  "require_allowlisted_open_license": true,
+  "require_backward": true,
+  "require_cuda": true,
+  "require_forward": true,
+  "require_lora_attach": true,
+  "require_native_transformers": true,
+  "schema_version": "sentinel.blockchain-runtime-preflight-policy.v1",
+  "vram_safety_bps": 14000
+}
