@@ -116,6 +116,18 @@ def load_snapshot_spec(path: str | Path) -> BlockchainSourceSnapshotSpec:
         raise ValueError("invalid blockchain source snapshot spec") from exc
 
 
+def write_snapshot_spec(
+    spec: BlockchainSourceSnapshotSpec,
+    path: str | Path,
+) -> None:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_no_replace(
+        destination,
+        json.dumps(spec.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+    )
+
+
 def inspect_snapshot(
     spec: BlockchainSourceSnapshotSpec,
     *,
@@ -190,7 +202,10 @@ def ingest_snapshot(
             raise ValueError(
                 f"duplicate content inside one snapshot: {previous} and {item.path}"
             )
-        document_ref = _pseudonym("doc", f"{spec.source_id}\0{item.path}\0{content_digest}")
+        document_ref = _pseudonym(
+            "doc",
+            f"{spec.source_id}\0{item.path}\0{content_digest}",
+        )
         documents.append(
             BlockchainSecurityDocument(
                 document_ref=document_ref,
@@ -265,7 +280,9 @@ def write_ingest_result(
         _atomic_no_replace(
             manifest,
             json.dumps(
-                result.manifest.model_dump(mode="json"), indent=2, sort_keys=True
+                result.manifest.model_dump(mode="json"),
+                indent=2,
+                sort_keys=True,
             )
             + "\n",
         )
@@ -286,19 +303,21 @@ def _hash_file(path: Path) -> str:
 
 
 def _pseudonym(prefix: str, material: str) -> str:
-    return f"{prefix}_{hashlib.sha256(material.encode('utf-8')).hexdigest()[:24]}"
+    digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]
+    return f"{prefix}_{digest}"
 
 
 def _is_pseudonym(value: str) -> bool:
     prefix, separator, digest = value.rpartition("_")
+    prefix_is_valid = all(
+        character.islower() or character.isdigit() or character == "_"
+        for character in prefix
+    )
     return bool(
         separator
         and prefix
         and prefix[0].isalpha()
-        and all(
-            character.islower() or character.isdigit() or character == "_"
-            for character in prefix
-        )
+        and prefix_is_valid
         and len(digest) == 24
         and all(character in "0123456789abcdef" for character in digest)
     )
