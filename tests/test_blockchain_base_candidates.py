@@ -159,9 +159,19 @@ def test_repository_registry_pins_reviewed_initial_shortlist() -> None:
     audit = audit_base_candidate_registry(registry, policy)
 
     assert audit.ready_for_preflight is True
-    assert audit.candidates == 3
+    assert audit.candidates == 4
     assert audit.ready_for_training_authorization_review == 0
     by_id = {item.candidate_id: item for item in registry.candidates}
+    assert by_id["qwen2.5-coder-7b-base"].revision == (
+        "0396a76181e127dfc13e5c5ec48a8cee09938b02"
+    )
+    assert by_id["qwen2.5-coder-7b-base"].declared_total_parameters_billion == 7.61
+    assert by_id["qwen2.5-coder-7b-base"].license_review_status is (
+        LicenseReviewStatus.ALLOWLISTED_OPEN_LICENSE
+    )
+    assert by_id["qwen2.5-coder-7b-base"].runtime_integration_status is (
+        RuntimeIntegrationStatus.NATIVE_TRANSFORMERS_EXPECTED
+    )
     assert by_id["qwen3-coder-next-base"].revision == (
         "1b6df59d5f75ab51edb9ad8cb3ea69c5d0aedd57"
     )
