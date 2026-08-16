@@ -50,6 +50,7 @@ sentinel-blockchain-corpus-audit = "koschei_sentinel.blockchain_security_corpus_
 sentinel-blockchain-ingest = "koschei_sentinel.blockchain_security_ingest_cli:main"
 sentinel-blockchain-compose = "koschei_sentinel.blockchain_source_catalog_cli:main"
 sentinel-blockchain-release = "koschei_sentinel.blockchain_security_release_cli:main"
+sentinel-blockchain-train = "koschei_sentinel.blockchain_training_cli:main"
 sentinel-register-candidate = "koschei_sentinel.incubation_registry_cli:main"
 sentinel-job-plan = "koschei_sentinel.offline_job_cli:main"
 sentinel-job-receipt = "koschei_sentinel.offline_receipt_cli:main"
