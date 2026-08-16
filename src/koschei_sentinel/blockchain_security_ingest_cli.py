@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 from koschei_sentinel.blockchain_security_corpus import (
     BlockchainSourceClass,
@@ -16,6 +15,7 @@ from koschei_sentinel.blockchain_security_ingest import (
     load_snapshot_spec,
     snapshot_digest,
     write_ingest_result,
+    write_snapshot_spec,
 )
 from koschei_sentinel.pretraining_corpus import RightsBasis
 
@@ -34,11 +34,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Hash one local source snapshot and write a no-replace trusted spec",
     )
     prepare.add_argument("--source-id", required=True)
-    prepare.add_argument("--source-class", required=True, choices=[item.value for item in BlockchainSourceClass])
-    prepare.add_argument("--rights-basis", required=True, choices=[item.value for item in RightsBasis])
+    prepare.add_argument(
+        "--source-class",
+        required=True,
+        choices=[item.value for item in BlockchainSourceClass],
+    )
+    prepare.add_argument(
+        "--rights-basis",
+        required=True,
+        choices=[item.value for item in RightsBasis],
+    )
     prepare.add_argument("--snapshot", required=True)
-    prepare.add_argument("--chain", action="append", required=True, choices=[item.value for item in ChainFamily])
-    prepare.add_argument("--threat", action="append", required=True, choices=[item.value for item in ThreatDomain])
+    prepare.add_argument(
+        "--chain",
+        action="append",
+        required=True,
+        choices=[item.value for item in ChainFamily],
+    )
+    prepare.add_argument(
+        "--threat",
+        action="append",
+        required=True,
+        choices=[item.value for item in ThreatDomain],
+    )
     prepare.add_argument("--family-ref", action="append", default=[])
     prepare.add_argument("--max-file-bytes", type=int, default=100_000)
     prepare.add_argument("--root", default=".")
@@ -74,14 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             spec = provisional.model_copy(
                 update={"expected_snapshot_digest": snapshot_digest(files)}
             )
-            destination = Path(args.output)
-            if destination.exists():
-                raise FileExistsError(f"snapshot spec already exists: {destination}")
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(
-                json.dumps(spec.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
+            write_snapshot_spec(spec, args.output)
             print(
                 json.dumps(
                     {
@@ -89,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
                         "source_id": spec.source_id,
                         "snapshot_digest": spec.expected_snapshot_digest,
                         "files": len(files),
-                        "output": str(destination),
+                        "output": args.output,
                         "network_access": False,
                     },
                     indent=2,
