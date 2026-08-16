@@ -23,6 +23,8 @@ RUFF_TARGETS = [
     "src/koschei_sentinel/blockchain_model_tournament_cli.py",
     "src/koschei_sentinel/blockchain_base_candidates.py",
     "src/koschei_sentinel/blockchain_base_candidates_cli.py",
+    "src/koschei_sentinel/blockchain_runtime_preflight.py",
+    "src/koschei_sentinel/blockchain_runtime_preflight_cli.py",
     "tests/test_blockchain_security_corpus.py",
     "tests/test_blockchain_security_ingest.py",
     "tests/test_blockchain_source_catalog.py",
@@ -31,6 +33,7 @@ RUFF_TARGETS = [
     "tests/test_blockchain_security_eval.py",
     "tests/test_blockchain_model_tournament.py",
     "tests/test_blockchain_base_candidates.py",
+    "tests/test_blockchain_runtime_preflight.py",
 ]
 
 PYTEST_TARGETS = [
@@ -42,6 +45,7 @@ PYTEST_TARGETS = [
     "tests/test_blockchain_security_eval.py",
     "tests/test_blockchain_model_tournament.py",
     "tests/test_blockchain_base_candidates.py",
+    "tests/test_blockchain_runtime_preflight.py",
 ]
 
 
@@ -53,7 +57,7 @@ def run(command: list[str]) -> None:
 def main() -> int:
     run(["ruff", "check", *RUFF_TARGETS])
     run([sys.executable, "-m", "pytest", "-q", *PYTEST_TARGETS])
-    print("BLOCKCHAIN BASE CANDIDATE STACK LOCAL GATE: PASSED", flush=True)
+    print("BLOCKCHAIN RUNTIME PREFLIGHT STACK LOCAL GATE: PASSED", flush=True)
     return 0
 
 
