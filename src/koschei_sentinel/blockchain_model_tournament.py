@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
@@ -11,7 +12,6 @@ from koschei_sentinel.blockchain_security_eval import (
     BlockchainSecurityEvalAudit,
     BlockchainSecurityEvalPolicy,
     audit_blockchain_security_eval,
-    load_eval_policy,
     load_eval_receipt,
 )
 from koschei_sentinel.blockchain_training import BlockchainAdapterManifest
@@ -72,7 +72,10 @@ class BlockchainModelTournamentSpec(StrictModel):
         "sentinel.blockchain-model-tournament.v1"
     )
     tournament_id: str = Field(pattern=_ID)
-    candidates: list[BlockchainTournamentCandidateSpec] = Field(min_length=1, max_length=128)
+    candidates: list[BlockchainTournamentCandidateSpec] = Field(
+        min_length=1,
+        max_length=128,
+    )
 
     @model_validator(mode="after")
     def candidates_are_unique(self) -> BlockchainModelTournamentSpec:
@@ -163,21 +166,13 @@ class BlockchainModelTournamentResult(StrictModel):
     automatic_production_promotion_allowed: Literal[False] = False
 
 
+@dataclass(frozen=True)
 class _LoadedCandidate:
-    def __init__(
-        self,
-        *,
-        spec: BlockchainTournamentCandidateSpec,
-        adapter: BlockchainAdapterManifest,
-        audit: BlockchainSecurityEvalAudit,
-        evaluator_digest: str,
-        runtime: BlockchainTournamentRuntimeProfile,
-    ) -> None:
-        self.spec = spec
-        self.adapter = adapter
-        self.audit = audit
-        self.evaluator_digest = evaluator_digest
-        self.runtime = runtime
+    spec: BlockchainTournamentCandidateSpec
+    adapter: BlockchainAdapterManifest
+    audit: BlockchainSecurityEvalAudit
+    evaluator_digest: str
+    runtime: BlockchainTournamentRuntimeProfile
 
 
 def build_runtime_profile(
@@ -249,13 +244,14 @@ def run_blockchain_model_tournament(
     root_path = Path(root).resolve()
     loaded = [
         _load_candidate(item, eval_policy, root=root_path)
-        for item in sorted(tournament.candidates, key=lambda value: value.candidate_id)
+        for item in sorted(
+            tournament.candidates,
+            key=lambda value: value.candidate_id,
+        )
     ]
     violations: list[str] = []
     if len(loaded) < policy.min_candidates:
-        violations.append(
-            f"candidates {len(loaded)} below minimum {policy.min_candidates}"
-        )
+        violations.append(f"candidates {len(loaded)} below minimum {policy.min_candidates}")
 
     adapter_digests = [item.adapter.adapter_digest for item in loaded]
     if len(adapter_digests) != len(set(adapter_digests)):
@@ -294,19 +290,13 @@ def run_blockchain_model_tournament(
         ),
     }
 
-    candidate_results: list[BlockchainTournamentCandidateResult] = []
-    for item in loaded:
-        exclusion_reasons: list[str] = []
-        if not item.audit.ready:
-            exclusion_reasons.append("blockchain security evaluation gate did not pass")
-        if item.runtime.peak_gpu_memory_mb > policy.max_peak_gpu_memory_mb:
-            exclusion_reasons.append(
-                "runtime peak GPU memory exceeds tournament policy"
-            )
-        candidate_results.append(
-            _candidate_result(item, exclusion_reasons=exclusion_reasons)
+    candidate_results = [
+        _candidate_result(
+            item,
+            exclusion_reasons=_candidate_exclusions(item, policy),
         )
-
+        for item in loaded
+    ]
     eligible = [item for item in candidate_results if item.eligible]
     if len(eligible) < policy.min_eligible_candidates:
         violations.append(
@@ -411,6 +401,18 @@ def _load_candidate(
     )
 
 
+def _candidate_exclusions(
+    candidate: _LoadedCandidate,
+    policy: BlockchainModelTournamentPolicy,
+) -> list[str]:
+    reasons: list[str] = []
+    if not candidate.audit.ready:
+        reasons.append("blockchain security evaluation gate did not pass")
+    if candidate.runtime.peak_gpu_memory_mb > policy.max_peak_gpu_memory_mb:
+        reasons.append("runtime peak GPU memory exceeds tournament policy")
+    return reasons
+
+
 def _candidate_result(
     candidate: _LoadedCandidate,
     *,
@@ -432,7 +434,9 @@ def _candidate_result(
     )
     throughput = max(
         1,
-        candidate.runtime.generated_tokens * 1_000_000 // candidate.runtime.wall_time_ms,
+        candidate.runtime.generated_tokens
+        * 1_000_000
+        // candidate.runtime.wall_time_ms,
     )
     return BlockchainTournamentCandidateResult(
         candidate_id=candidate.spec.candidate_id,
