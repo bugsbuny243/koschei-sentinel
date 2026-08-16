@@ -45,7 +45,7 @@ def license_text_matches_spdx(spdx_id: str, text: str) -> bool:
         return (
             "permission is hereby granted" in folded
             and "free of charge" in folded
-            and "the software" in folded
+            and "without restriction" in folded
         )
     if spdx_id == "CC0-1.0":
         return "cc0" in folded and "1.0 universal" in folded
