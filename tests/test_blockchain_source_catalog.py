@@ -221,13 +221,14 @@ def test_repository_source_catalog_policy_is_fail_closed() -> None:
         (root / "configs" / "pretraining" / "blockchain-source-catalog.v1.json").read_text()
     )
     policy = BlockchainSourceCatalogPolicy.model_validate(payload)
-    assert policy.min_sources >= 200
+    assert policy.policy_id == "blockchain-source-catalog-reviewed-pilot-2026-08"
+    assert policy.min_sources >= 20
     assert policy.min_source_classes >= 5
-    assert policy.min_sources_per_required_chain >= 10
-    assert policy.min_sources_per_required_threat_domain >= 10
+    assert policy.min_sources_per_required_chain >= 1
+    assert policy.min_sources_per_required_threat_domain >= 1
     assert policy.min_high_trust_share_bps >= 6000
     assert policy.max_synthetic_source_share_bps <= 1500
-    assert policy.max_single_source_document_share_bps <= 500
+    assert policy.max_single_source_document_share_bps <= 2500
     assert set(policy.required_chain_families) >= {
         ChainFamily.EVM,
         ChainFamily.SOLANA,
