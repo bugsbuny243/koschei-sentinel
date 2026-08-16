@@ -17,11 +17,14 @@ RUFF_TARGETS = [
     "src/koschei_sentinel/blockchain_security_release_cli.py",
     "src/koschei_sentinel/blockchain_training.py",
     "src/koschei_sentinel/blockchain_training_cli.py",
+    "src/koschei_sentinel/blockchain_security_eval.py",
+    "src/koschei_sentinel/blockchain_security_eval_cli.py",
     "tests/test_blockchain_security_corpus.py",
     "tests/test_blockchain_security_ingest.py",
     "tests/test_blockchain_source_catalog.py",
     "tests/test_blockchain_security_release.py",
     "tests/test_blockchain_training.py",
+    "tests/test_blockchain_security_eval.py",
 ]
 
 PYTEST_TARGETS = [
@@ -30,6 +33,7 @@ PYTEST_TARGETS = [
     "tests/test_blockchain_source_catalog.py",
     "tests/test_blockchain_security_release.py",
     "tests/test_blockchain_training.py",
+    "tests/test_blockchain_security_eval.py",
 ]
 
 
@@ -41,7 +45,7 @@ def run(command: list[str]) -> None:
 def main() -> int:
     run(["ruff", "check", *RUFF_TARGETS])
     run([sys.executable, "-m", "pytest", "-q", *PYTEST_TARGETS])
-    print("BLOCKCHAIN TRAINING STACK LOCAL GATE: PASSED", flush=True)
+    print("BLOCKCHAIN SECURITY STACK LOCAL GATE: PASSED", flush=True)
     return 0
 
 
