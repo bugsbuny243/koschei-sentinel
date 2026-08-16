@@ -17,6 +17,7 @@ from koschei_sentinel.blockchain_security_ingest import (
     inspect_snapshot,
     snapshot_digest,
     write_ingest_result,
+    write_snapshot_spec,
 )
 from koschei_sentinel.pretraining_corpus import RightsBasis
 
@@ -29,7 +30,10 @@ def _spec(root: Path, snapshot: Path) -> BlockchainSourceSnapshotSpec:
         snapshot_path=snapshot.relative_to(root).as_posix(),
         expected_snapshot_digest="0" * 64,
         chain_families=[ChainFamily.EVM],
-        threat_domains=[ThreatDomain.SMART_CONTRACT, ThreatDomain.PRIVILEGED_ACCESS],
+        threat_domains=[
+            ThreatDomain.SMART_CONTRACT,
+            ThreatDomain.PRIVILEGED_ACCESS,
+        ],
         family_refs=[],
     )
     _, files = inspect_snapshot(provisional, root=root)
@@ -68,14 +72,20 @@ def test_ingest_is_content_addressed_and_deterministic(tmp_path: Path) -> None:
     assert first.manifest.snapshot_digest == spec.expected_snapshot_digest
     assert first.manifest.documents == 2
     assert len(first.manifest.files) == 2
-    assert all(item.source_snapshot_digest == spec.expected_snapshot_digest for item in first.documents)
+    assert all(
+        item.source_snapshot_digest == spec.expected_snapshot_digest
+        for item in first.documents
+    )
     assert all(item.chain_families == [ChainFamily.EVM] for item in first.documents)
 
 
 def test_snapshot_drift_after_pinning_is_rejected(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path)
     spec = _spec(tmp_path, snapshot)
-    (snapshot / "README.md").write_text("Changed after trust ceremony.\n", encoding="utf-8")
+    (snapshot / "README.md").write_text(
+        "Changed after trust ceremony.\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(ValueError, match="trusted expected digest"):
         ingest_snapshot(spec, root=tmp_path)
@@ -138,12 +148,26 @@ def test_write_result_is_no_replace_and_digest_bound(tmp_path: Path) -> None:
 
     write_ingest_result(result, corpus_path=corpus, manifest_path=manifest)
 
-    rows = [json.loads(line) for line in corpus.read_text(encoding="utf-8").splitlines()]
+    rows = [
+        json.loads(line)
+        for line in corpus.read_text(encoding="utf-8").splitlines()
+    ]
     stored = json.loads(manifest.read_text(encoding="utf-8"))
     assert len(rows) == result.manifest.documents
     assert stored["corpus_file_digest"] == result.manifest.corpus_file_digest
     with pytest.raises(FileExistsError):
         write_ingest_result(result, corpus_path=corpus, manifest_path=manifest)
+
+
+def test_snapshot_spec_is_no_replace(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+    spec = _spec(tmp_path, snapshot)
+    destination = tmp_path / "spec.json"
+
+    write_snapshot_spec(spec, destination)
+
+    with pytest.raises(FileExistsError):
+        write_snapshot_spec(spec, destination)
 
 
 def test_snapshot_path_cannot_escape_repository_root() -> None:
