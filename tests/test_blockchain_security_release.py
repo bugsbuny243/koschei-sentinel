@@ -208,7 +208,10 @@ def test_release_is_source_isolated_deterministic_and_verifiable(tmp_path: Path)
     assert first.sources == 9
     assert first.source_leakage_detected is False
     assert first.family_leakage_detected is False
-    source_sets = [set(first.splits[name].source_snapshot_digests) for name in ("train", "validation", "test")]
+    source_sets = [
+        set(first.splits[name].source_snapshot_digests)
+        for name in ("train", "validation", "test")
+    ]
     assert source_sets[0].isdisjoint(source_sets[1])
     assert source_sets[0].isdisjoint(source_sets[2])
     assert source_sets[1].isdisjoint(source_sets[2])
