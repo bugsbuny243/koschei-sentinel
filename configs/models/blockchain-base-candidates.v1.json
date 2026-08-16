@@ -1,0 +1,81 @@
+{
+  "candidates": [
+    {
+      "blocked_reasons": [
+        "license_review_pending",
+        "remote_code_review_required",
+        "runtime_preflight_not_run",
+        "hardware_plan_not_approved"
+      ],
+      "candidate_id": "deepseek-coder-v2-lite-base",
+      "commercial_use_declared": true,
+      "declared_active_parameters_billion": 2.4,
+      "declared_context_length_tokens": 131072,
+      "declared_total_parameters_billion": 16.0,
+      "hardware_plan_approved": false,
+      "lane": "FEASIBILITY",
+      "license_id": "deepseek-license",
+      "license_review_status": "MANUAL_REVIEW_REQUIRED",
+      "metadata_source": "OFFICIAL_MODEL_CARD",
+      "model_id": "deepseek-ai/DeepSeek-Coder-V2-Lite-Base",
+      "preflight_status": "NOT_RUN",
+      "revision": "5a3cf151e6eb71197e34b87d42546c97b2adb139",
+      "runtime_integration_status": "CUSTOM_CODE_REVIEW_REQUIRED",
+      "schema_version": "sentinel.blockchain-base-candidate.v1",
+      "training_authorized": false,
+      "training_stage": "BASE_PRETRAINING",
+      "trust_remote_code_required": true
+    },
+    {
+      "blocked_reasons": [
+        "runtime_preflight_not_run",
+        "hardware_plan_not_approved"
+      ],
+      "candidate_id": "qwen3-coder-next-base",
+      "commercial_use_declared": true,
+      "declared_active_parameters_billion": 3.0,
+      "declared_context_length_tokens": 262144,
+      "declared_total_parameters_billion": 80.0,
+      "hardware_plan_approved": false,
+      "lane": "EFFICIENCY",
+      "license_id": "apache-2.0",
+      "license_review_status": "ALLOWLISTED_OPEN_LICENSE",
+      "metadata_source": "OFFICIAL_MODEL_CARD",
+      "model_id": "Qwen/Qwen3-Coder-Next-Base",
+      "preflight_status": "NOT_RUN",
+      "revision": "1b6df59d5f75ab51edb9ad8cb3ea69c5d0aedd57",
+      "runtime_integration_status": "NATIVE_TRANSFORMERS_EXPECTED",
+      "schema_version": "sentinel.blockchain-base-candidate.v1",
+      "training_authorized": false,
+      "training_stage": "BASE_PRETRAINING",
+      "trust_remote_code_required": false
+    },
+    {
+      "blocked_reasons": [
+        "runtime_preflight_not_run",
+        "hardware_plan_not_approved"
+      ],
+      "candidate_id": "glm-4.5-air-base",
+      "commercial_use_declared": true,
+      "declared_active_parameters_billion": 12.0,
+      "declared_context_length_tokens": null,
+      "declared_total_parameters_billion": 106.0,
+      "hardware_plan_approved": false,
+      "lane": "POWER",
+      "license_id": "mit",
+      "license_review_status": "ALLOWLISTED_OPEN_LICENSE",
+      "metadata_source": "OFFICIAL_MODEL_CARD",
+      "model_id": "zai-org/GLM-4.5-Air-Base",
+      "preflight_status": "NOT_RUN",
+      "revision": "b52435f955c9dc2c38e75319e3d2f0bf511e15ff",
+      "runtime_integration_status": "NATIVE_TRANSFORMERS_EXPECTED",
+      "schema_version": "sentinel.blockchain-base-candidate.v1",
+      "training_authorized": false,
+      "training_stage": "BASE_PRETRAINING",
+      "trust_remote_code_required": false
+    }
+  ],
+  "registry_digest": "5208b7355e01ca1fa18bc93e3e4906d80544fa7c635225b513eb064dd52f81bc",
+  "registry_id": "blockchain-base-candidates-2026-08",
+  "schema_version": "sentinel.blockchain-base-candidate-registry.v1"
+}
