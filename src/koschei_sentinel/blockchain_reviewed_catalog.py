@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter, defaultdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -23,7 +23,6 @@ from koschei_sentinel.pretraining_corpus import RightsBasis
 
 _DIGEST = r"^[a-f0-9]{64}$"
 _COMMIT = r"^[a-f0-9]{40}$"
-
 _HIGH_TRUST_TIERS = frozenset(
     {
         SourceTrustTier.PRIMARY_PROTOCOL,
@@ -32,7 +31,6 @@ _HIGH_TRUST_TIERS = frozenset(
         SourceTrustTier.FORMAL_SPECIFICATION,
     }
 )
-
 _RIGHTS_BY_SPDX = {
     "Apache-2.0": RightsBasis.APACHE_2_0,
     "MIT": RightsBasis.MIT,
@@ -41,14 +39,26 @@ _RIGHTS_BY_SPDX = {
 }
 
 
-def _canonical_digest(payload: object) -> str:
-    raw = json.dumps(
+def _digest_payload(payload: object) -> str:
+    encoded = json.dumps(
         payload,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
     ).encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _validate_relative_path(value: str, field: str) -> None:
+    path = PurePosixPath(value)
+    if (
+        not value
+        or path.is_absolute()
+        or ".." in path.parts
+        or value.startswith("~")
+        or "\\" in value
+    ):
+        raise ValueError(f"{field} must stay within the catalog root")
 
 
 class ReviewedCatalogSource(StrictModel):
@@ -72,6 +82,7 @@ class ReviewedCatalogSource(StrictModel):
     def reviewed_source_is_canonical(self) -> ReviewedCatalogSource:
         if "/" not in self.repository:
             raise ValueError("repository must use owner/name form")
+        _validate_relative_path(self.license_evidence_path, "license_evidence_path")
         if len(self.reviewed_chain_families) != len(set(self.reviewed_chain_families)):
             raise ValueError("reviewed_chain_families must be unique")
         if len(self.reviewed_threat_domains) != len(set(self.reviewed_threat_domains)):
@@ -99,21 +110,17 @@ class ReviewedSourceCatalog(StrictModel):
 
     @model_validator(mode="after")
     def reviewed_catalog_is_canonical(self) -> ReviewedSourceCatalog:
+        _validate_relative_path(
+            self.approved_document_corpus_file,
+            "approved_document_corpus_file",
+        )
         source_ids = [item.source_id for item in self.sources]
         if source_ids != sorted(source_ids):
             raise ValueError("reviewed catalog sources must be sorted by source_id")
         if len(source_ids) != len(set(source_ids)):
             raise ValueError("reviewed catalog source_id values must be unique")
-        path = Path(self.approved_document_corpus_file)
-        if (
-            path.is_absolute()
-            or ".." in path.parts
-            or self.approved_document_corpus_file.startswith("~")
-            or "\\" in self.approved_document_corpus_file
-        ):
-            raise ValueError("approved_document_corpus_file must be repository-local")
         payload = self.model_dump(mode="json", exclude={"catalog_digest"})
-        if _canonical_digest(payload) != self.catalog_digest:
+        if _digest_payload(payload) != self.catalog_digest:
             raise ValueError("reviewed catalog digest mismatch")
         return self
 
@@ -141,14 +148,7 @@ class ApprovedBlockchainDocument(StrictModel):
     def approved_document_is_bound(self) -> ApprovedBlockchainDocument:
         if "/" not in self.repository:
             raise ValueError("repository must use owner/name form")
-        path = Path(self.path)
-        if (
-            path.is_absolute()
-            or ".." in path.parts
-            or self.path.startswith("~")
-            or "\\" in self.path
-        ):
-            raise ValueError("approved document path must be relative")
+        _validate_relative_path(self.path, "approved document path")
         if len(self.threat_domains) != len(set(self.threat_domains)):
             raise ValueError("approved document threat_domains must be unique")
         actual = hashlib.sha256(self.text.encode("utf-8")).hexdigest()
@@ -214,16 +214,16 @@ def load_reviewed_source_catalog(path: str | Path) -> ReviewedSourceCatalog:
 
 def load_approved_blockchain_documents(path: str | Path) -> list[ApprovedBlockchainDocument]:
     rows: list[ApprovedBlockchainDocument] = []
-    source = Path(path)
-    for line_number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
-        if not line.strip():
-            raise ValueError(f"blank approved blockchain document row at line {line_number}")
-        try:
-            rows.append(ApprovedBlockchainDocument.model_validate_json(line))
-        except ValueError as exc:
-            raise ValueError(
-                f"invalid approved blockchain document row at line {line_number}"
-            ) from exc
+    with Path(path).open("r", encoding="utf-8", newline="") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                raise ValueError(f"blank approved blockchain document row at line {line_number}")
+            try:
+                rows.append(ApprovedBlockchainDocument.model_validate_json(line))
+            except ValueError as exc:
+                raise ValueError(
+                    f"invalid approved blockchain document row at line {line_number}"
+                ) from exc
     if not rows:
         raise ValueError("approved blockchain document corpus contains no documents")
     keys = [(item.source_id, item.path) for item in rows]
@@ -244,8 +244,8 @@ def audit_reviewed_source_catalog(
         catalog.approved_document_corpus_file,
         "approved document corpus",
     )
-    actual_corpus_digest = _hash_file(corpus_path)
-    if actual_corpus_digest != catalog.approved_document_corpus_sha256:
+    corpus_digest = _hash_file(corpus_path)
+    if corpus_digest != catalog.approved_document_corpus_sha256:
         raise ValueError("approved document corpus digest does not match reviewed catalog")
 
     approved = load_approved_blockchain_documents(corpus_path)
@@ -258,16 +258,14 @@ def audit_reviewed_source_catalog(
         source = sources.get(item.source_id)
         if source is None:
             raise ValueError(f"approved document references unknown source: {item.source_id}")
-        if item.repository != source.repository:
-            raise ValueError(f"approved document repository mismatch: {item.source_id}")
-        if item.commit != source.commit:
-            raise ValueError(f"approved document commit mismatch: {item.source_id}")
-        if item.lineage_lane != source.lineage_lane:
-            raise ValueError(f"approved document lineage lane mismatch: {item.source_id}")
-        if item.source_snapshot_digest != source.snapshot_digest:
-            raise ValueError(f"approved document snapshot mismatch: {item.source_id}")
-        if item.license_spdx != source.license_spdx:
-            raise ValueError(f"approved document license mismatch: {item.source_id}")
+        if (
+            item.repository != source.repository
+            or item.commit != source.commit
+            or item.lineage_lane != source.lineage_lane
+            or item.source_snapshot_digest != source.snapshot_digest
+            or item.license_spdx != source.license_spdx
+        ):
+            raise ValueError(f"approved document lineage mismatch: {item.source_id}")
         previous = content_sources.setdefault(item.content_sha256, item.source_id)
         if previous != item.source_id:
             duplicate_content.add(item.content_sha256)
@@ -288,48 +286,40 @@ def audit_reviewed_source_catalog(
     document_chains: Counter[str] = Counter()
     document_threats: Counter[str] = Counter()
     snapshot_counts: Counter[str] = Counter()
-    standard_documents: list[BlockchainSecurityDocument] = []
+    documents: list[BlockchainSecurityDocument] = []
 
     for source in catalog.sources:
         rows = grouped[source.source_id]
         if len(rows) != source.retained_documents:
             raise ValueError(f"retained document count mismatch: {source.source_id}")
-
-        actual_class_counts = Counter(item.source_class.value for item in rows)
-        expected_class_counts = Counter(source.reviewed_document_class_counts)
-        if actual_class_counts != expected_class_counts:
+        class_counts = Counter(item.source_class.value for item in rows)
+        if class_counts != Counter(source.reviewed_document_class_counts):
             raise ValueError(f"reviewed document class counts mismatch: {source.source_id}")
-
-        actual_chains = sorted({item.chain_family for item in rows}, key=lambda item: item.value)
-        expected_chains = sorted(source.reviewed_chain_families, key=lambda item: item.value)
-        if actual_chains != expected_chains:
+        chains = sorted({item.chain_family for item in rows}, key=lambda item: item.value)
+        if chains != sorted(source.reviewed_chain_families, key=lambda item: item.value):
             raise ValueError(f"reviewed chain families mismatch: {source.source_id}")
-
-        actual_threats = sorted(
+        threats = sorted(
             {domain for item in rows for domain in item.threat_domains},
             key=lambda item: item.value,
         )
-        expected_threats = sorted(source.reviewed_threat_domains, key=lambda item: item.value)
-        if actual_threats != expected_threats:
+        if threats != sorted(source.reviewed_threat_domains, key=lambda item: item.value):
             raise ValueError(f"reviewed threat domains mismatch: {source.source_id}")
-
         if _reviewed_document_set_digest(rows) != source.retained_document_set_digest:
             raise ValueError(f"retained document set digest mismatch: {source.source_id}")
 
         source_classes[source.source_level_class.value] += 1
         trust_tiers[source.trust_tier.value] += 1
         snapshot_counts[source.snapshot_digest] += 1
-        for chain in set(source.reviewed_chain_families):
+        for chain in source.reviewed_chain_families:
             chain_sources[chain.value] += 1
-        for threat in set(source.reviewed_threat_domains):
+        for threat in source.reviewed_threat_domains:
             threat_sources[threat.value] += 1
 
-        document_classes.update(actual_class_counts)
+        document_classes.update(class_counts)
         for item in rows:
             document_chains[item.chain_family.value] += 1
-            for threat in item.threat_domains:
-                document_threats[threat.value] += 1
-            standard_documents.append(_to_security_document(item))
+            document_threats.update(domain.value for domain in item.threat_domains)
+            documents.append(_to_security_document(item))
 
         bindings.append(
             ReviewedCatalogSourceBinding(
@@ -338,7 +328,7 @@ def audit_reviewed_source_catalog(
                 source_class=source.source_level_class,
                 snapshot_digest=source.snapshot_digest,
                 documents=len(rows),
-                document_class_counts=dict(sorted(actual_class_counts.items())),
+                document_class_counts=dict(sorted(class_counts.items())),
                 chain_families=source.reviewed_chain_families,
                 threat_domains=source.reviewed_threat_domains,
                 retained_document_set_digest=source.retained_document_set_digest,
@@ -348,6 +338,82 @@ def audit_reviewed_source_catalog(
     duplicate_snapshots = sorted(
         digest for digest, count in snapshot_counts.items() if count > 1
     )
+    violations = _policy_violations(
+        bindings=bindings,
+        source_classes=source_classes,
+        chain_sources=chain_sources,
+        threat_sources=threat_sources,
+        duplicate_snapshots=duplicate_snapshots,
+        duplicate_content=duplicate_content,
+        total_documents=len(documents),
+        policy=policy,
+    )
+
+    documents.sort(key=lambda item: item.document_ref)
+    refs = [item.document_ref for item in documents]
+    if len(refs) != len(set(refs)):
+        violations.append("duplicate document_ref detected across reviewed source catalog")
+
+    high_trust_sources = sum(
+        1 for binding in bindings if binding.trust_tier in _HIGH_TRUST_TIERS
+    )
+    synthetic_sources = sum(
+        1
+        for binding in bindings
+        if binding.source_class is BlockchainSourceClass.KOSCHEI_SYNTHETIC
+    )
+    high_trust_share = _share_bps(high_trust_sources, len(bindings))
+    synthetic_share = _share_bps(synthetic_sources, len(bindings))
+    max_source_share = _share_bps(
+        max((binding.documents for binding in bindings), default=0),
+        len(documents),
+    )
+
+    manifest = ReviewedSourceCatalogManifest(
+        ready=not violations,
+        catalog_id=catalog.catalog_id,
+        catalog_digest=catalog.catalog_digest,
+        policy_id=policy.policy_id,
+        policy_digest=_model_digest(policy),
+        approved_corpus_digest=corpus_digest,
+        sources=len(bindings),
+        documents=len(documents),
+        high_trust_share_bps=high_trust_share,
+        synthetic_source_share_bps=synthetic_share,
+        max_single_source_document_share_bps=max_source_share,
+        source_class_counts=dict(sorted(source_classes.items())),
+        document_class_counts=dict(sorted(document_classes.items())),
+        trust_tier_counts=dict(sorted(trust_tiers.items())),
+        chain_source_counts=dict(sorted(chain_sources.items())),
+        threat_source_counts=dict(sorted(threat_sources.items())),
+        document_chain_counts=dict(sorted(document_chains.items())),
+        document_threat_counts=dict(sorted(document_threats.items())),
+        duplicate_snapshot_digests=duplicate_snapshots,
+        duplicate_content_digests=sorted(duplicate_content),
+        missing_required_chain_families=sorted(
+            {item.value for item in policy.required_chain_families}.difference(chain_sources)
+        ),
+        missing_required_threat_domains=sorted(
+            {item.value for item in policy.required_threat_domains}.difference(threat_sources)
+        ),
+        combined_corpus_digest=_documents_digest(documents),
+        bindings=bindings,
+        violations=violations,
+    )
+    return ReviewedSourceCatalogResult(manifest=manifest, documents=documents)
+
+
+def _policy_violations(
+    *,
+    bindings: list[ReviewedCatalogSourceBinding],
+    source_classes: Counter[str],
+    chain_sources: Counter[str],
+    threat_sources: Counter[str],
+    duplicate_snapshots: list[str],
+    duplicate_content: set[str],
+    total_documents: int,
+    policy: BlockchainSourceCatalogPolicy,
+) -> list[str]:
     violations: list[str] = []
     if duplicate_snapshots:
         violations.append("duplicate source snapshot digests detected")
@@ -362,25 +428,20 @@ def audit_reviewed_source_catalog(
 
     required_chains = {item.value for item in policy.required_chain_families}
     required_threats = {item.value for item in policy.required_threat_domains}
-    missing_chains = sorted(required_chains.difference(chain_sources))
-    missing_threats = sorted(required_threats.difference(threat_sources))
-    if missing_chains:
+    if required_chains.difference(chain_sources):
         violations.append("required chain families are missing from source catalog")
-    if missing_threats:
+    if required_threats.difference(threat_sources):
         violations.append("required threat domains are missing from source catalog")
-
     for chain in sorted(required_chains):
-        count = chain_sources[chain]
-        if count < policy.min_sources_per_required_chain:
+        if chain_sources[chain] < policy.min_sources_per_required_chain:
             violations.append(
-                f"chain {chain} sources {count} below minimum "
+                f"chain {chain} sources {chain_sources[chain]} below minimum "
                 f"{policy.min_sources_per_required_chain}"
             )
     for threat in sorted(required_threats):
-        count = threat_sources[threat]
-        if count < policy.min_sources_per_required_threat_domain:
+        if threat_sources[threat] < policy.min_sources_per_required_threat_domain:
             violations.append(
-                f"threat domain {threat} sources {count} below minimum "
+                f"threat domain {threat} sources {threat_sources[threat]} below minimum "
                 f"{policy.min_sources_per_required_threat_domain}"
             )
 
@@ -406,63 +467,26 @@ def audit_reviewed_source_catalog(
             f"{policy.max_synthetic_source_share_bps} bps"
         )
 
-    total_documents = len(standard_documents)
-    max_source_documents = max((binding.documents for binding in bindings), default=0)
-    max_source_document_share = _share_bps(max_source_documents, total_documents)
-    if max_source_document_share > policy.max_single_source_document_share_bps:
+    max_source_share = _share_bps(
+        max((binding.documents for binding in bindings), default=0),
+        total_documents,
+    )
+    if max_source_share > policy.max_single_source_document_share_bps:
         violations.append(
-            f"single-source document share {max_source_document_share} bps exceeds maximum "
+            f"single-source document share {max_source_share} bps exceeds maximum "
             f"{policy.max_single_source_document_share_bps} bps"
         )
-
-    standard_documents.sort(key=lambda item: item.document_ref)
-    document_refs = [item.document_ref for item in standard_documents]
-    if len(document_refs) != len(set(document_refs)):
-        violations.append("duplicate document_ref detected across reviewed source catalog")
-
-    combined_digest = _documents_digest(standard_documents)
-    manifest = ReviewedSourceCatalogManifest(
-        ready=not violations,
-        catalog_id=catalog.catalog_id,
-        catalog_digest=catalog.catalog_digest,
-        policy_id=policy.policy_id,
-        policy_digest=_model_digest(policy),
-        approved_corpus_digest=actual_corpus_digest,
-        sources=len(bindings),
-        documents=total_documents,
-        high_trust_share_bps=high_trust_share,
-        synthetic_source_share_bps=synthetic_share,
-        max_single_source_document_share_bps=max_source_document_share,
-        source_class_counts=dict(sorted(source_classes.items())),
-        document_class_counts=dict(sorted(document_classes.items())),
-        trust_tier_counts=dict(sorted(trust_tiers.items())),
-        chain_source_counts=dict(sorted(chain_sources.items())),
-        threat_source_counts=dict(sorted(threat_sources.items())),
-        document_chain_counts=dict(sorted(document_chains.items())),
-        document_threat_counts=dict(sorted(document_threats.items())),
-        duplicate_snapshot_digests=duplicate_snapshots,
-        duplicate_content_digests=sorted(duplicate_content),
-        missing_required_chain_families=missing_chains,
-        missing_required_threat_domains=missing_threats,
-        combined_corpus_digest=combined_digest,
-        bindings=bindings,
-        violations=violations,
-    )
-    return ReviewedSourceCatalogResult(
-        manifest=manifest,
-        documents=standard_documents,
-    )
+    return violations
 
 
 def _to_security_document(item: ApprovedBlockchainDocument) -> BlockchainSecurityDocument:
-    rights_basis = _RIGHTS_BY_SPDX[item.license_spdx]
-    digest = hashlib.sha256(
+    ref_digest = hashlib.sha256(
         f"{item.source_id}|{item.path}|{item.content_sha256}".encode("utf-8")
     ).hexdigest()[:24]
     return BlockchainSecurityDocument(
-        document_ref=f"doc_{digest}",
+        document_ref=f"doc_{ref_digest}",
         source_class=item.source_class,
-        rights_basis=rights_basis,
+        rights_basis=_RIGHTS_BY_SPDX[item.license_spdx],
         source_snapshot_digest=item.source_snapshot_digest,
         content_digest=item.content_sha256,
         family_refs=[],
@@ -473,21 +497,22 @@ def _to_security_document(item: ApprovedBlockchainDocument) -> BlockchainSecurit
 
 
 def _reviewed_document_set_digest(rows: list[ApprovedBlockchainDocument]) -> str:
-    payload = [
-        {
-            "path": item.path,
-            "content_sha256": item.content_sha256,
-            "source_class": item.source_class.value,
-            "chain_family": item.chain_family.value,
-            "threat_domains": [domain.value for domain in item.threat_domains],
-        }
-        for item in sorted(rows, key=lambda item: item.path)
-    ]
-    return _canonical_digest(payload)
+    return _digest_payload(
+        [
+            {
+                "path": item.path,
+                "content_sha256": item.content_sha256,
+                "source_class": item.source_class.value,
+                "chain_family": item.chain_family.value,
+                "threat_domains": [domain.value for domain in item.threat_domains],
+            }
+            for item in sorted(rows, key=lambda item: item.path)
+        ]
+    )
 
 
-def _documents_payload(documents: list[BlockchainSecurityDocument]) -> str:
-    return "".join(
+def _documents_digest(documents: list[BlockchainSecurityDocument]) -> str:
+    payload = "".join(
         json.dumps(
             item.model_dump(mode="json"),
             sort_keys=True,
@@ -497,20 +522,11 @@ def _documents_payload(documents: list[BlockchainSecurityDocument]) -> str:
         + "\n"
         for item in documents
     )
-
-
-def _documents_digest(documents: list[BlockchainSecurityDocument]) -> str:
-    return hashlib.sha256(_documents_payload(documents).encode("utf-8")).hexdigest()
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _model_digest(model: StrictModel) -> str:
-    payload = json.dumps(
-        model.model_dump(mode="json"),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
+    return _digest_payload(model.model_dump(mode="json"))
 
 
 def _hash_file(path: Path) -> str:
