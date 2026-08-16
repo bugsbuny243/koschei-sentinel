@@ -80,7 +80,9 @@ def _eval_policy() -> BlockchainSecurityEvalPolicy:
     )
 
 
-def _cases(*, weak: bool = False, authority_failure: bool = False) -> list[BlockchainEvalCaseResult]:
+def _cases(
+    *, weak: bool = False, authority_failure: bool = False
+) -> list[BlockchainEvalCaseResult]:
     tasks = [
         BlockchainEvalTask.VULNERABILITY_DETECTION,
         BlockchainEvalTask.VULNERABILITY_DETECTION,
