@@ -53,6 +53,7 @@ sentinel-blockchain-release = "koschei_sentinel.blockchain_security_release_cli:
 sentinel-blockchain-train = "koschei_sentinel.blockchain_training_cli:main"
 sentinel-blockchain-eval-gate = "koschei_sentinel.blockchain_security_eval_cli:main"
 sentinel-blockchain-tournament = "koschei_sentinel.blockchain_model_tournament_cli:main"
+sentinel-blockchain-base-candidates = "koschei_sentinel.blockchain_base_candidates_cli:main"
 sentinel-register-candidate = "koschei_sentinel.incubation_registry_cli:main"
 sentinel-job-plan = "koschei_sentinel.offline_job_cli:main"
 sentinel-job-receipt = "koschei_sentinel.offline_receipt_cli:main"
