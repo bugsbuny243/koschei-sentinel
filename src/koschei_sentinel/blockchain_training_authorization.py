@@ -449,9 +449,13 @@ def _verify_authorization_inputs(
     if plan.model_id != seal.model_id or plan.revision != seal.model_revision:
         raise BlockchainTrainingAuthorizationBlocked("preflight plan model pin does not match seal")
     if receipt.candidate_id != seal.candidate_id:
-        raise BlockchainTrainingAuthorizationBlocked("preflight receipt candidate does not match seal")
+        raise BlockchainTrainingAuthorizationBlocked(
+            "preflight receipt candidate does not match seal"
+        )
     if receipt.model_id != seal.model_id or receipt.revision != seal.model_revision:
-        raise BlockchainTrainingAuthorizationBlocked("preflight receipt model pin does not match seal")
+        raise BlockchainTrainingAuthorizationBlocked(
+            "preflight receipt model pin does not match seal"
+        )
 
     registry = load_base_candidate_registry(resolve_under_root(root_path, registry_path))
     candidates = [item for item in registry.candidates if item.candidate_id == seal.candidate_id]
@@ -461,7 +465,10 @@ def _verify_authorization_inputs(
     if candidate.model_id != seal.model_id or candidate.revision != seal.model_revision:
         raise BlockchainTrainingAuthorizationBlocked("registry candidate pin does not match seal")
     candidate_digest = model_digest(candidate)
-    if plan.registry_digest != registry.registry_digest or receipt.registry_digest != registry.registry_digest:
+    if (
+        plan.registry_digest != registry.registry_digest
+        or receipt.registry_digest != registry.registry_digest
+    ):
         raise BlockchainTrainingAuthorizationBlocked("preflight registry digest is stale")
     if plan.candidate_digest != candidate_digest or receipt.candidate_digest != candidate_digest:
         raise BlockchainTrainingAuthorizationBlocked("preflight candidate digest is stale")
@@ -472,12 +479,18 @@ def _verify_authorization_inputs(
     manifest = verify_blockchain_security_release(release)
     manifest_path = release / "blockchain-security-release-manifest.json"
     if training_config.base_model != seal.model_id:
-        raise BlockchainTrainingAuthorizationBlocked("training config base model does not match seal")
+        raise BlockchainTrainingAuthorizationBlocked(
+            "training config base model does not match seal"
+        )
     if training_config.base_revision != seal.model_revision:
-        raise BlockchainTrainingAuthorizationBlocked("training config base revision does not match seal")
+        raise BlockchainTrainingAuthorizationBlocked(
+            "training config base revision does not match seal"
+        )
     configured_release = resolve_under_root(root_path, training_config.blockchain_release)
     if configured_release != release:
-        raise BlockchainTrainingAuthorizationBlocked("training config release path does not match authorization")
+        raise BlockchainTrainingAuthorizationBlocked(
+            "training config release path does not match authorization"
+        )
     if training_config.expected_source_corpus_digest != manifest.source_corpus_digest:
         raise BlockchainTrainingAuthorizationBlocked("training config source corpus pin is stale")
     if training_config.expected_benchmark_suite_digest != manifest.benchmark_suite_digest:
