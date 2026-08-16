@@ -267,7 +267,11 @@ def load_hardware_inventory(path: str | Path) -> BlockchainHardwareInventory:
 
 
 def load_runtime_preflight_policy(path: str | Path) -> BlockchainRuntimePreflightPolicy:
-    return _load_model(path, BlockchainRuntimePreflightPolicy, "blockchain runtime preflight policy")
+    return _load_model(
+        path,
+        BlockchainRuntimePreflightPolicy,
+        "blockchain runtime preflight policy",
+    )
 
 
 def load_runtime_preflight_plan(path: str | Path) -> BlockchainRuntimePreflightPlan:
