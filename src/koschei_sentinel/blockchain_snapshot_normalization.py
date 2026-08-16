@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Mapping
 
 from koschei_sentinel.anonymize import detect_sensitive_text, sanitize_text
 
