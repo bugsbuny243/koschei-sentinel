@@ -34,6 +34,7 @@ RUFF_TARGETS = [
     "tests/test_blockchain_model_tournament.py",
     "tests/test_blockchain_base_candidates.py",
     "tests/test_blockchain_runtime_preflight.py",
+    "tests/test_blockchain_t4_candidate.py",
 ]
 
 PYTEST_TARGETS = [
@@ -46,6 +47,7 @@ PYTEST_TARGETS = [
     "tests/test_blockchain_model_tournament.py",
     "tests/test_blockchain_base_candidates.py",
     "tests/test_blockchain_runtime_preflight.py",
+    "tests/test_blockchain_t4_candidate.py",
 ]
 
 
@@ -57,7 +59,7 @@ def run(command: list[str]) -> None:
 def main() -> int:
     run(["ruff", "check", *RUFF_TARGETS])
     run([sys.executable, "-m", "pytest", "-q", *PYTEST_TARGETS])
-    print("BLOCKCHAIN RUNTIME PREFLIGHT STACK LOCAL GATE: PASSED", flush=True)
+    print("BLOCKCHAIN T4 FEASIBILITY STACK LOCAL GATE: PASSED", flush=True)
     return 0
 
 
