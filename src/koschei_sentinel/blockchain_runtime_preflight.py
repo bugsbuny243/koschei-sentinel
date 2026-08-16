@@ -6,7 +6,7 @@ import json
 import math
 import os
 import shutil
-import tempfile
+import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -16,6 +16,7 @@ from koschei_sentinel.blockchain_base_candidates import (
     BlockchainBaseCandidate,
     BlockchainBaseCandidateRegistry,
     LicenseReviewStatus,
+    PreflightStatus,
     RuntimeIntegrationStatus,
     load_base_candidate_registry,
 )
@@ -24,6 +25,12 @@ from koschei_sentinel.training import atomic_write, model_digest
 
 _DIGEST = r"^[a-f0-9]{64}$"
 _ID = r"^[a-z0-9][a-z0-9._-]{0,127}$"
+_RESOLVABLE_PREFLIGHT_BLOCKS = frozenset(
+    {
+        "runtime_preflight_not_run",
+        "hardware_plan_not_approved",
+    }
+)
 
 
 class BlockchainHardwareInventory(StrictModel):
@@ -46,9 +53,8 @@ class BlockchainHardwareInventory(StrictModel):
         if self.cuda_available:
             if self.gpu_count < 1 or not self.gpu_model or self.vram_per_gpu_mb < 1:
                 raise ValueError("CUDA inventory must describe at least one GPU")
-        else:
-            if self.gpu_count != 0 or self.vram_per_gpu_mb != 0:
-                raise ValueError("non-CUDA inventory may not claim GPU resources")
+        elif self.gpu_count != 0 or self.vram_per_gpu_mb != 0:
+            raise ValueError("non-CUDA inventory may not claim GPU resources")
         payload = self.model_dump(mode="json")
         expected = payload.pop("inventory_digest")
         if _digest(payload) != expected:
@@ -73,6 +79,7 @@ class BlockchainRuntimePreflightPolicy(StrictModel):
     require_forward: Literal[True] = True
     require_backward: Literal[True] = True
     require_lora_attach: Literal[True] = True
+    require_single_device_fit: Literal[True] = True
     allow_trust_remote_code: Literal[False] = False
     require_allowlisted_open_license: Literal[True] = True
     require_native_transformers: Literal[True] = True
@@ -285,6 +292,8 @@ def plan_runtime_preflight(
         candidate.license_review_status is not LicenseReviewStatus.ALLOWLISTED_OPEN_LICENSE
     ):
         blockers.append("license_not_allowlisted")
+    if not candidate.commercial_use_declared:
+        blockers.append("commercial_use_not_declared")
     if policy.require_native_transformers and (
         candidate.runtime_integration_status
         is not RuntimeIntegrationStatus.NATIVE_TRANSFORMERS_EXPECTED
@@ -292,8 +301,13 @@ def plan_runtime_preflight(
         blockers.append("native_transformers_not_approved")
     if candidate.trust_remote_code_required:
         blockers.append("trust_remote_code_required")
-    if candidate.blocked_reasons:
-        blockers.extend(f"candidate_block:{item}" for item in candidate.blocked_reasons)
+    if candidate.preflight_status is PreflightStatus.FAILED:
+        blockers.append("candidate_preflight_already_failed")
+    blockers.extend(
+        f"candidate_block:{item}"
+        for item in candidate.blocked_reasons
+        if item not in _RESOLVABLE_PREFLIGHT_BLOCKS
+    )
 
     checkpoint_mb, quantized_mb, min_vram_mb, min_host_ram_mb = estimate_requirements(
         candidate,
@@ -369,7 +383,7 @@ def execute_runtime_probe(
     ):
         raise ValueError("v1 runtime probe refuses custom remote model code")
 
-    state = {
+    state: dict[str, bool | int] = {
         "tokenizer_loaded": False,
         "config_loaded": False,
         "quantized_model_loaded": False,
@@ -384,6 +398,7 @@ def execute_runtime_probe(
     }
     error_code: str | None = None
     model: Any | None = None
+    dependencies: dict[str, Any] = {}
     try:
         dependencies = _load_runtime_dependencies()
         torch = dependencies["torch"]
@@ -398,8 +413,9 @@ def execute_runtime_probe(
             trust_remote_code=False,
         )
         state["config_loaded"] = True
-        observed_revision = getattr(config, "_commit_hash", None)
-        state["exact_revision_observed"] = observed_revision in (None, candidate.revision)
+        state["exact_revision_observed"] = getattr(config, "_commit_hash", None) == (
+            candidate.revision
+        )
 
         tokenizer = dependencies["AutoTokenizer"].from_pretrained(
             candidate.model_id,
@@ -442,17 +458,18 @@ def execute_runtime_probe(
             ),
         )
         state["lora_attached"] = True
-        trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
-        total = sum(parameter.numel() for parameter in model.parameters())
-        state["trainable_parameters"] = int(trainable)
-        state["total_parameters"] = int(total)
-
-        text = (
-            "Defensive blockchain security analysis: identify evidence, preserve authority, "
-            "and abstain when the evidence is insufficient."
+        state["trainable_parameters"] = int(
+            sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
         )
+        state["total_parameters"] = int(
+            sum(parameter.numel() for parameter in model.parameters())
+        )
+
         encoded = tokenizer(
-            text,
+            (
+                "Defensive blockchain security analysis: identify evidence, preserve "
+                "authority, and abstain when evidence is insufficient."
+            ),
             return_tensors="pt",
             truncation=True,
             max_length=policy.probe_sequence_tokens,
@@ -477,18 +494,14 @@ def execute_runtime_probe(
         state["peak_gpu_memory_mb"] = int(
             torch.cuda.max_memory_allocated() // (1024 * 1024)
         )
-    except Exception as exc:  # runtime probe must persist only a coarse failure category
+    except Exception as exc:
         error_code = _safe_error_code(exc)
     finally:
-        try:
-            del model
-        except Exception:
-            pass
+        model = None
         gc.collect()
-        try:
-            dependencies.get("torch").cuda.empty_cache()  # type: ignore[union-attr]
-        except Exception:
-            pass
+        torch = dependencies.get("torch")
+        if torch is not None and torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     passed = all(
         bool(state[key])
@@ -502,7 +515,6 @@ def execute_runtime_probe(
             "exact_revision_observed",
         )
     ) and error_code is None
-    environment_digest = _runtime_environment_digest(inventory)
     payload = {
         "schema_version": "sentinel.blockchain-runtime-probe-receipt.v1",
         "candidate_id": candidate.candidate_id,
@@ -513,7 +525,7 @@ def execute_runtime_probe(
         "policy_digest": model_digest(policy),
         "inventory_digest": inventory.inventory_digest,
         "plan_digest": plan.plan_digest,
-        "environment_digest": environment_digest,
+        "environment_digest": _runtime_environment_digest(inventory),
         **state,
         "trust_remote_code_used": False,
         "raw_model_outputs_stored": False,
@@ -650,7 +662,7 @@ def _runtime_environment_digest(inventory: BlockchainHardwareInventory) -> str:
             versions[module_name] = "missing"
     payload = {
         "inventory_digest": inventory.inventory_digest,
-        "python": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         "versions": versions,
     }
     return _digest(payload)
@@ -667,8 +679,7 @@ def _safe_error_code(exc: Exception) -> str:
     for marker in markers:
         if marker in text:
             return marker
-    name = exc.__class__.__name__.lower()
-    return f"runtime_{name}"[:128]
+    return f"runtime_{exc.__class__.__name__.lower()}"[:128]
 
 
 def _host_ram_mb() -> int:
