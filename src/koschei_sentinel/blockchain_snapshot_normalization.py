@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
-from koschei_sentinel.anonymize import detect_sensitive_text, sanitize_text
+from koschei_sentinel.anonymize import (
+    detect_sensitive_text,
+    pseudonymize,
+    sanitize_text,
+)
 
 _ALLOWED_SPDX = frozenset({"Apache-2.0", "MIT", "CC0-1.0", "CC-BY-4.0"})
 _LICENSE_BASENAMES = ("license", "copying")
 _LICENSE_SEPARATORS = (".", "-", "_")
+_SOLANA_ADDRESS = re.compile(
+    r"(?<![1-9A-HJ-NP-Za-km-z])"
+    r"[1-9A-HJ-NP-Za-km-z]{32,44}"
+    r"(?![1-9A-HJ-NP-Za-km-z])"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +79,15 @@ def select_license_evidence(
     return None
 
 
+def _pseudonymize_solana_addresses(text: str, *, salt: str) -> str:
+    """Protect address-shaped values before generic phone redaction runs."""
+
+    return _SOLANA_ADDRESS.sub(
+        lambda match: pseudonymize(match.group(0), salt, prefix="address"),
+        text,
+    )
+
+
 def normalize_snapshot_text(text: str, *, salt: str) -> SafeSnapshotText:
     """Return training-safe text while preserving deterministic source lineage.
 
@@ -81,7 +100,8 @@ def normalize_snapshot_text(text: str, *, salt: str) -> SafeSnapshotText:
     if not findings:
         return SafeSnapshotText(text=text, detected_sensitive_kinds=(), changed=False)
 
-    normalized = sanitize_text(text, salt=salt)
+    address_safe = _pseudonymize_solana_addresses(text, salt=salt)
+    normalized = sanitize_text(address_safe, salt=salt)
     remaining = detect_sensitive_text(normalized)
     if remaining:
         raise ValueError(
