@@ -1,0 +1,15 @@
+{
+  "max_peak_gpu_memory_mb": 131072,
+  "min_candidates": 3,
+  "min_eligible_candidates": 3,
+  "policy_id": "blockchain-model-tournament-2026-08",
+  "require_eval_gate_pass": true,
+  "require_same_benchmark_suite_digest": true,
+  "require_same_evaluator_digest": true,
+  "require_same_held_out_test_split_digest": true,
+  "require_same_runtime_environment_digest": true,
+  "require_same_runtime_suite_digest": true,
+  "require_same_source_corpus_digest": true,
+  "require_unique_adapter_digests": true,
+  "schema_version": "sentinel.blockchain-model-tournament-policy.v1"
+}
