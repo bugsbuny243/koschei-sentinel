@@ -17,6 +17,8 @@ RUFF_TARGETS = [
     "src/koschei_sentinel/blockchain_security_release_cli.py",
     "src/koschei_sentinel/blockchain_training.py",
     "src/koschei_sentinel/blockchain_training_cli.py",
+    "src/koschei_sentinel/blockchain_training_authorization.py",
+    "src/koschei_sentinel/blockchain_training_authorization_cli.py",
     "src/koschei_sentinel/blockchain_security_eval.py",
     "src/koschei_sentinel/blockchain_security_eval_cli.py",
     "src/koschei_sentinel/blockchain_model_tournament.py",
@@ -31,6 +33,7 @@ RUFF_TARGETS = [
     "tests/test_blockchain_source_catalog.py",
     "tests/test_blockchain_security_release.py",
     "tests/test_blockchain_training.py",
+    "tests/test_blockchain_training_authorization.py",
     "tests/test_blockchain_security_eval.py",
     "tests/test_blockchain_model_tournament.py",
     "tests/test_blockchain_base_candidates.py",
@@ -44,6 +47,7 @@ PYTEST_TARGETS = [
     "tests/test_blockchain_source_catalog.py",
     "tests/test_blockchain_security_release.py",
     "tests/test_blockchain_training.py",
+    "tests/test_blockchain_training_authorization.py",
     "tests/test_blockchain_security_eval.py",
     "tests/test_blockchain_model_tournament.py",
     "tests/test_blockchain_base_candidates.py",
@@ -60,7 +64,7 @@ def run(command: list[str]) -> None:
 def main() -> int:
     run(["ruff", "check", *RUFF_TARGETS])
     run([sys.executable, "-m", "pytest", "-q", *PYTEST_TARGETS])
-    print("BLOCKCHAIN T4 FEASIBILITY STACK LOCAL GATE: PASSED", flush=True)
+    print("BLOCKCHAIN TRAINING AUTHORIZATION STACK LOCAL GATE: PASSED", flush=True)
     return 0
 
 
