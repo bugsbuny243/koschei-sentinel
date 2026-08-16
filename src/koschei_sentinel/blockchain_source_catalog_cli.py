@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
+from koschei_sentinel.blockchain_reviewed_catalog import (
+    audit_reviewed_source_catalog,
+    load_reviewed_source_catalog,
+)
 from koschei_sentinel.blockchain_source_catalog import (
     audit_source_catalog,
     load_source_catalog,
@@ -14,8 +19,8 @@ from koschei_sentinel.blockchain_source_catalog import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Verify many immutable blockchain-security source snapshots as one diverse, "
-            "lineage-bound training corpus"
+            "Verify immutable or document-reviewed blockchain-security sources as one "
+            "diverse, lineage-bound training corpus"
         )
     )
     parser.add_argument("--catalog", required=True)
@@ -24,6 +29,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--corpus-output")
     parser.add_argument("--manifest-output")
     return parser
+
+
+def _catalog_schema(path: str) -> str:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError) as exc:
+        raise ValueError("invalid blockchain source catalog JSON") from exc
+    schema = payload.get("schema_version")
+    if not isinstance(schema, str):
+        raise ValueError("blockchain source catalog schema_version is missing")
+    return schema
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,11 +51,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     try:
-        result = audit_source_catalog(
-            load_source_catalog(args.catalog),
-            load_source_catalog_policy(args.policy),
-            root=args.root,
-        )
+        policy = load_source_catalog_policy(args.policy)
+        schema = _catalog_schema(args.catalog)
+        if schema == "sentinel.reviewed-source-catalog.v1":
+            result = audit_reviewed_source_catalog(
+                load_reviewed_source_catalog(args.catalog),
+                policy,
+                root=args.root,
+            )
+            catalog_mode = "REVIEWED_DOCUMENT"
+        elif schema == "sentinel.blockchain-source-catalog.v1":
+            result = audit_source_catalog(
+                load_source_catalog(args.catalog),
+                policy,
+                root=args.root,
+            )
+            catalog_mode = "IMMUTABLE_INGEST"
+        else:
+            raise ValueError(f"unsupported blockchain source catalog schema: {schema}")
+
         if args.corpus_output:
             write_catalog_outputs(
                 result,
@@ -51,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "ready": manifest.ready,
+                    "catalog_mode": catalog_mode,
                     "catalog_id": manifest.catalog_id,
                     "sources": manifest.sources,
                     "documents": manifest.documents,
