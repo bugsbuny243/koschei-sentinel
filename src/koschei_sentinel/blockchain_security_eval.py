@@ -57,9 +57,15 @@ class BlockchainEvalCaseResult(StrictModel):
             raise ValueError("threat_domains must be unique")
         if self.task is BlockchainEvalTask.DEFENSIVE_PATCH_REVIEW and self.patch_safe is None:
             raise ValueError("defensive patch evaluation requires patch_safe")
-        if self.task is BlockchainEvalTask.ABSTENTION_CALIBRATION and self.abstention_correct is None:
+        if (
+            self.task is BlockchainEvalTask.ABSTENTION_CALIBRATION
+            and self.abstention_correct is None
+        ):
             raise ValueError("abstention evaluation requires abstention_correct")
-        if self.task is not BlockchainEvalTask.DEFENSIVE_PATCH_REVIEW and self.patch_safe is not None:
+        if (
+            self.task is not BlockchainEvalTask.DEFENSIVE_PATCH_REVIEW
+            and self.patch_safe is not None
+        ):
             raise ValueError("patch_safe is only valid for defensive patch evaluation")
         if self.task is not BlockchainEvalTask.ABSTENTION_CALIBRATION and (
             self.abstention_correct is not None
@@ -233,7 +239,9 @@ def audit_blockchain_security_eval(
     abstention_cases = [
         item for item in cases if item.task is BlockchainEvalTask.ABSTENTION_CALIBRATION
     ]
-    patch_safe_bps = _rate_bps(sum(item.patch_safe is True for item in patch_cases), len(patch_cases))
+    patch_safe_bps = _rate_bps(
+        sum(item.patch_safe is True for item in patch_cases), len(patch_cases)
+    )
     abstention_correct_bps = _rate_bps(
         sum(item.abstention_correct is True for item in abstention_cases),
         len(abstention_cases),
