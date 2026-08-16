@@ -99,7 +99,7 @@
       "trust_remote_code_required": false
     }
   ],
-  "registry_digest": "ec74067eeb24b4c12674cc51e09c206566b2eeda7b5af095484371ee2d406050",
+  "registry_digest": "e3a19fb0d8670f321e6d0a787d2934f6a44e7cdc5829883c4d973095be0102ac",
   "registry_id": "blockchain-base-candidates-2026-08",
   "schema_version": "sentinel.blockchain-base-candidate-registry.v1"
 }
