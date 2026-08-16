@@ -141,7 +141,9 @@ def test_large_candidate_is_blocked_before_model_download_on_small_gpu() -> None
     root = Path(__file__).parents[1]
     candidate = _candidate("large-base", total_billion=80.0)
     registry = build_base_candidate_registry("fixture-registry", [candidate])
-    plan = plan_runtime_preflight(registry, candidate.candidate_id, _inventory(15360), _policy(root))
+    plan = plan_runtime_preflight(
+        registry, candidate.candidate_id, _inventory(15360), _policy(root)
+    )
 
     assert plan.runtime_probe_authorized is False
     assert "insufficient_single_gpu_vram" in plan.blockers
