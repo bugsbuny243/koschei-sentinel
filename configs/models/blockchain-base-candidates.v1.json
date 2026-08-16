@@ -31,6 +31,30 @@
         "runtime_preflight_not_run",
         "hardware_plan_not_approved"
       ],
+      "candidate_id": "qwen2.5-coder-7b-base",
+      "commercial_use_declared": true,
+      "declared_active_parameters_billion": 7.61,
+      "declared_context_length_tokens": 131072,
+      "declared_total_parameters_billion": 7.61,
+      "hardware_plan_approved": false,
+      "lane": "FEASIBILITY",
+      "license_id": "apache-2.0",
+      "license_review_status": "ALLOWLISTED_OPEN_LICENSE",
+      "metadata_source": "OFFICIAL_MODEL_CARD",
+      "model_id": "Qwen/Qwen2.5-Coder-7B",
+      "preflight_status": "NOT_RUN",
+      "revision": "0396a76181e127dfc13e5c5ec48a8cee09938b02",
+      "runtime_integration_status": "NATIVE_TRANSFORMERS_EXPECTED",
+      "schema_version": "sentinel.blockchain-base-candidate.v1",
+      "training_authorized": false,
+      "training_stage": "BASE_PRETRAINING",
+      "trust_remote_code_required": false
+    },
+    {
+      "blocked_reasons": [
+        "runtime_preflight_not_run",
+        "hardware_plan_not_approved"
+      ],
       "candidate_id": "qwen3-coder-next-base",
       "commercial_use_declared": true,
       "declared_active_parameters_billion": 3.0,
@@ -75,7 +99,7 @@
       "trust_remote_code_required": false
     }
   ],
-  "registry_digest": "5208b7355e01ca1fa18bc93e3e4906d80544fa7c635225b513eb064dd52f81bc",
+  "registry_digest": "ec74067eeb24b4c12674cc51e09c206566b2eeda7b5af095484371ee2d406050",
   "registry_id": "blockchain-base-candidates-2026-08",
   "schema_version": "sentinel.blockchain-base-candidate-registry.v1"
 }
