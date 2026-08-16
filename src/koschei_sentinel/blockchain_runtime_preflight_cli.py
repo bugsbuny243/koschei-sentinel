@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 from koschei_sentinel.blockchain_base_candidates import load_base_candidate_registry
 from koschei_sentinel.blockchain_runtime_preflight import (
