@@ -1,0 +1,36 @@
+{
+  "max_single_source_document_share_bps": 500,
+  "max_synthetic_source_share_bps": 1500,
+  "min_high_trust_share_bps": 6000,
+  "min_source_classes": 5,
+  "min_sources": 200,
+  "min_sources_per_required_chain": 10,
+  "min_sources_per_required_threat_domain": 10,
+  "policy_id": "blockchain-source-catalog-2026-08",
+  "require_unique_snapshot_digests": true,
+  "require_zero_cross_source_content_duplicates": true,
+  "required_chain_families": [
+    "EVM",
+    "SOLANA",
+    "BITCOIN",
+    "COSMOS",
+    "MOVE",
+    "TRON",
+    "CROSS_CHAIN",
+    "OFF_CHAIN"
+  ],
+  "required_threat_domains": [
+    "SMART_CONTRACT",
+    "KEY_WALLET",
+    "PRIVILEGED_ACCESS",
+    "SIGNING_UI",
+    "BRIDGE_CROSS_CHAIN",
+    "ORACLE_PRICE",
+    "RPC_INFRASTRUCTURE",
+    "SUPPLY_CHAIN",
+    "CONSENSUS_VALIDATOR",
+    "SOCIAL_ENGINEERING",
+    "INCIDENT_RESPONSE"
+  ],
+  "schema_version": "sentinel.blockchain-source-catalog-policy.v1"
+}
