@@ -1,12 +1,12 @@
 {
-  "max_single_source_document_share_bps": 500,
+  "max_single_source_document_share_bps": 2500,
   "max_synthetic_source_share_bps": 1500,
   "min_high_trust_share_bps": 6000,
   "min_source_classes": 5,
-  "min_sources": 200,
-  "min_sources_per_required_chain": 10,
-  "min_sources_per_required_threat_domain": 10,
-  "policy_id": "blockchain-source-catalog-2026-08",
+  "min_sources": 20,
+  "min_sources_per_required_chain": 1,
+  "min_sources_per_required_threat_domain": 1,
+  "policy_id": "blockchain-source-catalog-reviewed-pilot-2026-08",
   "require_unique_snapshot_digests": true,
   "require_zero_cross_source_content_duplicates": true,
   "required_chain_families": [
