@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict, deque
 from enum import StrEnum
 from typing import Literal
@@ -50,6 +51,7 @@ _STAGE_ORDER = [
     AttackStage.EXFILTRATION,
     AttackStage.IMPACT,
 ]
+_STAGE_RANK = {stage: index for index, stage in enumerate(_STAGE_ORDER)}
 
 _STAGE_SUCCESSORS: dict[AttackStage, tuple[AttackStage, ...]] = {
     AttackStage.RECONNAISSANCE: (AttackStage.INITIAL_ACCESS,),
@@ -133,6 +135,21 @@ class DefensiveCutPoint(StrictModel):
     rationale: str
 
 
+class AttackComponentReport(StrictModel):
+    schema_version: Literal["sentinel.attack-component.v1"] = "sentinel.attack-component.v1"
+    component_id: str
+    entity_ids: list[str]
+    relation_ids: list[str]
+    active_stages: list[StageEvidence]
+    current_stage: AttackStage | None
+    progression_confidence: float = Field(ge=0.0, le=1.0)
+    predicted_transitions: list[PredictedTransition]
+    defensive_cut_points: list[DefensiveCutPoint]
+    active_relation_ids: list[str]
+    disproved_relation_ids: list[str]
+    risk_score: float = Field(ge=0.0, le=1.0)
+
+
 class AttackProgressionReport(StrictModel):
     schema_version: Literal["sentinel.attack-progression.v1"] = (
         "sentinel.attack-progression.v1"
@@ -145,6 +162,8 @@ class AttackProgressionReport(StrictModel):
     defensive_cut_points: list[DefensiveCutPoint]
     active_relation_ids: list[str]
     disproved_relation_ids: list[str]
+    primary_component_id: str | None = None
+    components: list[AttackComponentReport] = Field(default_factory=list)
 
 
 def _relation_stage(relation: CyberRelation) -> AttackStage | None:
@@ -209,8 +228,7 @@ def _current_stage(stages: list[StageEvidence]) -> AttackStage | None:
     credible = [row for row in stages if row.score >= 0.5]
     if not credible:
         return None
-    rank = {stage: index for index, stage in enumerate(_STAGE_ORDER)}
-    return max(credible, key=lambda row: (rank[row.stage], row.score)).stage
+    return max(credible, key=lambda row: (_STAGE_RANK[row.stage], row.score)).stage
 
 
 def _predictions(current: AttackStage | None, stages: list[StageEvidence]) -> list[PredictedTransition]:
@@ -303,8 +321,8 @@ def _cut_points(graph: CyberStateGraph) -> list[DefensiveCutPoint]:
                     relation.relation_id for relation in touching
                 ),
                 rationale=(
-                    "defensive control point inside the protected graph; score combines "
-                    "downstream reach, relation confidence, and observed-evidence support"
+                    "defensive control point inside one attack component; score combines "
+                    "component-local downstream reach, relation confidence, and observed-evidence support"
                 ),
             )
         )
@@ -312,22 +330,157 @@ def _cut_points(graph: CyberStateGraph) -> list[DefensiveCutPoint]:
     return candidates[:8]
 
 
-def analyze_attack_progression(graph: CyberStateGraph) -> AttackProgressionReport:
-    stages = _stage_evidence(graph)
+def _active_components(graph: CyberStateGraph) -> list[set[str]]:
+    adjacency: dict[str, set[str]] = defaultdict(set)
+    for relation in _active_relations(graph):
+        adjacency[relation.source_entity_id].add(relation.target_entity_id)
+        adjacency[relation.target_entity_id].add(relation.source_entity_id)
+
+    remaining = set(adjacency)
+    components: list[set[str]] = []
+    while remaining:
+        start = min(remaining)
+        seen = {start}
+        queue: deque[str] = deque([start])
+        while queue:
+            current = queue.popleft()
+            for neighbor in sorted(adjacency.get(current, set())):
+                if neighbor not in seen:
+                    seen.add(neighbor)
+                    queue.append(neighbor)
+        remaining -= seen
+        components.append(seen)
+    components.sort(key=lambda row: tuple(sorted(row)))
+    return components
+
+
+def _component_id(entity_ids: set[str], active_relation_ids: list[str]) -> str:
+    payload = "|".join([",".join(sorted(entity_ids)), ",".join(sorted(active_relation_ids))])
+    return "attack-component:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+
+def _component_subgraph(graph: CyberStateGraph, entity_ids: set[str]) -> CyberStateGraph:
+    return CyberStateGraph(
+        graph_id=f"{graph.graph_id}:component",
+        entities=[entity for entity in graph.entities if entity.entity_id in entity_ids],
+        relations=[
+            relation
+            for relation in graph.relations
+            if relation.source_entity_id in entity_ids and relation.target_entity_id in entity_ids
+        ],
+    )
+
+
+def _component_risk_score(
+    *,
+    current_stage: AttackStage | None,
+    confidence: float,
+    cut_points: list[DefensiveCutPoint],
+    entity_count: int,
+) -> float:
+    stage_score = (
+        0.0
+        if current_stage is None
+        else _STAGE_RANK[current_stage] / max(1, len(_STAGE_ORDER) - 1)
+    )
+    cut_score = max((row.effect_score for row in cut_points), default=0.0)
+    span_score = min(1.0, entity_count / 8.0)
+    return min(1.0, 0.45 * stage_score + 0.35 * confidence + 0.15 * cut_score + 0.05 * span_score)
+
+
+def _analyze_component(graph: CyberStateGraph, entity_ids: set[str]) -> AttackComponentReport:
+    subgraph = _component_subgraph(graph, entity_ids)
+    stages = _stage_evidence(subgraph)
     current = _current_stage(stages)
     confidence = max((row.score for row in stages), default=0.0)
-    active = _active_relations(graph)
-    return AttackProgressionReport(
-        graph_id=graph.graph_id,
+    active = _active_relations(subgraph)
+    active_ids = sorted(relation.relation_id for relation in active)
+    cut_points = _cut_points(subgraph)
+    relation_ids = sorted(relation.relation_id for relation in subgraph.relations)
+    disproved = sorted(
+        relation.relation_id
+        for relation in subgraph.relations
+        if relation.status is EvidenceStatus.DISPROVED
+    )
+    return AttackComponentReport(
+        component_id=_component_id(entity_ids, active_ids),
+        entity_ids=sorted(entity_ids),
+        relation_ids=relation_ids,
         active_stages=stages,
         current_stage=current,
         progression_confidence=confidence,
         predicted_transitions=_predictions(current, stages),
-        defensive_cut_points=_cut_points(graph),
-        active_relation_ids=sorted(relation.relation_id for relation in active),
-        disproved_relation_ids=sorted(
-            relation.relation_id
-            for relation in graph.relations
-            if relation.status is EvidenceStatus.DISPROVED
+        defensive_cut_points=cut_points,
+        active_relation_ids=active_ids,
+        disproved_relation_ids=disproved,
+        risk_score=_component_risk_score(
+            current_stage=current,
+            confidence=confidence,
+            cut_points=cut_points,
+            entity_count=len(entity_ids),
         ),
+    )
+
+
+def _primary_component(
+    components: list[AttackComponentReport],
+    focus_entity_ids: set[str],
+) -> AttackComponentReport | None:
+    if not components:
+        return None
+    focused = [
+        component
+        for component in components
+        if focus_entity_ids.intersection(component.entity_ids)
+    ]
+    candidates = focused or components
+    return max(
+        candidates,
+        key=lambda row: (
+            row.risk_score,
+            _STAGE_RANK.get(row.current_stage, -1),
+            row.progression_confidence,
+            row.component_id,
+        ),
+    )
+
+
+def analyze_attack_progression(
+    graph: CyberStateGraph,
+    *,
+    focus_entity_ids: list[str] | None = None,
+) -> AttackProgressionReport:
+    components = [_analyze_component(graph, ids) for ids in _active_components(graph)]
+    components.sort(key=lambda row: (-row.risk_score, row.component_id))
+    primary = _primary_component(components, set(focus_entity_ids or []))
+
+    if primary is None:
+        return AttackProgressionReport(
+            graph_id=graph.graph_id,
+            active_stages=[],
+            current_stage=None,
+            progression_confidence=0.0,
+            predicted_transitions=[],
+            defensive_cut_points=[],
+            active_relation_ids=[],
+            disproved_relation_ids=sorted(
+                relation.relation_id
+                for relation in graph.relations
+                if relation.status is EvidenceStatus.DISPROVED
+            ),
+            primary_component_id=None,
+            components=[],
+        )
+
+    return AttackProgressionReport(
+        graph_id=graph.graph_id,
+        active_stages=primary.active_stages,
+        current_stage=primary.current_stage,
+        progression_confidence=primary.progression_confidence,
+        predicted_transitions=primary.predicted_transitions,
+        defensive_cut_points=primary.defensive_cut_points,
+        active_relation_ids=primary.active_relation_ids,
+        disproved_relation_ids=primary.disproved_relation_ids,
+        primary_component_id=primary.component_id,
+        components=components,
     )
