@@ -70,13 +70,17 @@ def audit_cyber_training_readiness(
     if plan is not None:
         warnings.extend(plan.warnings)
         if not plan.executable_with_current_trainer:
-            blockers.append("configured execution profile is not supported by the current Cyber SFT trainer")
+            blockers.append(
+                "configured execution profile is not supported by the current Cyber SFT trainer"
+            )
 
     dependencies_ready: bool | None = None
     cuda_available: bool | None = None
     cuda_memory: float | None = None
     if check_runtime:
-        missing = [name for name in _runtime_dependency_names() if importlib.util.find_spec(name) is None]
+        missing = [
+            name for name in _runtime_dependency_names() if importlib.util.find_spec(name) is None
+        ]
         dependencies_ready = not missing
         if missing:
             blockers.append("missing training runtime packages: " + ", ".join(missing))
@@ -101,17 +105,31 @@ def audit_cyber_training_readiness(
                     and hasattr(torch.cuda, "is_bf16_supported")
                     and not torch.cuda.is_bf16_supported()
                 ):
-                    blockers.append("configured bfloat16 is not supported by visible CUDA hardware")
+                    blockers.append(
+                        "configured bfloat16 is not supported by visible CUDA hardware"
+                    )
     else:
-        warnings.append("runtime packages and CUDA were not checked; use check_runtime on the GPU host")
+        warnings.append(
+            "runtime packages and CUDA were not checked; execution readiness remains false"
+        )
 
     static_ready = plan is not None
-    ready = static_ready and not blockers and (not check_runtime or dependencies_ready is True)
+    ready = (
+        static_ready
+        and check_runtime
+        and dependencies_ready is True
+        and cuda_available is True
+        and not blockers
+    )
     return CyberTrainingReadinessReport(
         run_id=config.run_id,
         stage=config.stage.value,
         execution_profile=config.execution_profile.value,
-        use_class=_use_class(plan) if plan is not None else CyberTrainingUseClass.NOT_APPLICABLE,
+        use_class=(
+            _use_class(plan)
+            if plan is not None
+            else CyberTrainingUseClass.NOT_APPLICABLE
+        ),
         static_plan_ready=static_ready,
         runtime_checked=check_runtime,
         runtime_dependencies_ready=dependencies_ready,
