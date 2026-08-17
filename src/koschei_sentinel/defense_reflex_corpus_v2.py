@@ -81,7 +81,6 @@ def _observed_ticks(report: StrictModel) -> list[dict[str, object]]:
                     if tick.reassessment_disposition is not None
                     else None
                 ),
-                "reroute_expected": tick.reroute_expected,
                 "reroute_detected": tick.reroute_detected,
             }
         )
@@ -154,7 +153,7 @@ def build_defense_reflex_v2_example(
             "correction_id": correction.correction_id,
             "reviewer_id": correction.reviewer_id,
             "review_status": correction.review_status.value,
-            "input_policy": "graph-and-observed-planner-state-only",
+            "input_policy": "graph-and-observable-planner-state-only",
         },
     )
 
