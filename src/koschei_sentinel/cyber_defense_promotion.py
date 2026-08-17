@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
 from koschei_sentinel.cyber_training_bundle import CyberTrainingBundle
+from koschei_sentinel.defense_load_range import DefenseLoadRangeReport
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
@@ -18,8 +19,8 @@ _DIGEST = r"^[a-f0-9]{64}$"
 
 
 class CyberDefensePromotionEvidence(StrictModel):
-    schema_version: Literal["sentinel.cyber-defense-promotion-evidence.v1"] = (
-        "sentinel.cyber-defense-promotion-evidence.v1"
+    schema_version: Literal["sentinel.cyber-defense-promotion-evidence.v2"] = (
+        "sentinel.cyber-defense-promotion-evidence.v2"
     )
     promotion_id: str = Field(min_length=3, max_length=256)
     candidate_model_ref: str = Field(min_length=3, max_length=512)
@@ -28,8 +29,10 @@ class CyberDefensePromotionEvidence(StrictModel):
     eval_holdout_sha256: str = Field(pattern=_DIGEST)
     cyber_range_suite_sha256: str = Field(pattern=_DIGEST)
     multi_incident_range_suite_sha256: str = Field(pattern=_DIGEST)
+    defense_load_range_sha256: str = Field(pattern=_DIGEST)
     cyber_range_passed: bool
     multi_incident_range_passed: bool
+    defense_load_range_passed: bool
     malicious_containment_rate: float = Field(ge=0.0, le=1.0)
     reroute_detection_rate: float = Field(ge=0.0, le=1.0)
     benign_high_impact_false_positive_rate: float = Field(ge=0.0, le=1.0)
@@ -39,14 +42,22 @@ class CyberDefensePromotionEvidence(StrictModel):
     world_line_containment_rate: float = Field(ge=0.0, le=1.0)
     mean_world_line_containment_tick_latency: float | None = Field(default=None, ge=0.0)
     cut_point_leakage_count: int = Field(ge=0)
+    scheduler_service_coverage: float = Field(ge=0.0, le=1.0)
+    scheduler_critical_max_first_service_wave: int | None = Field(default=None, ge=0)
+    scheduler_max_wait_cycles: int = Field(ge=0)
+    scheduler_capacity_violation_count: int = Field(ge=0)
     ready_for_promotion: bool
     evidence_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
     def promotion_is_fail_closed(self) -> "CyberDefensePromotionEvidence":
-        expected = self.cyber_range_passed and self.multi_incident_range_passed
+        expected = (
+            self.cyber_range_passed
+            and self.multi_incident_range_passed
+            and self.defense_load_range_passed
+        )
         if self.ready_for_promotion != expected:
-            raise ValueError("promotion readiness must equal all required range gates")
+            raise ValueError("promotion readiness must equal all required defense gates")
         return self
 
 
@@ -67,13 +78,19 @@ def build_cyber_defense_promotion_evidence(
     training_bundle: CyberTrainingBundle,
     cyber_range_report: CyberRangeSuiteReport,
     multi_incident_range_report: MultiIncidentCyberRangeSuiteReport,
+    defense_load_range_report: DefenseLoadRangeReport,
 ) -> CyberDefensePromotionEvidence:
     if not training_bundle.ready_for_training:
         raise ValueError("cyber training bundle is not ready")
 
     single_sha = _stable_sha(cyber_range_report)
     multi_sha = _stable_sha(multi_incident_range_report)
-    ready = cyber_range_report.passed and multi_incident_range_report.passed
+    load_sha = _stable_sha(defense_load_range_report)
+    ready = (
+        cyber_range_report.passed
+        and multi_incident_range_report.passed
+        and defense_load_range_report.passed
+    )
     digest_payload = "|".join(
         [
             promotion_id,
@@ -83,8 +100,10 @@ def build_cyber_defense_promotion_evidence(
             training_bundle.eval_holdout_sha256,
             single_sha,
             multi_sha,
+            load_sha,
             str(int(cyber_range_report.passed)),
             str(int(multi_incident_range_report.passed)),
+            str(int(defense_load_range_report.passed)),
         ]
     )
     digest = hashlib.sha256(digest_payload.encode("utf-8")).hexdigest()
@@ -97,8 +116,10 @@ def build_cyber_defense_promotion_evidence(
         eval_holdout_sha256=training_bundle.eval_holdout_sha256,
         cyber_range_suite_sha256=single_sha,
         multi_incident_range_suite_sha256=multi_sha,
+        defense_load_range_sha256=load_sha,
         cyber_range_passed=cyber_range_report.passed,
         multi_incident_range_passed=multi_incident_range_report.passed,
+        defense_load_range_passed=defense_load_range_report.passed,
         malicious_containment_rate=cyber_range_report.malicious_containment_rate,
         reroute_detection_rate=cyber_range_report.reroute_detection_rate,
         benign_high_impact_false_positive_rate=(
@@ -118,6 +139,14 @@ def build_cyber_defense_promotion_evidence(
             multi_incident_range_report.mean_world_line_containment_tick_latency
         ),
         cut_point_leakage_count=multi_incident_range_report.cut_point_leakage_count,
+        scheduler_service_coverage=defense_load_range_report.service_coverage,
+        scheduler_critical_max_first_service_wave=(
+            defense_load_range_report.critical_max_first_service_wave
+        ),
+        scheduler_max_wait_cycles=defense_load_range_report.max_wait_cycles,
+        scheduler_capacity_violation_count=(
+            defense_load_range_report.capacity_violation_count
+        ),
         ready_for_promotion=ready,
         evidence_sha256=digest,
     )
