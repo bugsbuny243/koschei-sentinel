@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from koschei_sentinel.causal_defense_corpus import CausalDefenseCorpusManifest
 from koschei_sentinel.cyber_collection_batch import CollectionBatchSeal
 from koschei_sentinel.cyber_training_bundle import build_cyber_training_bundle
 from koschei_sentinel.defense_reflex_corpus import DefenseReflexCorpusManifest
@@ -18,6 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--foundation-revision", required=True)
     parser.add_argument("--knowledge-seal", required=True, help="Cyber Corpus seal.json")
     parser.add_argument("--defense-reflex-manifest", required=True, help="Defense Reflex manifest.json")
+    parser.add_argument("--causal-defense-manifest", required=True, help="Causal Defense manifest.json")
     parser.add_argument("--eval-holdout-sha256", required=True)
     parser.add_argument("--output", required=True)
     return parser
@@ -32,12 +34,16 @@ def main(argv: list[str] | None = None) -> int:
         reflex = DefenseReflexCorpusManifest.model_validate_json(
             Path(args.defense_reflex_manifest).read_text(encoding="utf-8")
         )
+        causal = CausalDefenseCorpusManifest.model_validate_json(
+            Path(args.causal_defense_manifest).read_text(encoding="utf-8")
+        )
         bundle = build_cyber_training_bundle(
             bundle_id=args.bundle_id,
             foundation_model_ref=args.foundation_model,
             foundation_model_revision=args.foundation_revision,
             knowledge_seal=knowledge,
             reflex_manifest=reflex,
+            causal_manifest=causal,
             eval_holdout_sha256=args.eval_holdout_sha256,
         )
         destination = Path(args.output)
