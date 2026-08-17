@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from koschei_sentinel.cyber_corpus_catalog import CyberSource, audit_catalog
+from koschei_sentinel.cyber_corpus_catalog import CyberSource, audit_catalog, load_catalog
 
 
 def approved_source(**overrides):
@@ -48,6 +48,11 @@ def test_high_benchmark_overlap_cannot_be_training_authorized():
         approved_source(benchmark_overlap_risk="HIGH")
 
 
+def test_trainable_source_requires_canonical_locator():
+    with pytest.raises(ValidationError):
+        approved_source(canonical_locator=None)
+
+
 def test_trainable_source_must_be_excluded_from_eval_material():
     source = approved_source(eval_exclusion=False)
     audit = audit_catalog([source])
@@ -55,3 +60,11 @@ def test_trainable_source_must_be_excluded_from_eval_material():
     assert audit.violations == [
         "training source official.security.source is not marked eval_exclusion"
     ]
+
+
+def test_first_approved_catalog_is_collectable():
+    sources = load_catalog("configs/corpus/cyber-v3.sources.approved.jsonl")
+    audit = audit_catalog(sources)
+    assert audit.ready_for_collection is True
+    assert audit.training_authorized_sources == 2
+    assert audit.approved_sources == 2
