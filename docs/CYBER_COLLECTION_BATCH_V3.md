@@ -16,4 +16,13 @@ The batch sealer revalidates source IDs and pinned revisions, verifies every cor
 
 A batch is not ready when a source is absent from the approved catalog, a source is not training-authorized, an artifact revision differs from the approved pin, an authorized artifact is missing from the corpus, an unauthorized artifact appears in the corpus, manifest and corpus hashes disagree, or duplicate content exists across sources.
 
-The first example batch contains RustSec only because its source-specific extractor and per-artifact license resolver already exist. ATT&CK, Kubernetes, YARA and NIST are approved sources, but they are not added to the example until dedicated extraction rules preserve their approved scope and licensing boundaries.
+## Batch 0001 extraction scope
+
+The example Batch 0001 now contains four sources whose dedicated extraction boundaries are implemented:
+
+- RustSec: advisory records with per-artifact CC0/CC-BY license resolution.
+- MITRE ATT&CK: non-revoked, non-deprecated STIX security knowledge objects only.
+- Kubernetes: English security/authentication/authorization/admission/policy documentation only; localization and unrelated website material are excluded.
+- YARA: first-party documentation and `libyara` engine source only; vendor and third-party trees are excluded.
+
+NIST CSF 2.0 and SP 800-61 Rev. 3 remain approved source families but are intentionally absent from Batch 0001 until the NIST artifact-level rights/text-export resolver is implemented. Their `PER_ARTIFACT` license scope must not be bypassed by a generic PDF or text extractor.
