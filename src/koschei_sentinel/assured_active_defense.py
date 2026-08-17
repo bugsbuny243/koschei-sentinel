@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from typing import Literal
 
 from pydantic import Field
@@ -42,6 +43,7 @@ class ActiveDefenseAssuranceReceipt(StrictModel):
     registry_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     base_mode: DefenseMode
     effective_mode: DefenseMode
+    assurance_relation_ids: list[str]
     active_source_principals: list[str]
     active_independence_domains: list[str]
     active_independent_domain_count: int = Field(ge=0)
@@ -129,20 +131,60 @@ def _validate_assurance_binding(
         raise ValueError("perception assurance independent domain count is inconsistent")
 
 
+def _assurance_component_relation_ids(
+    graph: CyberStateGraph,
+    plan: ActiveDefensePlan,
+) -> set[str]:
+    active_ids = set(plan.progression.active_relation_ids)
+    active_relations = [row for row in graph.relations if row.relation_id in active_ids]
+    if not active_relations:
+        return set()
+
+    adjacency: dict[str, set[str]] = {}
+    touched: set[str] = set()
+    for relation in active_relations:
+        touched.update({relation.source_entity_id, relation.target_entity_id})
+        adjacency.setdefault(relation.source_entity_id, set()).add(relation.target_entity_id)
+        adjacency.setdefault(relation.target_entity_id, set()).add(relation.source_entity_id)
+
+    roots = [entity_id for entity_id in plan.critical_entity_ids if entity_id in touched]
+    if not roots and plan.progression.defensive_cut_points:
+        top = plan.progression.defensive_cut_points[0].entity_id
+        if top in touched:
+            roots = [top]
+    if not roots:
+        return active_ids
+
+    component = set(roots)
+    queue: deque[str] = deque(roots)
+    while queue:
+        current = queue.popleft()
+        for neighbor in adjacency.get(current, set()):
+            if neighbor not in component:
+                component.add(neighbor)
+                queue.append(neighbor)
+
+    return {
+        relation.relation_id
+        for relation in active_relations
+        if relation.source_entity_id in component and relation.target_entity_id in component
+    }
+
+
 def _active_evidence_domains(
     *,
     graph: CyberStateGraph,
     plan: ActiveDefensePlan,
     registry: PerceptionSourceRegistry,
-) -> tuple[list[str], list[str], list[str]]:
-    active_relation_ids = set(plan.progression.active_relation_ids)
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    assurance_relation_ids = _assurance_component_relation_ids(graph, plan)
     enrollment_by_principal = {row.principal: row for row in registry.enrollments if row.enabled}
     principals: set[str] = set()
     domains: set[str] = set()
     unknown: set[str] = set()
 
     for relation in graph.relations:
-        if relation.relation_id not in active_relation_ids:
+        if relation.relation_id not in assurance_relation_ids:
             continue
         if relation.status not in {EvidenceStatus.OBSERVED, EvidenceStatus.INFERRED}:
             continue
@@ -153,7 +195,12 @@ def _active_evidence_domains(
                 continue
             principals.add(evidence.source)
             domains.add(enrollment.independence_domain)
-    return sorted(principals), sorted(domains), sorted(unknown)
+    return (
+        sorted(assurance_relation_ids),
+        sorted(principals),
+        sorted(domains),
+        sorted(unknown),
+    )
 
 
 def _maximum_mode_for_domains(
@@ -187,7 +234,7 @@ def build_assured_active_defense_plan(
         graph,
         critical_entity_ids=critical_entity_ids,
     )
-    active_principals, active_domains, unknown_sources = _active_evidence_domains(
+    relation_ids, active_principals, active_domains, unknown_sources = _active_evidence_domains(
         graph=graph,
         plan=base,
         registry=registry,
@@ -210,7 +257,7 @@ def build_assured_active_defense_plan(
 
     decision_rationale = list(base.decision.rationale)
     decision_rationale.append(
-        f"active-path evidence spans {len(active_domains)} admitted independence domain(s)"
+        f"relevant attack component spans {len(active_domains)} admitted independence domain(s)"
     )
     if downgraded:
         decision_rationale.append(
@@ -229,7 +276,7 @@ def build_assured_active_defense_plan(
     plan_rationale = list(base.rationale)
     if downgraded:
         plan_rationale.append(
-            "higher-impact containment is withheld until independent active-path evidence is sufficient"
+            "higher-impact containment is withheld until independent evidence in the same attack component is sufficient"
         )
     adjusted = ActiveDefensePlan(
         graph_id=base.graph_id,
@@ -248,6 +295,7 @@ def build_assured_active_defense_plan(
         registry_sha256=perception_assurance.registry_sha256,
         base_mode=base.decision.mode,
         effective_mode=effective_mode,
+        assurance_relation_ids=relation_ids,
         active_source_principals=active_principals,
         active_independence_domains=active_domains,
         active_independent_domain_count=len(active_domains),
