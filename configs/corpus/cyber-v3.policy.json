@@ -1,0 +1,82 @@
+{
+  "schema_version": "sentinel.cyber-corpus-policy.v3",
+  "corpus_id": "koschei-sentinel-cyber-v3",
+  "status": "collection_planned_not_sealed",
+  "purpose": "cybersecurity continued pretraining and later evidence-grounded post-training for the large Sentinel foundation",
+  "minimum_release_targets": {
+    "approved_documents": 50000,
+    "preferred_documents": 150000,
+    "minimum_distinct_sources": 120,
+    "minimum_domain_families": 18,
+    "minimum_primary_or_authoritative_fraction": 0.70,
+    "maximum_single_source_fraction": 0.08,
+    "maximum_single_domain_fraction": 0.18
+  },
+  "domain_targets": {
+    "EVIDENCE_GROUNDING": 0.05,
+    "INCIDENT_RESPONSE": 0.07,
+    "ENDPOINT_EDR": 0.07,
+    "MALWARE_REVERSE_ENGINEERING": 0.07,
+    "IDENTITY_IAM": 0.06,
+    "CLOUD_SECURITY": 0.06,
+    "PRIVILEGED_ACCESS": 0.06,
+    "KEY_WALLET_SECURITY": 0.05,
+    "SIGNING_INTEGRITY": 0.05,
+    "SUPPLY_CHAIN": 0.06,
+    "APPLICATION_SECURITY": 0.07,
+    "NETWORK_SECURITY": 0.05,
+    "CONTAINER_KUBERNETES": 0.04,
+    "CRYPTOGRAPHY": 0.04,
+    "POST_QUANTUM": 0.03,
+    "BLOCKCHAIN_PROTOCOL_SECURITY": 0.07,
+    "CROSS_CHAIN_BRIDGES": 0.04,
+    "THREAT_INTELLIGENCE_AND_VULNERABILITY": 0.06
+  },
+  "provenance_policy": {
+    "trainable_tiers": ["T0_PRIMARY", "T1_AUTHORITATIVE", "T2_REVIEWED"],
+    "context_only_tier": "T3_CONTEXT_ONLY",
+    "mutable_branch_is_not_provenance": true,
+    "revision_or_release_pin_required": true,
+    "content_sha256_required": true,
+    "source_snapshot_sha256_required": true,
+    "lineage_record_required": true
+  },
+  "license_policy": {
+    "default": "REVIEW_REQUIRED",
+    "training_allowed": ["ALLOW_TRAINING", "ALLOW_WITH_ATTRIBUTION"],
+    "never_train": ["EVAL_ONLY", "BLOCKED", "REVIEW_REQUIRED"],
+    "license_reference_required_before_approval": true
+  },
+  "quality_policy": {
+    "reject_generated_filler": true,
+    "reject_thin_navigation_pages": true,
+    "reject_unreviewed_scrapes": true,
+    "reject_test_fixture_noise": true,
+    "reject_build_artifacts": true,
+    "reject_secret_material": true,
+    "reject_personal_data_when_not_necessary": true,
+    "reject_duplicate_or_near_duplicate": true,
+    "minimum_semantic_security_relevance": true,
+    "code_requires_context_or_security_signal": true
+  },
+  "safety_and_eval_policy": {
+    "benchmark_material_never_enters_training": true,
+    "heldout_incident_cases_never_enter_training": true,
+    "behavior_eval_prompts_never_enter_training": true,
+    "known_eval_answer_reuse_forbidden": true,
+    "group_level_split_for_derived_cases": true,
+    "deduplicate_train_against_all_eval_hashes": true
+  },
+  "release_gate": {
+    "license_blockers": 0,
+    "provenance_blockers": 0,
+    "benchmark_overlap_high_risk": 0,
+    "duplicate_content_sha256": 0,
+    "cross_split_group_leakage": 0,
+    "required_manifest": true,
+    "required_source_catalog": true,
+    "required_rejection_ledger": true,
+    "required_sha256_tree": true,
+    "automatic_training_authorization": false
+  }
+}

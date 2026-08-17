@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koschei.dev/schemas/cyber-corpus-source-v3.schema.json",
+  "title": "Koschei Sentinel Cyber Corpus v3 Source",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_id",
+    "source_class",
+    "domain_families",
+    "provenance_tier",
+    "license_status",
+    "acquisition_mode",
+    "training_authorization",
+    "eval_exclusion",
+    "review_status"
+  ],
+  "properties": {
+    "source_id": {"type": "string", "minLength": 3},
+    "source_class": {
+      "enum": [
+        "STANDARD_SPECIFICATION",
+        "OFFICIAL_SECURITY_GUIDANCE",
+        "VENDOR_SECURITY_ADVISORY",
+        "OPEN_SOURCE_SECURITY_CODE",
+        "INCIDENT_POSTMORTEM",
+        "VULNERABILITY_RECORD",
+        "SECURITY_RESEARCH",
+        "MALWARE_ANALYSIS",
+        "THREAT_INTELLIGENCE",
+        "BLOCKCHAIN_PROTOCOL_SOURCE",
+        "WALLET_SIGNING_SOURCE",
+        "CLOUD_IAM_SOURCE",
+        "ENDPOINT_SOURCE",
+        "POST_QUANTUM_SOURCE",
+        "OTHER_REVIEWED"
+      ]
+    },
+    "domain_families": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "EVIDENCE_GROUNDING",
+          "INCIDENT_RESPONSE",
+          "ENDPOINT_EDR",
+          "MALWARE_REVERSE_ENGINEERING",
+          "IDENTITY_IAM",
+          "CLOUD_SECURITY",
+          "PRIVILEGED_ACCESS",
+          "KEY_WALLET_SECURITY",
+          "SIGNING_INTEGRITY",
+          "SUPPLY_CHAIN",
+          "APPLICATION_SECURITY",
+          "MEMORY_SAFETY",
+          "NETWORK_SECURITY",
+          "CONTAINER_KUBERNETES",
+          "CRYPTOGRAPHY",
+          "POST_QUANTUM",
+          "EVM",
+          "SOLANA",
+          "MOVE",
+          "COSMOS",
+          "BITCOIN",
+          "TRON",
+          "CROSS_CHAIN_BRIDGES",
+          "RPC_INFRASTRUCTURE",
+          "CONSENSUS_VALIDATORS",
+          "SMART_CONTRACT_SECURITY",
+          "THREAT_INTELLIGENCE",
+          "VULNERABILITY_MANAGEMENT"
+        ]
+      }
+    },
+    "provenance_tier": {"enum": ["T0_PRIMARY", "T1_AUTHORITATIVE", "T2_REVIEWED", "T3_CONTEXT_ONLY"]},
+    "license_status": {"enum": ["ALLOW_TRAINING", "ALLOW_WITH_ATTRIBUTION", "REVIEW_REQUIRED", "EVAL_ONLY", "BLOCKED"]},
+    "license_reference": {"type": ["string", "null"]},
+    "acquisition_mode": {"enum": ["PINNED_GIT", "VERSIONED_RELEASE", "OFFICIAL_EXPORT", "MANUAL_REVIEWED_IMPORT", "API_SNAPSHOT"]},
+    "canonical_locator": {"type": ["string", "null"]},
+    "pinned_revision": {"type": ["string", "null"]},
+    "training_authorization": {"type": "boolean"},
+    "eval_exclusion": {"type": "boolean"},
+    "benchmark_overlap_risk": {"enum": ["NONE", "LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+    "review_status": {"enum": ["PROPOSED", "LICENSE_REVIEW", "SECURITY_REVIEW", "APPROVED", "REJECTED", "REVOKED"]},
+    "notes": {"type": ["string", "null"]}
+  }
+}
