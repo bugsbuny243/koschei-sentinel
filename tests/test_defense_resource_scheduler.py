@@ -239,6 +239,7 @@ def test_deferred_component_ages_and_wins_next_equal_capacity_wave() -> None:
     assert len(first.scheduled) == 1
     assert len(first.deferred) == 1
     deferred_component = first.deferred[0].component_id
+    deferred_subject = first.deferred[0].scheduling_subject_id
 
     second = build_defense_resource_schedule(
         plan,
@@ -247,7 +248,7 @@ def test_deferred_component_ages_and_wins_next_equal_capacity_wave() -> None:
     )
     assert second.scheduled[0].component_id == deferred_component
     assert second.scheduled[0].wait_cycles == 1
-    assert second.next_state.wait_cycles_by_component[deferred_component] == 0
+    assert second.next_state.wait_cycles_by_subject[deferred_subject] == 0
 
 
 def test_guard_component_without_authorized_cut_point_consumes_no_resource_slot() -> None:
@@ -270,12 +271,13 @@ def test_guard_component_without_authorized_cut_point_consumes_no_resource_slot(
 def test_schedule_is_deterministic_for_same_plan_policy_and_state() -> None:
     plan = _plan(critical=["wallet:a", "wallet:b"])
     policy = _policy(total=1, signer=1, reserved=1)
-    state = DefenseSchedulerState(wait_cycles_by_component={})
+    state = DefenseSchedulerState(wait_cycles_by_subject={})
     first = build_defense_resource_schedule(plan, policy=policy, state=state)
     second = build_defense_resource_schedule(plan, policy=policy, state=state)
 
     assert first.model_dump() == second.model_dump()
     assert first.schedule_sha256 == second.schedule_sha256
+    assert first.schema_version == "sentinel.defense-resource-schedule.v2"
 
 
 def test_only_scheduled_component_can_produce_assured_connector_envelope() -> None:
@@ -316,7 +318,9 @@ def test_tampered_schedule_digest_is_rejected_before_connector_generation() -> N
         policy=_policy(total=1, signer=1, reserved=1),
     )
     item = schedule.scheduled[0]
-    changed_item = item.model_copy(update={"priority_score": max(0.0, item.priority_score - 0.1)})
+    changed_item = item.model_copy(
+        update={"priority_score": max(0.0, item.priority_score - 0.1)}
+    )
     tampered = schedule.model_copy(update={"scheduled": [changed_item]})
 
     with pytest.raises(ValueError, match="schedule digest"):
