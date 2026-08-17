@@ -35,6 +35,11 @@ class CyberSFTStage(StrEnum):
     CAUSAL_DEFENSE = "CAUSAL_DEFENSE"
 
 
+class CyberExecutionProfile(StrEnum):
+    DENSE_SINGLE_GPU_QLORA = "DENSE_SINGLE_GPU_QLORA"
+    MOE_DISTRIBUTED_REQUIRED = "MOE_DISTRIBUTED_REQUIRED"
+
+
 class CyberQuantizationConfig(StrictModel):
     bits: Literal[4, 8] = 4
     quant_type: Literal["nf4", "fp4"] = "nf4"
@@ -55,6 +60,11 @@ class CyberLoraConfig(StrictModel):
             "gate_proj",
             "up_proj",
             "down_proj",
+            "in_proj_qkv",
+            "in_proj_z",
+            "in_proj_b",
+            "in_proj_a",
+            "out_proj",
         ],
         min_length=1,
         max_length=32,
@@ -75,6 +85,7 @@ class CyberSFTConfig(StrictModel):
     )
     run_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,127}$")
     stage: CyberSFTStage
+    execution_profile: CyberExecutionProfile = CyberExecutionProfile.DENSE_SINGLE_GPU_QLORA
     base_model: str = Field(min_length=3, max_length=256)
     base_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
     corpus_dir: str = Field(min_length=1, max_length=1024)
@@ -90,6 +101,8 @@ class CyberSFTConfig(StrictModel):
     logging_steps: int = Field(default=5, ge=1, le=10000)
     seed: int = Field(default=1701, ge=0, le=2**31 - 1)
     minimum_cuda_memory_gb: float = Field(default=0.0, ge=0.0, le=512.0)
+    gradient_checkpointing: bool = True
+    enable_router_aux_loss: bool = False
     quantization: CyberQuantizationConfig = Field(default_factory=CyberQuantizationConfig)
     lora: CyberLoraConfig = Field(default_factory=CyberLoraConfig)
 
@@ -109,6 +122,19 @@ class CyberSFTConfig(StrictModel):
             raise ValueError("base_model must be a registry identifier, not a URL")
         if self.base_model.count("/") != 1:
             raise ValueError("base_model must use owner/model format")
+        if (
+            self.execution_profile is CyberExecutionProfile.MOE_DISTRIBUTED_REQUIRED
+            and self.gradient_checkpointing
+        ):
+            raise ValueError(
+                "current Qwen3.5-MoE safety profile forbids gradient checkpointing; "
+                "use the future distributed MoE executor"
+            )
+        if (
+            self.execution_profile is CyberExecutionProfile.DENSE_SINGLE_GPU_QLORA
+            and self.enable_router_aux_loss
+        ):
+            raise ValueError("router auxiliary loss is only meaningful for an MoE execution profile")
         return self
 
     @property
@@ -122,6 +148,8 @@ class CyberSFTPlan(StrictModel):
     )
     run_id: str
     stage: CyberSFTStage
+    execution_profile: CyberExecutionProfile
+    executable_with_current_trainer: bool
     base_model: str
     base_revision: str
     corpus_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -254,9 +282,17 @@ def plan_cyber_sft(
         warnings.append("Cyber SFT run has no validation split")
     if len(rows) < 100:
         warnings.append("Cyber SFT corpus has fewer than 100 examples; treat as smoke training")
+    executable = config.execution_profile is CyberExecutionProfile.DENSE_SINGLE_GPU_QLORA
+    if not executable:
+        warnings.append(
+            "MoE plan is intentionally non-executable with the single-GPU BitsAndBytes trainer; "
+            "a distributed/pre-quantized MoE executor is required"
+        )
     return CyberSFTPlan(
         run_id=config.run_id,
         stage=config.stage,
+        execution_profile=config.execution_profile,
+        executable_with_current_trainer=executable,
         base_model=config.base_model,
         base_revision=config.base_revision,
         corpus_examples_sha256=examples_sha,
