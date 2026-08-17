@@ -49,7 +49,13 @@ class CyberSource(StrictModel):
     pinned_revision: str | None = None
     training_authorization: bool = False
     eval_exclusion: bool = True
-    benchmark_overlap_risk: Literal["NONE", "LOW", "MEDIUM", "HIGH", "UNKNOWN"] = "UNKNOWN"
+    benchmark_overlap_risk: Literal[
+        "NONE",
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "UNKNOWN",
+    ] = "UNKNOWN"
     review_status: ReviewStatus = ReviewStatus.PROPOSED
     notes: str | None = None
 
@@ -57,6 +63,7 @@ class CyberSource(StrictModel):
     def approval_is_fail_closed(self) -> CyberSource:
         if len(self.domain_families) != len(set(self.domain_families)):
             raise ValueError("domain_families must be unique")
+
         allowed = {
             LicenseStatus.ALLOW_TRAINING,
             LicenseStatus.ALLOW_WITH_ATTRIBUTION,
@@ -73,7 +80,10 @@ class CyberSource(StrictModel):
             raise ValueError("trainable sources require pinned_revision")
         if self.provenance_tier is ProvenanceTier.T3_CONTEXT_ONLY and self.training_authorization:
             raise ValueError("T3_CONTEXT_ONLY sources cannot be training-authorized")
-        if self.license_status in {LicenseStatus.BLOCKED, LicenseStatus.EVAL_ONLY} and self.training_authorization:
+        if (
+            self.license_status in {LicenseStatus.BLOCKED, LicenseStatus.EVAL_ONLY}
+            and self.training_authorization
+        ):
             raise ValueError("blocked/eval-only material cannot be training-authorized")
         if self.benchmark_overlap_risk == "HIGH" and self.training_authorization:
             raise ValueError("high benchmark-overlap risk cannot be training-authorized")
@@ -81,7 +91,9 @@ class CyberSource(StrictModel):
 
 
 class CyberCatalogAudit(StrictModel):
-    schema_version: Literal["sentinel.cyber-catalog-audit.v3"] = "sentinel.cyber-catalog-audit.v3"
+    schema_version: Literal["sentinel.cyber-catalog-audit.v3"] = (
+        "sentinel.cyber-catalog-audit.v3"
+    )
     ready_for_collection: bool
     catalog_digest: str
     sources: int
@@ -118,22 +130,36 @@ def audit_catalog(sources: list[CyberSource]) -> CyberCatalogAudit:
     trainable = [item for item in ordered if item.training_authorization]
     for item in trainable:
         if item.eval_exclusion is False:
-            violations.append(f"training source {item.source_id} is not marked eval_exclusion")
+            violations.append(
+                f"training source {item.source_id} is not marked eval_exclusion"
+            )
 
     domains = {domain for item in ordered for domain in item.domain_families}
     canonical = "\n".join(
-        json.dumps(item.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            item.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         for item in ordered
     )
     return CyberCatalogAudit(
         ready_for_collection=not violations and bool(trainable),
         catalog_digest=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         sources=len(ordered),
-        approved_sources=sum(item.review_status is ReviewStatus.APPROVED for item in ordered),
+        approved_sources=sum(
+            item.review_status is ReviewStatus.APPROVED for item in ordered
+        ),
         training_authorized_sources=len(trainable),
         distinct_domains=len(domains),
-        provenance_counts=dict(sorted(Counter(item.provenance_tier.value for item in ordered).items())),
-        license_counts=dict(sorted(Counter(item.license_status.value for item in ordered).items())),
-        review_counts=dict(sorted(Counter(item.review_status.value for item in ordered).items())),
+        provenance_counts=dict(
+            sorted(Counter(item.provenance_tier.value for item in ordered).items())
+        ),
+        license_counts=dict(
+            sorted(Counter(item.license_status.value for item in ordered).items())
+        ),
+        review_counts=dict(
+            sorted(Counter(item.review_status.value for item in ordered).items())
+        ),
         violations=violations,
     )
