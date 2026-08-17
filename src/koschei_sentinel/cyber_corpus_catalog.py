@@ -67,6 +67,8 @@ class CyberSource(StrictModel):
             raise ValueError("training authorization requires APPROVED review status")
         if self.review_status is ReviewStatus.APPROVED and not self.license_reference:
             raise ValueError("approved sources require license_reference")
+        if self.training_authorization and not self.canonical_locator:
+            raise ValueError("trainable sources require canonical_locator")
         if self.training_authorization and not self.pinned_revision:
             raise ValueError("trainable sources require pinned_revision")
         if self.provenance_tier is ProvenanceTier.T3_CONTEXT_ONLY and self.training_authorization:
