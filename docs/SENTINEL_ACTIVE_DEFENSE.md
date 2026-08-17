@@ -53,6 +53,19 @@ The command-line planner is:
 
 `--critical` may be repeated for protected critical entities such as production pipelines, treasury signers, control-plane workloads or other assets represented in the graph.
 
+## Interception sequencing
+
+The Interception Planner converts authorized cut points into a containment sequence. It never promotes a withheld cut point into an executable step.
+
+When impact is predicted at the edge of the defended system, immediate-impact controls take precedence over broad graph centrality. For example, a pending hostile transaction or exposed signer can be held or frozen before the planner continues backward through the root path to compromised credentials, pipelines, endpoints or workloads.
+
+This produces a two-part containment strategy:
+
+1. **Stop the imminent effect.** Prevent the hostile state transition that is about to damage a protected asset.
+2. **Collapse the attack path.** Remove the credentials, sessions, processes, pipelines, endpoints or workloads that allowed the attacker to reach that point.
+
+Every interception step requires post-action verification. A high-effect cut point may end the immediate sequence when verification proves that the hostile progression has been broken, but Sentinel must continue hunting for displaced or alternate attacker paths.
+
 ## Defense boundary
 
 Active defense applies to systems, identities, endpoints, networks, cloud resources, wallets, signers, pipelines and protocols that the defender is authorized to protect. Sentinel is not designed to retaliate against or compromise external systems. The objective is rapid containment and recovery, not hack-back.
@@ -63,6 +76,6 @@ A model assertion alone does not become an execution fact. Authorized defense ex
 
 The intended loop is:
 
-`SEE -> CORRELATE -> UNDERSTAND -> PREDICT -> VERIFY -> FIND CUT POINT -> CONTAIN -> VERIFY OUTCOME -> HUNT -> RECOVER -> LEARN`
+`SEE -> CORRELATE -> UNDERSTAND -> PREDICT -> VERIFY -> FIND CUT POINT -> INTERCEPT -> VERIFY OUTCOME -> COLLAPSE PATH -> HUNT -> RECOVER -> LEARN`
 
 This doctrine is the execution counterpart to the Cyber Corpus v3 knowledge plane and the future Sentinel Cyber World Model.
