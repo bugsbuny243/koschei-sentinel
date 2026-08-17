@@ -35,6 +35,7 @@ class CyberSFTAdapterManifest(StrictModel):
     base_revision: str
     corpus_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     corpus_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    corpus_promotion_eligible: bool | None
     input_adapter_dir: str | None
     adapter_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     adapter_files: list[str]
@@ -293,11 +294,16 @@ def _train(
             ),
         )
 
-    rows, examples_sha, manifest_sha = load_cyber_sft_examples(config, root=root)
+    rows, examples_sha, manifest_sha, promotion_eligible = load_cyber_sft_examples(
+        config,
+        root=root,
+    )
     if examples_sha != plan.corpus_examples_sha256:
         raise ValueError("Cyber SFT corpus changed after plan creation")
     if manifest_sha != plan.corpus_manifest_sha256:
         raise ValueError("Cyber SFT corpus manifest changed after plan creation")
+    if promotion_eligible != plan.corpus_promotion_eligible:
+        raise ValueError("Cyber SFT corpus promotion eligibility changed after plan creation")
     training_rows, validation_rows = split_cyber_sft_examples(
         rows,
         validation_ratio=config.validation_ratio,
@@ -374,6 +380,7 @@ def _train(
         base_revision=config.base_revision,
         corpus_examples_sha256=examples_sha,
         corpus_manifest_sha256=manifest_sha,
+        corpus_promotion_eligible=promotion_eligible,
         input_adapter_dir=config.input_adapter_dir,
         adapter_digest=_directory_digest(staging, files),
         adapter_files=files,
