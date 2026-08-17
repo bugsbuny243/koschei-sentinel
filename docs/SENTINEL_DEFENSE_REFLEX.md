@@ -35,7 +35,7 @@ An approved trajectory captures:
 
 This creates a supervised target for defensive reasoning without treating model-generated assertions as ground truth.
 
-## Corpus release
+## Defense Reflex Corpus
 
 `sentinel-defense-reflex-build` consumes reviewed correction JSONL and emits:
 
@@ -46,21 +46,46 @@ The exporter fails the entire release if any correction is rejected, unverified,
 
 The manifest binds the release to an exact examples SHA-256 and the exact correction digests that produced it.
 
-## Cyber training bundle
+## Temporal Cyber World Model episodes
 
-A Sentinel cyber training run is not considered ready merely because model weights and a dataset exist. The training bundle must bind three distinct planes:
+A Cyber Range timeline can also be converted into an observational `CyberWorldModelEpisode`. An episode preserves the sequence of graph snapshots and explicitly records OBSERVED, INFERRED, PREDICTED and DISPROVED relation counts, attack stage, defense mode, containment state and temporal transitions such as attacker reroute, containment and recovery.
+
+A raw world-model episode always has `training_authorization = false`. It cannot promote itself into training data.
+
+Each episode is bound to the exact source range report through `source_report_sha256`.
+
+## Causal Defense Corpus
+
+The Causal Defense plane teaches why a defensive action is correct in the context of an evolving attack, not merely which action should be selected.
+
+A causal example can be created only when:
+
+- the World Model Episode and reviewed correction belong to the same scenario,
+- both reference the exact same source range-report SHA-256,
+- the correction is APPROVED,
+- its defensive outcome is verified, and
+- explicit training authorization is present.
+
+The resulting example binds temporal state history, graph changes, attacker reroutes, corrected interpretation and the verified defensive sequence into one provenance-preserving training item.
+
+## Cyber training bundle v2
+
+A Sentinel cyber training run is not considered ready merely because model weights and a dataset exist. The training bundle must bind four independent inputs:
 
 - a ready Cyber Corpus collection-batch seal for the knowledge plane,
-- a ready Defense Reflex Corpus manifest for the defensive-behavior plane, and
+- a ready Defense Reflex Corpus manifest for immediate defensive behavior,
+- a ready Causal Defense Corpus manifest for temporal/adversarial reasoning, and
 - an independent evaluation-holdout SHA-256.
 
-The holdout digest must differ from all training-plane digests.
+The holdout digest must differ from every training-plane digest.
 
 The canonical training sequence is:
 
 `KNOWLEDGE_CONTINUED_PRETRAINING -> DEFENSE_REFLEX_SFT -> ADVERSARIAL_REASONING -> CYBER_RANGE_REGRESSION`
 
-The final Cyber Range stage is a promotion gate, not a training-data source by default. Failures return to the reviewed Defense Reflex loop.
+`ADVERSARIAL_REASONING` is backed by the reviewed Causal Defense Corpus. `CYBER_RANGE_REGRESSION` remains a promotion gate, not a training-data source by default. Failures return to the reviewed Defense Reflex loop.
+
+The bundle itself is immutable by digest and records the exact foundation model reference/revision plus the exact hashes of all three training planes.
 
 ## Design principle
 
