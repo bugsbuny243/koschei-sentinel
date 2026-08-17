@@ -44,7 +44,7 @@ def test_reference_adapter_produces_observed_graph_evidence() -> None:
 
     assert len(graph.relations) == 1
     assert graph.relations[0].status is EvidenceStatus.OBSERVED
-    assert graph.relations[0].relation_type == "EXECUTED_PROCESS"
+    assert graph.relations[0].relation_type == "executes"
     assert result.receipts[0].payload_sha256 == "a" * 64
 
 
@@ -82,7 +82,7 @@ class _BadSourceTypeAdapter:
                     entity_id="process:alpha",
                     entity_type=CyberEntityType.PROCESS,
                 ),
-                relation_type="EXECUTED_PROCESS",
+                relation_type="executes",
                 confidence=1.0,
                 evidence_id="evidence:test.bad-source:1234567890abcdef",
                 evidence_sha256=event.payload_sha256,
@@ -118,7 +118,7 @@ class _BadEvidenceAdapter:
                     entity_id="process:alpha",
                     entity_type=CyberEntityType.PROCESS,
                 ),
-                relation_type="EXECUTED_PROCESS",
+                relation_type="executes",
                 confidence=1.0,
                 evidence_id="evidence:test.bad-evidence:1234567890abcdef",
                 evidence_sha256="f" * 64,
@@ -154,7 +154,7 @@ class _BadNamespaceAdapter:
                     entity_id="process:alpha",
                     entity_type=CyberEntityType.PROCESS,
                 ),
-                relation_type="EXECUTED_PROCESS",
+                relation_type="executes",
                 confidence=1.0,
                 evidence_id="evidence:test.namespace:1234567890abcdef",
                 evidence_sha256=event.payload_sha256,
