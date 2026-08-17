@@ -1,0 +1,8 @@
+{
+  "schema_version": "sentinel.defense-load-gate-policy.v1",
+  "max_waves": 64,
+  "service_coverage_min": 1.0,
+  "critical_first_service_wave_max": 1,
+  "max_wait_cycles_allowed": 8,
+  "capacity_violation_max": 0
+}
