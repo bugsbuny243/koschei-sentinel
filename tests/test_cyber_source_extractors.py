@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from koschei_sentinel.cyber_corpus_catalog import audit_artifacts, load_catalog
 from koschei_sentinel.cyber_source_extractors import (
     extract_nvd_snapshot,
     extract_osv_snapshot,
@@ -11,15 +12,38 @@ from koschei_sentinel.cyber_source_extractors import (
 
 
 REVISION = "deadbeef"
+RUSTSEC_APPROVED_REVISION = "69f93e1d081d8b6fbee010e48f0b5e0d13661415"
 DIGEST = "a" * 64
+
+
+def _write_rustsec(
+    path: Path,
+    advisory_id: str,
+    *,
+    license_name: str | None = None,
+    url: str | None = None,
+) -> None:
+    optional = ""
+    if license_name:
+        optional += f'license = "{license_name}"\n'
+    if url:
+        optional += f'url = "{url}"\n'
+    path.write_text(
+        "```toml\n"
+        "[advisory]\n"
+        f'id = "{advisory_id}"\n'
+        'package = "demo"\n'
+        'date = "2026-01-01"\n'
+        f"{optional}"
+        "```\n\n"
+        "A defensive advisory body.\n",
+        encoding="utf-8",
+    )
 
 
 def test_rustsec_default_cc0_is_trainable(tmp_path: Path):
     advisory = tmp_path / "RUSTSEC-2026-0001.md"
-    advisory.write_text(
-        "```toml\n[advisory]\nid = \"RUSTSEC-2026-0001\"\npackage = \"demo\"\ndate = \"2026-01-01\"\n```\n\nA defensive advisory body.\n",
-        encoding="utf-8",
-    )
+    _write_rustsec(advisory, "RUSTSEC-2026-0001")
     row = extract_rustsec_snapshot(
         tmp_path,
         source_id="rustsec.advisory.database",
@@ -33,9 +57,11 @@ def test_rustsec_default_cc0_is_trainable(tmp_path: Path):
 
 def test_rustsec_cc_by_requires_and_keeps_attribution(tmp_path: Path):
     advisory = tmp_path / "RUSTSEC-2026-0002.md"
-    advisory.write_text(
-        "```toml\n[advisory]\nid = \"RUSTSEC-2026-0002\"\npackage = \"demo\"\ndate = \"2026-01-01\"\nlicense = \"CC-BY-4.0\"\nurl = \"https://github.com/advisories/GHSA-demo\"\n```\n\nImported advisory body.\n",
-        encoding="utf-8",
+    _write_rustsec(
+        advisory,
+        "RUSTSEC-2026-0002",
+        license_name="CC-BY-4.0",
+        url="https://github.com/advisories/GHSA-demo",
     )
     row = extract_rustsec_snapshot(
         tmp_path,
@@ -50,10 +76,7 @@ def test_rustsec_cc_by_requires_and_keeps_attribution(tmp_path: Path):
 
 def test_rustsec_unknown_license_is_fail_closed(tmp_path: Path):
     advisory = tmp_path / "RUSTSEC-2026-0003.md"
-    advisory.write_text(
-        "```toml\n[advisory]\nid = \"RUSTSEC-2026-0003\"\npackage = \"demo\"\ndate = \"2026-01-01\"\nlicense = \"UNKNOWN\"\n```\n\nBody.\n",
-        encoding="utf-8",
-    )
+    _write_rustsec(advisory, "RUSTSEC-2026-0003", license_name="UNKNOWN")
     row = extract_rustsec_snapshot(
         tmp_path,
         source_id="rustsec.advisory.database",
@@ -62,6 +85,22 @@ def test_rustsec_unknown_license_is_fail_closed(tmp_path: Path):
     )[0]
     assert row.artifact.training_authorization is False
     assert row.artifact.license_status.value == "REVIEW_REQUIRED"
+
+
+def test_rustsec_extractor_output_passes_approved_source_audit(tmp_path: Path):
+    advisory = tmp_path / "RUSTSEC-2026-0004.md"
+    _write_rustsec(advisory, "RUSTSEC-2026-0004")
+    row = extract_rustsec_snapshot(
+        tmp_path,
+        source_id="rustsec.advisory.database",
+        source_revision=RUSTSEC_APPROVED_REVISION,
+        snapshot_digest=DIGEST,
+    )[0]
+    sources = load_catalog("configs/corpus/cyber-v3.sources.approved.jsonl")
+    result = audit_artifacts([row.artifact], sources)
+    assert result.ready_for_ingestion is True
+    assert result.training_authorized_artifacts == 1
+    assert result.violations == []
 
 
 def test_osv_without_explicit_artifact_license_is_not_trainable(tmp_path: Path):
