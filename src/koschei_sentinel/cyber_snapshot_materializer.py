@@ -50,7 +50,7 @@ class SnapshotReceipt(StrictModel):
     provider: str
     canonical_locator: str
     approved_revision: str
-    observed_git_revision: str | None
+    observed_git_revision: str
     revision_verified: bool
     snapshot_sha256: str = Field(pattern=_DIGEST)
     artifacts: int
@@ -68,29 +68,29 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _git_revision(path: Path) -> str | None:
+def _git_rev_parse(path: Path, revision: str) -> str:
     if not (path / ".git").exists():
-        return None
+        raise ValueError(f"snapshot is not a git checkout: {path}")
     try:
         completed = subprocess.run(
-            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            ["git", "-C", str(path), "rev-parse", f"{revision}^{{commit}}"],
             check=True,
             capture_output=True,
             text=True,
             timeout=10,
         )
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return None
-    value = completed.stdout.strip()
-    return value or None
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot resolve git revision {revision!r} in {path}") from exc
+    value = completed.stdout.strip().lower()
+    if len(value) != 40 or any(c not in "0123456789abcdef" for c in value):
+        raise ValueError(f"git revision did not resolve to a commit SHA: {revision!r}")
+    return value
 
 
-def _revision_matches(approved: str, observed: str | None) -> bool:
-    if observed is None:
-        return False
-    if len(approved) == 40 and all(c in "0123456789abcdef" for c in approved.lower()):
-        return observed.lower() == approved.lower()
-    return False
+def _verify_git_revision(path: Path, approved_revision: str) -> tuple[str, bool]:
+    observed = _git_rev_parse(path, "HEAD")
+    approved_commit = _git_rev_parse(path, approved_revision)
+    return observed, observed == approved_commit
 
 
 def _source_map(catalog_path: str | Path) -> dict[str, CyberSource]:
@@ -115,12 +115,12 @@ def materialize_snapshot(
     if not snapshot.exists():
         raise ValueError(f"snapshot path does not exist: {snapshot}")
 
-    observed = _git_revision(snapshot)
-    verified = _revision_matches(source.pinned_revision, observed)
-    if len(source.pinned_revision) == 40 and not verified:
+    observed, verified = _verify_git_revision(snapshot, source.pinned_revision)
+    if not verified:
+        approved_commit = _git_rev_parse(snapshot, source.pinned_revision)
         raise ValueError(
             f"snapshot git revision mismatch for {source.source_id}: "
-            f"expected {source.pinned_revision}, observed {observed}"
+            f"approved {source.pinned_revision} -> {approved_commit}, observed HEAD {observed}"
         )
 
     digest = snapshot_sha256(snapshot)
