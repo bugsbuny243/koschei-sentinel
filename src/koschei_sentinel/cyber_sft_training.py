@@ -12,9 +12,9 @@ from koschei_sentinel.causal_defense_corpus import (
     CausalDefenseCorpusManifest,
     CausalDefenseTrainingExample,
 )
-from koschei_sentinel.defense_reflex_corpus_v2 import (
-    DefenseReflexCorpusManifestV2,
-    DefenseReflexTrainingExampleV2,
+from koschei_sentinel.defense_reflex_corpus_v3 import (
+    DefenseReflexCorpusManifestV3,
+    DefenseReflexTrainingExampleV3,
 )
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json, resolve_under_root
@@ -22,11 +22,12 @@ from koschei_sentinel.training import canonical_json, resolve_under_root
 
 SYSTEM_PROMPT = (
     "You are Koschei Sentinel's authorized cyber-defense reasoning model. "
-    "Use only the supplied cyber-state, evidence lineage, protected-asset scope and "
-    "reviewed observations. Return exactly one JSON object with keys "
-    "interpretation and defense_sequence. Never invent evidence or targets. "
-    "Prefer Guard when evidence is insufficient. Combat or Siege actions must remain "
-    "inside the supplied protected environment. Do not propose external retaliation."
+    "Use only the supplied cyber-state and protected-asset scope. Return exactly one "
+    "JSON object with keys interpretation and defense_sequence. Never invent evidence, "
+    "targets, success claims, or future outcome evidence IDs. Prefer Guard when evidence "
+    "is insufficient. Combat or Siege actions must remain inside the supplied protected "
+    "environment. Every defense step must cite evidence already present in the supplied "
+    "graph and require post-action outcome verification. Do not propose external retaliation."
 )
 
 
@@ -150,6 +151,7 @@ class CyberSFTPlan(StrictModel):
     stage: CyberSFTStage
     execution_profile: CyberExecutionProfile
     executable_with_current_trainer: bool
+    corpus_promotion_eligible: bool | None
     base_model: str
     base_revision: str
     corpus_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -174,13 +176,13 @@ def load_cyber_sft_config(path: str | Path) -> CyberSFTConfig:
 
 def _manifest_type(stage: CyberSFTStage):
     if stage is CyberSFTStage.DEFENSE_REFLEX:
-        return DefenseReflexCorpusManifestV2
+        return DefenseReflexCorpusManifestV3
     return CausalDefenseCorpusManifest
 
 
 def _example_type(stage: CyberSFTStage):
     if stage is CyberSFTStage.DEFENSE_REFLEX:
-        return DefenseReflexTrainingExampleV2
+        return DefenseReflexTrainingExampleV3
     return CausalDefenseTrainingExample
 
 
@@ -188,7 +190,7 @@ def load_cyber_sft_examples(
     config: CyberSFTConfig,
     *,
     root: str | Path = ".",
-) -> tuple[list[StrictModel], str, str]:
+) -> tuple[list[StrictModel], str, str, bool | None]:
     root_path = Path(root).resolve()
     corpus = resolve_under_root(root_path, config.corpus_dir)
     examples_path = corpus / "examples.jsonl"
@@ -225,7 +227,8 @@ def load_cyber_sft_examples(
         raise ValueError("Cyber SFT example count differs from corpus manifest")
     if not rows:
         raise ValueError("Cyber SFT corpus is empty")
-    return rows, examples_sha, manifest_sha
+    promotion_eligible = getattr(manifest, "promotion_eligible", None)
+    return rows, examples_sha, manifest_sha, promotion_eligible
 
 
 def _bucket(example_id: str, seed: int) -> int:
@@ -255,7 +258,10 @@ def plan_cyber_sft(
     root: str | Path = ".",
 ) -> CyberSFTPlan:
     root_path = Path(root).resolve()
-    rows, examples_sha, manifest_sha = load_cyber_sft_examples(config, root=root_path)
+    rows, examples_sha, manifest_sha, promotion_eligible = load_cyber_sft_examples(
+        config,
+        root=root_path,
+    )
     training, validation = split_cyber_sft_examples(
         rows,
         validation_ratio=config.validation_ratio,
@@ -282,6 +288,10 @@ def plan_cyber_sft(
         warnings.append("Cyber SFT run has no validation split")
     if len(rows) < 100:
         warnings.append("Cyber SFT corpus has fewer than 100 examples; treat as smoke training")
+    if promotion_eligible is False:
+        warnings.append(
+            "Cyber SFT corpus is smoke/training-authorized but not promotion-eligible"
+        )
     executable = config.execution_profile is CyberExecutionProfile.DENSE_SINGLE_GPU_QLORA
     if not executable:
         warnings.append(
@@ -293,6 +303,7 @@ def plan_cyber_sft(
         stage=config.stage,
         execution_profile=config.execution_profile,
         executable_with_current_trainer=executable,
+        corpus_promotion_eligible=promotion_eligible,
         base_model=config.base_model,
         base_revision=config.base_revision,
         corpus_examples_sha256=examples_sha,
@@ -308,15 +319,12 @@ def plan_cyber_sft(
     )
 
 
-def _defense_reflex_input(row: DefenseReflexTrainingExampleV2) -> dict[str, object]:
+def _defense_reflex_input(row: DefenseReflexTrainingExampleV3) -> dict[str, object]:
     return {
-        "task": "derive an evidence-grounded defensive correction",
+        "task": "derive an evidence-grounded defensive plan",
         "scenario_id": row.scenario_id,
-        "failure_type": row.failure_type,
         "critical_entity_ids": row.critical_entity_ids,
         "graph_snapshots": row.graph_snapshots,
-        "observed_ticks": row.observed_ticks,
-        "review_evidence_ids": row.review_evidence_ids,
     }
 
 
@@ -332,10 +340,10 @@ def _causal_input(row: CausalDefenseTrainingExample) -> dict[str, object]:
 
 
 def cyber_sft_messages(row: StrictModel) -> list[dict[str, str]]:
-    if isinstance(row, DefenseReflexTrainingExampleV2):
+    if isinstance(row, DefenseReflexTrainingExampleV3):
         user_payload = _defense_reflex_input(row)
         assistant_payload = {
-            "interpretation": row.corrected_interpretation,
+            "interpretation": row.expected_interpretation,
             "defense_sequence": row.expected_sequence,
         }
     elif isinstance(row, CausalDefenseTrainingExample):
