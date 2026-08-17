@@ -30,7 +30,7 @@ def generic_endpoint_process_adapter() -> DeclarativePerceptionAdapter:
                 entity_type=CyberEntityType.PROCESS,
                 label_fields={"process_name": "process_name", "image_sha256": "image_sha256"},
             ),
-            relation_type="EXECUTED_PROCESS",
+            relation_type="executes",
             default_confidence=1.0,
         )
     )
@@ -56,7 +56,7 @@ def generic_cloud_iam_adapter() -> DeclarativePerceptionAdapter:
                 entity_type=CyberEntityType.CLOUD_RESOURCE,
                 label_fields={"resource_type": "resource_type", "region": "region"},
             ),
-            relation_type="ACCESSED_CLOUD_RESOURCE",
+            relation_type="authenticates_to",
             default_confidence=1.0,
         )
     )
@@ -82,7 +82,7 @@ def generic_cicd_adapter() -> DeclarativePerceptionAdapter:
                 entity_type=CyberEntityType.PIPELINE,
                 label_fields={"pipeline": "pipeline", "run_id": "run_id"},
             ),
-            relation_type="TRIGGERED_PIPELINE",
+            relation_type="modifies_pipeline",
             default_confidence=1.0,
         )
     )
@@ -108,7 +108,7 @@ def generic_signer_wallet_adapter() -> DeclarativePerceptionAdapter:
                 entity_type=CyberEntityType.TRANSACTION,
                 label_fields={"network": "network", "tx_kind": "tx_kind"},
             ),
-            relation_type="SIGNED_TRANSACTION",
+            relation_type="prepares_transaction",
             default_confidence=1.0,
         )
     )
