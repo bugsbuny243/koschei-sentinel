@@ -8,6 +8,10 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from koschei_sentinel.adaptive_defense import graph_fingerprint
+from koschei_sentinel.attack_world_lines import (
+    AttackWorldLineTimeline,
+    build_attack_world_line_timeline,
+)
 from koschei_sentinel.cyber_range import CyberRangeReport, CyberRangeScenario
 from koschei_sentinel.cyber_state_graph import EvidenceStatus
 from koschei_sentinel.models import StrictModel
@@ -61,6 +65,7 @@ class CyberWorldModelEpisode(StrictModel):
     source_report_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     snapshots: list[WorldModelSnapshot] = Field(min_length=1, max_length=128)
     transitions: list[WorldModelTransition] = Field(default_factory=list, max_length=127)
+    attack_world_lines: AttackWorldLineTimeline | None = None
     episode_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     training_authorization: bool = False
 
@@ -74,6 +79,9 @@ class CyberWorldModelEpisode(StrictModel):
         for index, transition in enumerate(self.transitions, 1):
             if transition.from_tick != index - 1 or transition.to_tick != index:
                 raise ValueError("world-model transition ticks must align with snapshot order")
+        if self.attack_world_lines is not None:
+            if self.attack_world_lines.ticks != len(self.snapshots):
+                raise ValueError("attack world-line ticks must align with world-model snapshots")
         if self.training_authorization:
             raise ValueError(
                 "raw world-model episodes are observational records and cannot self-authorize training"
@@ -113,6 +121,7 @@ def _episode_digest(
     source_report_sha256: str,
     snapshots: list[WorldModelSnapshot],
     transitions: list[WorldModelTransition],
+    attack_world_lines: AttackWorldLineTimeline,
 ) -> str:
     payload = {
         "scenario_id": scenario_id,
@@ -120,6 +129,7 @@ def _episode_digest(
         "source_report_sha256": source_report_sha256,
         "snapshots": [row.model_dump(mode="json") for row in snapshots],
         "transitions": [row.model_dump(mode="json") for row in transitions],
+        "attack_world_lines": attack_world_lines.model_dump(mode="json"),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
@@ -194,12 +204,17 @@ def build_world_model_episode(
             )
         )
 
+    attack_world_lines = build_attack_world_line_timeline(
+        scenario.graph_snapshots,
+        stream_id=f"scenario:{scenario.scenario_id}",
+    )
     digest = _episode_digest(
         scenario_id=scenario.scenario_id,
         graph_id=graph_id,
         source_report_sha256=source_report_sha256,
         snapshots=snapshots,
         transitions=transitions,
+        attack_world_lines=attack_world_lines,
     )
     return CyberWorldModelEpisode(
         episode_id=f"world:{scenario.scenario_id}:{digest[:16]}",
@@ -209,6 +224,7 @@ def build_world_model_episode(
         source_report_sha256=source_report_sha256,
         snapshots=snapshots,
         transitions=transitions,
+        attack_world_lines=attack_world_lines,
         episode_sha256=digest,
         training_authorization=False,
     )
