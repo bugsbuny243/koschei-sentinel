@@ -1,0 +1,8 @@
+{
+  "schema_version": "sentinel.multi-incident-cyber-range-gate-policy.v1",
+  "component_count_accuracy_min": 1.0,
+  "world_line_transition_accuracy_min": 1.0,
+  "component_containment_rate_min": 0.95,
+  "cut_point_leakage_max": 0,
+  "mean_containment_step_max": 3.0
+}
