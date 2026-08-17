@@ -1,16 +1,17 @@
 # Koschei Sentinel Perception Assurance
 
-Sentinel's active-defense path must distinguish three different things:
+Sentinel's active-defense path must distinguish four different things:
 
 1. what a sensor actually observed,
-2. what Sentinel inferred or predicted from those observations, and
-3. what defensive authority is justified by independently corroborated evidence.
+2. what Sentinel inferred or predicted from those observations,
+3. which observations belong to the same attack component or temporal world-line, and
+4. what defensive authority is justified by independently corroborated evidence for that component.
 
-The production perception path is therefore fail-closed and provenance-bound.
+The production perception path is therefore fail-closed, provenance-bound, component-scoped, and temporal.
 
 ## Canonical production path
 
-`sanitized telemetry -> perception adapter -> adapter receipt -> source admission -> admitted batch -> multi-sensor fusion -> assurance summary -> Cyber State Graph + graph receipt -> assured active defense -> interception plan -> assured connector envelope`
+`sanitized telemetry -> perception adapter -> adapter receipt -> source admission -> admitted batch -> multi-sensor fusion -> assurance summary -> Cyber State Graph + graph receipt -> attack components -> world-lines -> assured multi-incident defense -> interception plan -> assured connector envelope`
 
 Each boundary has a different job. Skipping a boundary is not equivalent to passing it.
 
@@ -18,14 +19,7 @@ Each boundary has a different job. Skipping a boundary is not equivalent to pass
 
 Vendor collectors must remove secrets before events enter the Sentinel adapter layer. `SanitizedTelemetryEvent` rejects secret-bearing field names such as passwords, private keys, mnemonics, seed phrases and access tokens.
 
-The adapter layer is intentionally offline-normalization-only. An adapter descriptor declares:
-
-- its immutable adapter identity,
-- vendor/product identity,
-- supported telemetry source types,
-- deterministic operation,
-- no network access, and
-- reject-secret handling.
+The adapter layer is intentionally offline-normalization-only. An adapter descriptor declares its immutable adapter identity, vendor/product identity, supported telemetry source types, deterministic operation, no network access, and reject-secret handling.
 
 ## 2. Perception adapters
 
@@ -63,7 +57,7 @@ Two evidence IDs are not necessarily two independent pieces of evidence. Two ale
 
 Examples include `endpoint-control-plane`, `cloud-control-plane`, `cicd-control-plane`, and `signer-control-plane`.
 
-The assurance summary records how many independent domains are represented, but global diversity alone does not authorize active defense.
+The assurance summary records how many independent domains are represented, but global diversity alone never authorizes active defense.
 
 ## 6. Graph binding
 
@@ -75,21 +69,60 @@ The receipt binds:
 
 This prevents an assurance summary from one telemetry batch being attached to a different graph.
 
-## 7. Assured active defense
+## 7. Attack components
 
-`sentinel-assured-defense-plan` is the production active-defense planner. It requires the Cyber State Graph, its graph receipt, the perception assurance summary, the exact source registry, and protected critical entity IDs when applicable.
+A Cyber State Graph may contain many unrelated events at the same time. Sentinel must not combine them merely because they arrived in the same telemetry window.
+
+`analyze_attack_progression()` therefore partitions active `OBSERVED` and `INFERRED` relations into connected attack components before it computes stages, predictions, confidence, or defensive cut points.
+
+Each `AttackComponentReport` has its own entities, relations, stage state, progression confidence, predictions, cut points, and risk score.
+
+The legacy top-level `AttackProgressionReport` remains for compatibility, but its stage and cut-point fields now represent one selected primary component rather than an aggregate of unrelated graph regions. A caller may provide focus entities to select a particular component deterministically.
+
+This establishes the rule:
+
+**event != incident, and two disconnected incidents do not become one attack because they share a graph snapshot.**
+
+## 8. Temporal attack world-lines
+
+Component content can change as an attacker moves. A component identifier may therefore change between snapshots even when it represents the same continuing attack.
+
+`sentinel-attack-world-lines` tracks component lineage across ordered graph snapshots using deterministic entity/relation overlap. The timeline distinguishes:
+
+- `NEW`,
+- `CONTINUED`,
+- `SPLIT`,
+- `MERGED`,
+- `RECONFIGURED`, and
+- `ENDED`.
+
+A one-to-one continuation keeps the same world-line identity. Split and merge events create new line identities while preserving predecessor lineage. This allows Sentinel to recognize attacker rerouting and branching without rewriting history into one artificial straight line.
+
+## 9. Multi-incident defense
+
+A single primary component is not sufficient when several attacks are active at once.
+
+`MultiIncidentDefensePlan` creates one independent `ActiveDefensePlan` per active component. Component boundaries are validated so authorized and withheld cut points cannot reference entities outside that component.
+
+Critical-asset components receive a deterministic priority bonus, but non-critical active attacks remain visible and continue to receive their own plans.
+
+`sentinel-assured-multi-defense` is the production multi-incident path. Each component is passed independently through the perception-assurance gate. Independent evidence from one component cannot raise authority for a disconnected component.
+
+## 10. Assured active defense
 
 The base planner may detect a high-confidence attack, but the assurance gate can only reduce authority; it never raises it.
 
-Default policy:
+Default policy per attack component:
 
-- fewer than 2 independent domains in the relevant attack component -> at most `GUARD`,
+- fewer than 2 independent domains -> at most `GUARD`,
 - at least 2 independent domains -> at most `COMBAT`,
 - at least 3 independent domains -> `SIEGE` may remain available if the base planner already justified it.
 
-The key phrase is **relevant attack component**. Sentinel computes the connected active subgraph around declared critical assets, or around the highest-impact defensive cut point when no critical root is present. Telemetry from an unrelated component cannot be used to unlock Combat or Siege.
+The key phrase is **per attack component**. Global source diversity is irrelevant to a component unless those admitted evidence sources support relations inside that component.
 
-## 8. Production connector envelope
+This means a three-domain signer attack may retain Siege while a simultaneous one-domain endpoint incident remains Guard. Authority never transfers between disconnected world-lines.
+
+## 11. Production connector envelope
 
 A production defensive connector must not execute a bare model instruction or a bare `DefenseConnectorCommand`.
 
@@ -108,11 +141,14 @@ sentinel-perception-adapt
   -> sentinel-perception-admit
   -> sentinel-perception-fuse
   -> sentinel-cyber-perceive
-  -> sentinel-assured-defense-plan
+  -> sentinel-attack-world-lines
+  -> sentinel-assured-multi-defense
 ```
+
+For single-component compatibility or debugging, `sentinel-assured-defense-plan` remains available. Production orchestration should prefer the multi-incident path when the graph can contain concurrent attacks.
 
 The actual vendor execution adapter should consume only an assured connector envelope after the interception execution state authorizes the next step.
 
 ## Current boundary
 
-These modules establish contracts, validation, deterministic hashes, tests, and CLI planning. They do not by themselves connect to a live EDR, cloud control plane, wallet, signer, or firewall. Real vendor adapters remain a separate deployment layer and must preserve the same protected-scope and outcome-verification rules.
+These modules establish contracts, validation, deterministic hashes, tests, CLI planning, attack-component isolation, and temporal lineage. They do not by themselves connect to a live EDR, cloud control plane, wallet, signer, or firewall. Real vendor adapters remain a separate deployment layer and must preserve the same protected-scope, component-isolation, and outcome-verification rules.
