@@ -80,18 +80,17 @@ def _load_dependencies() -> dict[str, Any]:
     }
 
 
-def _cuda_preflight(config: CyberSFTConfig, torch: Any) -> None:
+def _cuda_preflight(config: CyberSFTConfig, torch: Any) -> int:
     if not torch.cuda.is_available():
         raise RuntimeError("Cyber SFT execution requires CUDA")
-    total = sum(
-        torch.cuda.get_device_properties(index).total_memory
-        for index in range(torch.cuda.device_count())
-    )
-    total_gb = total / (1024**3)
-    if total_gb + 1e-9 < config.minimum_cuda_memory_gb:
+    device_index = int(torch.cuda.current_device())
+    total_bytes = torch.cuda.get_device_properties(device_index).total_memory
+    device_gb = total_bytes / (1024**3)
+    if device_gb + 1e-9 < config.minimum_cuda_memory_gb:
         raise RuntimeError(
-            "visible CUDA memory below config minimum: "
-            f"{total_gb:.1f} GiB < {config.minimum_cuda_memory_gb:.1f} GiB"
+            "current CUDA device memory below config minimum: "
+            f"{device_gb:.1f} GiB < {config.minimum_cuda_memory_gb:.1f} GiB. "
+            "For a multi-GPU host, set CUDA_VISIBLE_DEVICES so the intended single GPU is device 0."
         )
     if (
         config.quantization.compute_dtype == "bfloat16"
@@ -99,6 +98,7 @@ def _cuda_preflight(config: CyberSFTConfig, torch: Any) -> None:
         and not torch.cuda.is_bf16_supported()
     ):
         raise RuntimeError("Cyber SFT config requests bfloat16 on unsupported CUDA hardware")
+    return device_index
 
 
 def _language_lora_targets(model: Any, suffixes: list[str]) -> list[str]:
@@ -203,7 +203,7 @@ def execute_cyber_sft(
 
     dependencies = _load_dependencies()
     torch = dependencies["torch"]
-    _cuda_preflight(config, torch)
+    device_index = _cuda_preflight(config, torch)
     root_path = Path(root).resolve()
     output = resolve_under_root(root_path, config.output_dir)
     if output.exists():
@@ -211,7 +211,14 @@ def execute_cyber_sft(
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
     try:
-        manifest = _train(config, plan, root_path, staging, dependencies)
+        manifest = _train(
+            config,
+            plan,
+            root_path,
+            staging,
+            dependencies,
+            device_index=device_index,
+        )
         os.replace(staging, output)
         return manifest
     except Exception:
@@ -225,6 +232,8 @@ def _train(
     root: Path,
     staging: Path,
     dependencies: dict[str, Any],
+    *,
+    device_index: int,
 ) -> CyberSFTAdapterManifest:
     torch = dependencies["torch"]
     processor = dependencies["AutoProcessor"].from_pretrained(
@@ -235,6 +244,33 @@ def _train(
     tokenizer = processor.tokenizer
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    rows, examples_sha, manifest_sha, promotion_eligible = load_cyber_sft_examples(
+        config,
+        root=root,
+    )
+    if examples_sha != plan.corpus_examples_sha256:
+        raise ValueError("Cyber SFT corpus changed after plan creation")
+    if manifest_sha != plan.corpus_manifest_sha256:
+        raise ValueError("Cyber SFT corpus manifest changed after plan creation")
+    if promotion_eligible != plan.corpus_promotion_eligible:
+        raise ValueError("Cyber SFT corpus promotion eligibility changed after plan creation")
+    training_rows, validation_rows = split_cyber_sft_examples(
+        rows,
+        validation_ratio=config.validation_ratio,
+        seed=config.seed,
+    )
+    train_features = [
+        _render_supervision(row, tokenizer, config.max_sequence_length)
+        for row in training_rows
+    ]
+    eval_features = [
+        _render_supervision(row, tokenizer, config.max_sequence_length)
+        for row in validation_rows
+    ]
+    dataset_type = dependencies["Dataset"]
+    train_dataset = dataset_type.from_list(train_features)
+    eval_dataset = dataset_type.from_list(eval_features) if eval_features else None
 
     dtype = (
         torch.bfloat16
@@ -253,7 +289,7 @@ def _train(
         revision=config.base_revision,
         trust_remote_code=False,
         quantization_config=quantization,
-        device_map="auto",
+        device_map={"": device_index},
     )
     if hasattr(model.config, "use_cache"):
         model.config.use_cache = False
@@ -292,37 +328,6 @@ def _train(
                 lora_dropout=config.lora.dropout,
                 target_modules=targets,
             ),
-        )
-
-    rows, examples_sha, manifest_sha, promotion_eligible = load_cyber_sft_examples(
-        config,
-        root=root,
-    )
-    if examples_sha != plan.corpus_examples_sha256:
-        raise ValueError("Cyber SFT corpus changed after plan creation")
-    if manifest_sha != plan.corpus_manifest_sha256:
-        raise ValueError("Cyber SFT corpus manifest changed after plan creation")
-    if promotion_eligible != plan.corpus_promotion_eligible:
-        raise ValueError("Cyber SFT corpus promotion eligibility changed after plan creation")
-    training_rows, validation_rows = split_cyber_sft_examples(
-        rows,
-        validation_ratio=config.validation_ratio,
-        seed=config.seed,
-    )
-    dataset_type = dependencies["Dataset"]
-    train_dataset = dataset_type.from_list(
-        [
-            _render_supervision(row, tokenizer, config.max_sequence_length)
-            for row in training_rows
-        ]
-    )
-    eval_dataset = None
-    if validation_rows:
-        eval_dataset = dataset_type.from_list(
-            [
-                _render_supervision(row, tokenizer, config.max_sequence_length)
-                for row in validation_rows
-            ]
         )
 
     arguments_type = dependencies["TrainingArguments"]
