@@ -36,7 +36,7 @@ The manifest binds the release to an exact examples SHA-256 and the exact correc
 
 A Cyber Range timeline can also be converted into an observational `CyberWorldModelEpisode`. An episode preserves the sequence of graph snapshots and explicitly records OBSERVED, INFERRED, PREDICTED and DISPROVED relation counts, attack stage, defense mode, containment state and temporal transitions such as attacker reroute, containment and recovery.
 
-World Model Episodes now also bind an `AttackWorldLineTimeline`. The timeline separates concurrent attack components and preserves lineage across `NEW`, `CONTINUED`, `REROUTED`, `SPLIT`, `MERGED`, `RECONFIGURED` and `ENDED` transitions.
+World Model Episodes also bind an `AttackWorldLineTimeline`. The timeline separates concurrent attack components and preserves lineage across `NEW`, `CONTINUED`, `REROUTED`, `SPLIT`, `MERGED`, `RECONFIGURED` and `ENDED` transitions.
 
 Protected critical entities act as lineage anchors. If an attacker abandons one credential/device route and approaches the same protected asset through a new route, a reviewed range scenario can preserve the same world-line identity instead of flattening the change into an unrelated new incident.
 
@@ -54,11 +54,21 @@ The resulting example binds temporal state history, graph changes, attacker rero
 
 A model can look strong on a single attack and still fail when several unrelated attacks happen simultaneously. Sentinel therefore has a separate multi-incident range gate.
 
-`sentinel-multi-cyber-range` evaluates ordered graph snapshots with one independent defense plan per active attack component. It measures component-count accuracy, world-line transition accuracy, component containment coverage, containment step latency, and cross-component cut-point leakage.
+`sentinel-multi-cyber-range` evaluates ordered graph snapshots with one independent defense plan per active attack component. It measures component-count accuracy, world-line transition accuracy, component containment, world-line containment, world-line containment latency, and cross-component cut-point leakage.
 
-The default versioned policy requires perfect expected component-count accuracy, perfect expected lineage-transition accuracy, zero cross-component cut-point leakage, at least 95% component containment coverage, and mean containment within three interception steps.
+The default versioned policy requires perfect expected component-count accuracy, perfect expected lineage-transition accuracy, zero cross-component cut-point leakage, at least 95% component containment, at least 95% world-line containment, mean containment within three interception steps, and bounded world-line containment latency.
 
 This gate operationalizes the rule that a strong Sentinel must not merely stop the loudest attack. It must keep concurrent incidents separate, continue tracking them when they reroute or branch, and never borrow defensive authority from another disconnected incident.
+
+## Defense Load Range
+
+Correct reasoning under unlimited simulated resources is not sufficient for production readiness.
+
+`sentinel-defense-load-range` evaluates the assured multi-incident plan under explicit global and per-control-plane capacity limits. It measures service coverage, critical first-service latency, maximum scheduling wait, resource utilization, starvation and capacity violations.
+
+Scheduling is lineage-aware. A reroute, split or merge cannot reset waiting age merely by producing a new component ID. World-line state carries bounded fairness pressure across the transition.
+
+The scheduler itself does not grant authority. It selects among cut points that have already passed perception assurance and Guard / Combat / Siege policy.
 
 ## Cyber training bundle v2
 
@@ -70,9 +80,27 @@ The canonical training sequence is:
 
 `KNOWLEDGE_CONTINUED_PRETRAINING -> DEFENSE_REFLEX_SFT -> ADVERSARIAL_REASONING -> CYBER_RANGE_REGRESSION`
 
-`ADVERSARIAL_REASONING` is backed by the reviewed Causal Defense Corpus. `CYBER_RANGE_REGRESSION` remains a promotion gate, not a training-data source by default. Multi-incident component/world-line regression is part of that promotion evidence. Failures return to the reviewed Defense Reflex loop.
+`ADVERSARIAL_REASONING` is backed by the reviewed Causal Defense Corpus. Range regression remains a promotion gate, not a training-data source by default. Failures return to the reviewed Defense Reflex loop.
 
 The bundle itself is immutable by digest and records the exact foundation model reference/revision plus the exact hashes of all three training planes.
+
+## Cyber defense promotion evidence v2
+
+Training readiness and production promotion are different states.
+
+`sentinel-cyber-defense-promotion` binds the exact candidate model revision and training-bundle SHA to three independent evaluation families:
+
+1. single-incident Cyber Range,
+2. multi-incident / world-line Cyber Range, and
+3. Defense Load Range.
+
+All three must pass for `ready_for_promotion = true`.
+
+The promotion receipt records the SHA-256 of all three evaluation reports together with the candidate revision, training bundle, containment metrics, lineage metrics, leakage metrics, scheduler service coverage, critical scheduling latency, maximum wait and capacity violations.
+
+A different candidate revision produces different promotion evidence. A candidate cannot inherit another model's range results merely by reusing a report file.
+
+A model that understands attacks but confuses concurrent incidents is not promotion-ready. A model that understands concurrent incidents but starves critical defenses under constrained resources is also not promotion-ready.
 
 ## Design principle
 
