@@ -153,7 +153,7 @@ def run_defense_load_range(
             capacity_violations += 1
 
         state = schedule.next_state
-        max_wait_after = max(state.wait_cycles_by_component.values(), default=0)
+        max_wait_after = max(state.wait_cycles_by_subject.values(), default=0)
         max_wait = max(max_wait, max_wait_after)
         waves.append(
             DefenseLoadWave(
