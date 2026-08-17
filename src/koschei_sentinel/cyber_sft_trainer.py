@@ -13,6 +13,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from koschei_sentinel.cyber_sft_training import (
+    CyberExecutionProfile,
     CyberSFTConfig,
     CyberSFTPlan,
     cyber_sft_messages,
@@ -29,6 +30,7 @@ class CyberSFTAdapterManifest(StrictModel):
     )
     run_id: str
     stage: str
+    execution_profile: CyberExecutionProfile
     base_model: str
     base_revision: str
     corpus_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -40,6 +42,7 @@ class CyberSFTAdapterManifest(StrictModel):
     trainable_target_modules_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     training_examples: int = Field(gt=0)
     validation_examples: int = Field(ge=0)
+    gradient_checkpointing: bool
     output_dir: str
 
 
@@ -89,6 +92,12 @@ def _cuda_preflight(config: CyberSFTConfig, torch: Any) -> None:
             "visible CUDA memory below config minimum: "
             f"{total_gb:.1f} GiB < {config.minimum_cuda_memory_gb:.1f} GiB"
         )
+    if (
+        config.quantization.compute_dtype == "bfloat16"
+        and hasattr(torch.cuda, "is_bf16_supported")
+        and not torch.cuda.is_bf16_supported()
+    ):
+        raise RuntimeError("Cyber SFT config requests bfloat16 on unsupported CUDA hardware")
 
 
 def _language_lora_targets(model: Any, suffixes: list[str]) -> list[str]:
@@ -117,11 +126,13 @@ def _render_supervision(
         messages[:-1],
         tokenize=False,
         add_generation_prompt=True,
+        enable_thinking=False,
     )
     full = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=False,
+        enable_thinking=False,
     )
     prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
     encoded = tokenizer(full, add_special_tokens=False, truncation=False)
@@ -176,8 +187,18 @@ def execute_cyber_sft(
 ) -> CyberSFTAdapterManifest:
     if config.run_id != plan.run_id or config.stage is not plan.stage:
         raise ValueError("Cyber SFT plan does not match the supplied config")
+    if config.execution_profile is not plan.execution_profile:
+        raise ValueError("Cyber SFT plan execution profile differs from config")
     if config.base_model != plan.base_model or config.base_revision != plan.base_revision:
         raise ValueError("Cyber SFT plan base model pin differs from config")
+    if (
+        config.execution_profile is not CyberExecutionProfile.DENSE_SINGLE_GPU_QLORA
+        or not plan.executable_with_current_trainer
+    ):
+        raise RuntimeError(
+            "this Cyber SFT plan requires the distributed MoE executor and cannot be "
+            "started by the dense single-GPU QLoRA trainer"
+        )
 
     dependencies = _load_dependencies()
     torch = dependencies["torch"]
@@ -235,9 +256,14 @@ def _train(
     )
     if hasattr(model.config, "use_cache"):
         model.config.use_cache = False
+    if hasattr(model.config, "text_config") and hasattr(
+        model.config.text_config,
+        "output_router_logits",
+    ):
+        model.config.text_config.output_router_logits = config.enable_router_aux_loss
     model = dependencies["prepare_model_for_kbit_training"](
         model,
-        use_gradient_checkpointing=True,
+        use_gradient_checkpointing=config.gradient_checkpointing,
     )
 
     if config.input_adapter_dir is not None:
@@ -310,7 +336,7 @@ def _train(
         "bf16": config.quantization.compute_dtype == "bfloat16",
         "fp16": config.quantization.compute_dtype == "float16",
         "remove_unused_columns": False,
-        "gradient_checkpointing": True,
+        "gradient_checkpointing": config.gradient_checkpointing,
     }
     strategy_key = (
         "eval_strategy"
@@ -343,6 +369,7 @@ def _train(
     manifest = CyberSFTAdapterManifest(
         run_id=config.run_id,
         stage=config.stage.value,
+        execution_profile=config.execution_profile,
         base_model=config.base_model,
         base_revision=config.base_revision,
         corpus_examples_sha256=examples_sha,
@@ -354,6 +381,7 @@ def _train(
         trainable_target_modules_sha256=_targets_digest(targets),
         training_examples=len(training_rows),
         validation_examples=len(validation_rows),
+        gradient_checkpointing=config.gradient_checkpointing,
         output_dir=config.output_dir,
     )
     (staging / "adapter-manifest.json").write_text(
