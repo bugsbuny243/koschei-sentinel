@@ -8,6 +8,7 @@ from koschei_sentinel.assured_multi_incident_defense import AssuredMultiIncident
 from koschei_sentinel.defense_resource_scheduler import (
     DefenseResourcePolicy,
     DefenseSchedulerState,
+    DefenseSchedulingContext,
     build_defense_resource_schedule,
 )
 
@@ -21,6 +22,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plan", required=True, help="Assured multi-incident defense plan JSON")
     parser.add_argument("--policy", help="Optional defense resource policy JSON")
     parser.add_argument("--state", help="Optional prior scheduler state JSON")
+    parser.add_argument(
+        "--context",
+        help="Optional world-line-aware defense scheduling context JSON",
+    )
     parser.add_argument("--output-dir", required=True)
     return parser
 
@@ -45,10 +50,18 @@ def main(argv: list[str] | None = None) -> int:
             if args.state
             else DefenseSchedulerState()
         )
+        context = (
+            DefenseSchedulingContext.model_validate_json(
+                Path(args.context).read_text(encoding="utf-8")
+            )
+            if args.context
+            else None
+        )
         schedule = build_defense_resource_schedule(
             plan,
             policy=policy,
             state=state,
+            context=context,
         )
         output = Path(args.output_dir)
         output.mkdir(parents=True, exist_ok=True)
@@ -70,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
                     "scheduled": len(schedule.scheduled),
                     "deferred": len(schedule.deferred),
                     "no_action_components": len(schedule.no_action_component_ids),
+                    "scheduling_context": schedule.scheduling_context.context_id,
                     "schedule": str(schedule_path),
                     "next_state": str(state_path),
                 },
