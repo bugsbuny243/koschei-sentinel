@@ -143,6 +143,6 @@ def test_first_approved_catalog_is_collectable():
     sources = load_catalog("configs/corpus/cyber-v3.sources.approved.jsonl")
     audit = audit_catalog(sources)
     assert audit.ready_for_collection is True
-    assert audit.training_authorized_sources == 2
-    assert audit.approved_sources == 2
-    assert audit.license_scope_counts == {"UNIFORM": 2}
+    assert audit.training_authorized_sources == 3
+    assert audit.approved_sources == 3
+    assert audit.license_scope_counts == {"PER_ARTIFACT": 1, "UNIFORM": 2}
