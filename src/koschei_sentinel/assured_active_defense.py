@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
 from typing import Literal
 
 from pydantic import Field
@@ -131,54 +130,16 @@ def _validate_assurance_binding(
         raise ValueError("perception assurance independent domain count is inconsistent")
 
 
-def _assurance_component_relation_ids(
-    graph: CyberStateGraph,
-    plan: ActiveDefensePlan,
-) -> set[str]:
-    active_ids = set(plan.progression.active_relation_ids)
-    active_relations = [row for row in graph.relations if row.relation_id in active_ids]
-    if not active_relations:
-        return set()
-
-    adjacency: dict[str, set[str]] = {}
-    touched: set[str] = set()
-    for relation in active_relations:
-        touched.update({relation.source_entity_id, relation.target_entity_id})
-        adjacency.setdefault(relation.source_entity_id, set()).add(relation.target_entity_id)
-        adjacency.setdefault(relation.target_entity_id, set()).add(relation.source_entity_id)
-
-    roots = [entity_id for entity_id in plan.critical_entity_ids if entity_id in touched]
-    if not roots and plan.progression.defensive_cut_points:
-        top = plan.progression.defensive_cut_points[0].entity_id
-        if top in touched:
-            roots = [top]
-    if not roots:
-        return active_ids
-
-    component = set(roots)
-    queue: deque[str] = deque(roots)
-    while queue:
-        current = queue.popleft()
-        for neighbor in adjacency.get(current, set()):
-            if neighbor not in component:
-                component.add(neighbor)
-                queue.append(neighbor)
-
-    return {
-        relation.relation_id
-        for relation in active_relations
-        if relation.source_entity_id in component and relation.target_entity_id in component
-    }
-
-
 def _active_evidence_domains(
     *,
     graph: CyberStateGraph,
     plan: ActiveDefensePlan,
     registry: PerceptionSourceRegistry,
 ) -> tuple[list[str], list[str], list[str], list[str]]:
-    assurance_relation_ids = _assurance_component_relation_ids(graph, plan)
-    enrollment_by_principal = {row.principal: row for row in registry.enrollments if row.enabled}
+    assurance_relation_ids = set(plan.progression.active_relation_ids)
+    enrollment_by_principal = {
+        row.principal: row for row in registry.enrollments if row.enabled
+    }
     principals: set[str] = set()
     domains: set[str] = set()
     unknown: set[str] = set()
@@ -257,7 +218,7 @@ def build_assured_active_defense_plan(
 
     decision_rationale = list(base.decision.rationale)
     decision_rationale.append(
-        f"relevant attack component spans {len(active_domains)} admitted independence domain(s)"
+        f"primary attack component spans {len(active_domains)} admitted independence domain(s)"
     )
     if downgraded:
         decision_rationale.append(
@@ -276,7 +237,7 @@ def build_assured_active_defense_plan(
     plan_rationale = list(base.rationale)
     if downgraded:
         plan_rationale.append(
-            "higher-impact containment is withheld until independent evidence in the same attack component is sufficient"
+            "higher-impact containment is withheld until independent evidence in the primary attack component is sufficient"
         )
     adjusted = ActiveDefensePlan(
         graph_id=base.graph_id,
