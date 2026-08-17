@@ -62,6 +62,7 @@ sentinel-assured-multi-defense = "koschei_sentinel.assured_multi_incident_defens
 sentinel-defense-schedule = "koschei_sentinel.defense_resource_scheduler_cli:main"
 sentinel-defense-lineage = "koschei_sentinel.defense_scheduling_lineage_cli:main"
 sentinel-defense-wave = "koschei_sentinel.defense_wave_execution_cli:main"
+sentinel-defense-reassess = "koschei_sentinel.defense_wave_reassessment_cli:main"
 sentinel-defense-load-range = "koschei_sentinel.defense_load_range_cli:main"
 sentinel-attack-world-lines = "koschei_sentinel.attack_world_lines_cli:main"
 sentinel-cyber-range = "koschei_sentinel.cyber_range_cli:main"
