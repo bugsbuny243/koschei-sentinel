@@ -61,6 +61,7 @@ sentinel-assured-defense-plan = "koschei_sentinel.assured_active_defense_cli:mai
 sentinel-assured-multi-defense = "koschei_sentinel.assured_multi_incident_defense_cli:main"
 sentinel-attack-world-lines = "koschei_sentinel.attack_world_lines_cli:main"
 sentinel-cyber-range = "koschei_sentinel.cyber_range_cli:main"
+sentinel-multi-cyber-range = "koschei_sentinel.multi_incident_cyber_range_cli:main"
 sentinel-world-model-episode = "koschei_sentinel.cyber_world_model_episode_cli:main"
 sentinel-defense-reflex-mine = "koschei_sentinel.defense_reflex_candidates_cli:main"
 sentinel-defense-reflex-review = "koschei_sentinel.defense_reflex_review_cli:main"
