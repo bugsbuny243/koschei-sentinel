@@ -1,0 +1,64 @@
+{
+  "schema_version": "sentinel.cyber-foundation-plan.v3",
+  "status": "architecture_selected_training_not_started",
+  "primary_expert": {
+    "model": "Qwen/Qwen3.5-397B-A17B",
+    "role": "primary_security_center_expert_teacher",
+    "open_weights": true,
+    "license": "apache-2.0",
+    "training_mode": "self_hosted_distributed_only",
+    "managed_finetuning_assumed": false
+  },
+  "development_specialization_tier": {
+    "model": "Qwen/Qwen3.5-35B-A3B-Base",
+    "role": "recipe_and_corpus_validation_before_397b",
+    "open_weights": true,
+    "license": "apache-2.0"
+  },
+  "legacy_baseline": {
+    "model": "Qwen/Qwen2.5-Coder-7B",
+    "adapter": "koschei-sentinel-blockchain-run-001",
+    "role": "baseline_edge_and_distillation_target",
+    "heldout_base_loss": 1.2602,
+    "heldout_adapter_loss": 1.188669,
+    "behavior_base_mean": 0.7,
+    "behavior_adapter_mean": 0.6833
+  },
+  "training_stages": [
+    "security_domain_continued_pretraining",
+    "evidence_grounded_sft",
+    "adversarial_preference_training",
+    "tool_agent_security_specialization",
+    "hard_gate_evaluation"
+  ],
+  "required_data_controls": {
+    "provenance_manifest": true,
+    "content_hashing": true,
+    "group_level_eval_separation": true,
+    "benchmark_answer_exclusion": true,
+    "semantic_deduplication": true,
+    "freshness_metadata": true,
+    "license_metadata": true,
+    "malicious_instruction_quarantine": true
+  },
+  "promotion_policy": {
+    "automatic_promotion": false,
+    "training_loss_is_not_a_promotion_metric": true,
+    "authority_gate_required": true,
+    "grounding_gate_required": true,
+    "abstention_gate_required": true,
+    "privacy_gate_required": true,
+    "adversarial_gate_required": true
+  },
+  "infrastructure": {
+    "kaggle_t4_role": [
+      "dataset_building",
+      "small_model_experiments",
+      "eval_smoke_tests"
+    ],
+    "kaggle_t4_allowed_for_primary_397b_training": false,
+    "distributed_training_plan_required_before_397b": true,
+    "cost_budget_required_before_397b": true,
+    "checkpoint_recovery_plan_required_before_397b": true
+  }
+}
