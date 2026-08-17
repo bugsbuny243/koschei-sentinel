@@ -207,6 +207,7 @@ def build_world_model_episode(
     attack_world_lines = build_attack_world_line_timeline(
         scenario.graph_snapshots,
         stream_id=f"scenario:{scenario.scenario_id}",
+        protected_anchor_entity_ids=scenario.critical_entity_ids,
     )
     digest = _episode_digest(
         scenario_id=scenario.scenario_id,
