@@ -101,6 +101,11 @@ class MultiIncidentCyberRangeReport(StrictModel):
     contained_component_instances: int = Field(ge=0)
     component_containment_rate: float = Field(ge=0.0, le=1.0)
     mean_containment_step: float | None = Field(default=None, ge=0.0)
+    world_line_count: int = Field(ge=0)
+    contained_world_lines: int = Field(ge=0)
+    world_line_containment_rate: float = Field(ge=0.0, le=1.0)
+    mean_world_line_containment_tick_latency: float | None = Field(default=None, ge=0.0)
+    uncontained_world_line_ids: list[str]
     cut_point_leakage_count: int = Field(ge=0)
     expected_world_line_transitions: int = Field(ge=0)
     matched_world_line_transitions: int = Field(ge=0)
@@ -110,7 +115,9 @@ class MultiIncidentCyberRangeReport(StrictModel):
     violations: list[str]
 
 
-def _outcome_map(scenario: MultiIncidentCyberRangeScenario) -> dict[tuple[DefenseActionType, str], bool]:
+def _outcome_map(
+    scenario: MultiIncidentCyberRangeScenario,
+) -> dict[tuple[DefenseActionType, str], bool]:
     return {
         (row.action, row.target_entity_id): row.succeeds
         for row in scenario.action_outcomes
@@ -140,7 +147,10 @@ def _simulate_component(
     outcomes = _outcome_map(scenario)
 
     while not execution.complete:
-        pending = next((row for row in execution.steps if row.status.value == "PENDING"), None)
+        pending = next(
+            (row for row in execution.steps if row.status.value == "PENDING"),
+            None,
+        )
         if pending is None:
             break
         step = next(row for row in interception.steps if row.step_id == pending.step_id)
@@ -157,7 +167,9 @@ def _simulate_component(
             execution,
             interception,
             step_id=step.step_id,
-            execution_receipt_ids=[f"multi-range:receipt:{scenario.scenario_id}:{step.step_id}"],
+            execution_receipt_ids=[
+                f"multi-range:receipt:{scenario.scenario_id}:{step.step_id}"
+            ],
         )
         ok = outcomes.get((step.action, step.target_entity_id), True)
         execution = verify_step_outcome(
@@ -193,11 +205,44 @@ def _matches_expected_transition(
     return False
 
 
+def _world_line_containment_metrics(
+    timeline: AttackWorldLineTimeline,
+    containment_by_component_tick: dict[tuple[int, str], bool],
+) -> tuple[int, int, float, float | None, list[str]]:
+    observations_by_line: dict[str, list[object]] = {}
+    for observation in timeline.observations:
+        observations_by_line.setdefault(observation.world_line_id, []).append(observation)
+
+    latencies: list[float] = []
+    uncontained: list[str] = []
+    for line_id, observations in sorted(observations_by_line.items()):
+        ordered = sorted(observations, key=lambda row: (row.tick, row.component_id))
+        first_tick = ordered[0].tick
+        contained_tick: int | None = None
+        for observation in ordered:
+            if containment_by_component_tick.get(
+                (observation.tick, observation.component_id),
+                False,
+            ):
+                contained_tick = observation.tick
+                break
+        if contained_tick is None:
+            uncontained.append(line_id)
+        else:
+            latencies.append(float(contained_tick - first_tick))
+
+    total = len(observations_by_line)
+    contained = total - len(uncontained)
+    rate = 1.0 if total == 0 else contained / total
+    return total, contained, rate, (mean(latencies) if latencies else None), uncontained
+
+
 def run_multi_incident_cyber_range(
     scenario: MultiIncidentCyberRangeScenario,
 ) -> MultiIncidentCyberRangeReport:
     tick_reports: list[MultiIncidentRangeTick] = []
     containment_steps: list[float] = []
+    containment_by_component_tick: dict[tuple[int, str], bool] = {}
     total_components = 0
     contained_components = 0
     leakage_total = 0
@@ -220,6 +265,7 @@ def run_multi_incident_cyber_range(
                 graph=graph,
                 defense_plan=component.defense_plan,
             )
+            containment_by_component_tick[(tick, component.component_id)] = contained
             total_components += 1
             if contained:
                 contained_components += 1
@@ -256,6 +302,13 @@ def run_multi_incident_cyber_range(
         stream_id=f"multi-range:{scenario.scenario_id}",
         protected_anchor_entity_ids=scenario.critical_entity_ids,
     )
+    (
+        world_line_count,
+        contained_world_lines,
+        world_line_containment_rate,
+        mean_world_line_latency,
+        uncontained_world_lines,
+    ) = _world_line_containment_metrics(world_lines, containment_by_component_tick)
 
     expected_component_ticks = len(scenario.expected_active_component_counts)
     component_matches = sum(
@@ -295,8 +348,11 @@ def run_multi_incident_cyber_range(
         violations.append("one or more defensive cut points crossed an incident component boundary")
     if transition_accuracy < 1.0:
         violations.append("one or more expected world-line transitions were missed")
-    if scenario.truth is MultiIncidentScenarioTruth.MALICIOUS and total_components and containment_rate < 1.0:
-        violations.append("one or more malicious component instances were not contained")
+    if scenario.truth is MultiIncidentScenarioTruth.MALICIOUS:
+        if total_components and containment_rate < 1.0:
+            violations.append("one or more malicious component instances were not contained")
+        if world_line_count and world_line_containment_rate < 1.0:
+            violations.append("one or more malicious attack world-lines were not contained")
 
     return MultiIncidentCyberRangeReport(
         scenario_id=scenario.scenario_id,
@@ -310,6 +366,11 @@ def run_multi_incident_cyber_range(
         contained_component_instances=contained_components,
         component_containment_rate=containment_rate,
         mean_containment_step=(mean(containment_steps) if containment_steps else None),
+        world_line_count=world_line_count,
+        contained_world_lines=contained_world_lines,
+        world_line_containment_rate=world_line_containment_rate,
+        mean_world_line_containment_tick_latency=mean_world_line_latency,
+        uncontained_world_line_ids=uncontained_world_lines,
         cut_point_leakage_count=leakage_total,
         expected_world_line_transitions=expected_transitions,
         matched_world_line_transitions=matched_transitions,
