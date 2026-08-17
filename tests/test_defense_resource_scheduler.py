@@ -1,8 +1,11 @@
+import pytest
+
 from koschei_sentinel.assured_multi_incident_defense import (
     build_assured_multi_incident_defense_plan,
 )
 from koschei_sentinel.cyber_perception import TelemetrySourceType
 from koschei_sentinel.cyber_state_graph import CyberEntityType
+from koschei_sentinel.defense_connector_contract import ProtectedScope
 from koschei_sentinel.defense_resource_scheduler import (
     DefenseResourceClass,
     DefenseResourcePolicy,
@@ -24,6 +27,9 @@ from koschei_sentinel.perception_source_registry import (
     PerceptionSourceEnrollment,
     PerceptionSourceRegistry,
     admit_perception_adapter_result,
+)
+from koschei_sentinel.scheduled_defense_connector import (
+    build_scheduled_assured_connector_envelope,
 )
 
 
@@ -140,6 +146,7 @@ def _plan(*, critical: list[str], b_single_domain: bool = False):
         TelemetrySourceType.CICD,
         TelemetrySourceType.SIGNER_WALLET,
     ]
+    source_names = ["endpoint", "cicd", "signer"]
     for prefix, component_rows in (("a", component_a), ("b", component_b)):
         for index, ((adapter_id, _), source_type) in enumerate(
             zip(component_rows, source_types, strict=True)
@@ -152,7 +159,7 @@ def _plan(*, critical: list[str], b_single_domain: bool = False):
             enrollments.append(
                 PerceptionSourceEnrollment(
                     source_type=source_type,
-                    source_instance=f"sensor:{prefix}:{['endpoint', 'cicd', 'signer'][index]}",
+                    source_instance=f"sensor:{prefix}:{source_names[index]}",
                     allowed_adapter_ids=[adapter_id],
                     independence_domain=domain,
                 )
@@ -187,6 +194,14 @@ def _policy(*, total: int, signer: int, reserved: int = 0) -> DefenseResourcePol
         max_parallel_total=total,
         reserved_critical_slots=reserved,
         resource_capacities=capacities,
+    )
+
+
+def _scope_for(item) -> ProtectedScope:
+    return ProtectedScope(
+        scope_id=f"scope:{item.component_id}",
+        entity_ids=[item.target_entity_id],
+        permitted_actions=[item.action],
     )
 
 
@@ -261,3 +276,55 @@ def test_schedule_is_deterministic_for_same_plan_policy_and_state() -> None:
 
     assert first.model_dump() == second.model_dump()
     assert first.schedule_sha256 == second.schedule_sha256
+
+
+def test_only_scheduled_component_can_produce_assured_connector_envelope() -> None:
+    plan = _plan(critical=["wallet:a", "wallet:b"])
+    schedule = build_defense_resource_schedule(
+        plan,
+        policy=_policy(total=2, signer=1, reserved=1),
+    )
+    scheduled = schedule.scheduled[0]
+    envelope = build_scheduled_assured_connector_envelope(
+        schedule=schedule,
+        multi_plan=plan,
+        component_id=scheduled.component_id,
+        scope=_scope_for(scheduled),
+        precondition_evidence_ids=["evidence:scheduler"],
+        dry_run=True,
+    )
+    assert envelope.production_authorized is True
+    assert envelope.assured_connector.command.target_entity_id == scheduled.target_entity_id
+    assert envelope.assured_connector.command.action is scheduled.action
+
+    deferred = schedule.deferred[0]
+    with pytest.raises(ValueError, match="deferred defense component"):
+        build_scheduled_assured_connector_envelope(
+            schedule=schedule,
+            multi_plan=plan,
+            component_id=deferred.component_id,
+            scope=_scope_for(deferred),
+            precondition_evidence_ids=["evidence:scheduler"],
+            dry_run=True,
+        )
+
+
+def test_tampered_schedule_digest_is_rejected_before_connector_generation() -> None:
+    plan = _plan(critical=["wallet:a", "wallet:b"])
+    schedule = build_defense_resource_schedule(
+        plan,
+        policy=_policy(total=1, signer=1, reserved=1),
+    )
+    item = schedule.scheduled[0]
+    changed_item = item.model_copy(update={"priority_score": max(0.0, item.priority_score - 0.1)})
+    tampered = schedule.model_copy(update={"scheduled": [changed_item]})
+
+    with pytest.raises(ValueError, match="schedule digest"):
+        build_scheduled_assured_connector_envelope(
+            schedule=tampered,
+            multi_plan=plan,
+            component_id=item.component_id,
+            scope=_scope_for(item),
+            precondition_evidence_ids=["evidence:scheduler"],
+            dry_run=True,
+        )
