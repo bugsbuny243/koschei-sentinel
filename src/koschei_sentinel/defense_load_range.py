@@ -26,6 +26,17 @@ _MODE_RANK = {
 }
 
 
+class DefenseLoadGatePolicy(StrictModel):
+    schema_version: Literal["sentinel.defense-load-gate-policy.v1"] = (
+        "sentinel.defense-load-gate-policy.v1"
+    )
+    max_waves: int = Field(default=64, ge=1, le=10000)
+    service_coverage_min: float = Field(default=1.0, ge=0.0, le=1.0)
+    critical_first_service_wave_max: int = Field(default=1, ge=0)
+    max_wait_cycles_allowed: int = Field(default=8, ge=0)
+    capacity_violation_max: int = Field(default=0, ge=0)
+
+
 class DefenseLoadWave(StrictModel):
     wave: int = Field(ge=0)
     pending_before: int = Field(ge=0)
@@ -41,6 +52,8 @@ class DefenseLoadRangeReport(StrictModel):
         "sentinel.defense-load-range-report.v1"
     )
     graph_id: str
+    resource_policy: DefenseResourcePolicy
+    gate_policy: DefenseLoadGatePolicy
     eligible_components: int = Field(ge=0)
     critical_eligible_components: int = Field(ge=0)
     serviced_components: int = Field(ge=0)
@@ -96,19 +109,11 @@ def _subplan(
 def run_defense_load_range(
     plan: AssuredMultiIncidentDefensePlan,
     *,
-    policy: DefenseResourcePolicy | None = None,
-    max_waves: int = 64,
-    critical_first_service_wave_max: int = 1,
-    max_wait_cycles_allowed: int = 8,
+    resource_policy: DefenseResourcePolicy | None = None,
+    gate_policy: DefenseLoadGatePolicy | None = None,
 ) -> DefenseLoadRangeReport:
-    if max_waves <= 0:
-        raise ValueError("defense load range max_waves must be positive")
-    if critical_first_service_wave_max < 0:
-        raise ValueError("critical first-service wave limit cannot be negative")
-    if max_wait_cycles_allowed < 0:
-        raise ValueError("max wait-cycle limit cannot be negative")
-
-    gate = policy or DefenseResourcePolicy()
+    resources = resource_policy or DefenseResourcePolicy()
+    gate = gate_policy or DefenseLoadGatePolicy()
     eligible = _eligible_components(plan)
     eligible_ids = {row.component_id for row in eligible}
     critical_ids = {
@@ -122,14 +127,14 @@ def run_defense_load_range(
     capacity_violations = 0
     max_utilization = {resource: 0.0 for resource in DefenseResourceClass}
 
-    for wave in range(max_waves):
+    for wave in range(gate.max_waves):
         if not remaining:
             break
         pending_before = len(remaining)
         current = _subplan(plan, remaining)
         schedule = build_defense_resource_schedule(
             current,
-            policy=gate,
+            policy=resources,
             state=state,
         )
         scheduled_ids = [row.component_id for row in schedule.scheduled]
@@ -139,12 +144,12 @@ def run_defense_load_range(
 
         for resource in DefenseResourceClass:
             used = schedule.resource_usage[resource]
-            capacity = gate.resource_capacities[resource]
+            capacity = resources.resource_capacities[resource]
             if used > capacity:
                 capacity_violations += 1
             utilization = 0.0 if capacity == 0 else used / capacity
             max_utilization[resource] = max(max_utilization[resource], utilization)
-        if len(schedule.scheduled) > gate.max_parallel_total:
+        if len(schedule.scheduled) > resources.max_parallel_total:
             capacity_violations += 1
 
         state = schedule.next_state
@@ -164,8 +169,8 @@ def run_defense_load_range(
         scheduled_set = set(scheduled_ids)
         remaining = [row for row in remaining if row.component_id not in scheduled_set]
         if not scheduled_set:
-            # No forward progress means the current capacity policy cannot service the
-            # remaining authorized action classes. Stop deterministically instead of looping.
+            # No forward progress means current resource capacities cannot service the
+            # remaining authorized action classes. Stop instead of spinning forever.
             break
 
     serviced_ids = set(first_service_wave)
@@ -182,22 +187,32 @@ def run_defense_load_range(
     )
 
     violations: list[str] = []
+    if service_coverage < gate.service_coverage_min:
+        violations.append(
+            "defense load service coverage below gate: "
+            f"{service_coverage:.4f} < {gate.service_coverage_min:.4f}"
+        )
     if starved:
         violations.append("one or more authorized attack components were starved")
     if critical_starved:
         violations.append("one or more critical attack components were starved")
     critical_max = max(critical_waves, default=None)
-    if critical_max is not None and critical_max > critical_first_service_wave_max:
+    if (
+        critical_max is not None
+        and critical_max > gate.critical_first_service_wave_max
+    ):
         violations.append(
             "critical component first-service latency exceeded the load-range gate"
         )
-    if max_wait > max_wait_cycles_allowed:
+    if max_wait > gate.max_wait_cycles_allowed:
         violations.append("scheduler wait cycles exceeded the load-range gate")
-    if capacity_violations:
+    if capacity_violations > gate.capacity_violation_max:
         violations.append("scheduler exceeded one or more configured resource capacities")
 
     return DefenseLoadRangeReport(
         graph_id=plan.graph_id,
+        resource_policy=resources,
+        gate_policy=gate,
         eligible_components=len(eligible_ids),
         critical_eligible_components=len(critical_ids),
         serviced_components=len(serviced_ids),
