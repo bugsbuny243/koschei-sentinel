@@ -31,6 +31,11 @@ _ACTION_PRIORITY: dict[DefenseActionType, int] = {
     DefenseActionType.ENABLE_EMERGENCY_POLICY: 5,
 }
 
+_IMPACT_EDGE_ACTIONS = {
+    DefenseActionType.HOLD_TRANSACTION,
+    DefenseActionType.FREEZE_SIGNER,
+}
+
 
 class InterceptionStep(StrictModel):
     step_id: str
@@ -57,7 +62,7 @@ class InterceptionPlan(StrictModel):
 
 
 def _urgency(effect: float, action: DefenseActionType, predicted_impact: bool) -> InterceptionUrgency:
-    if action in {DefenseActionType.HOLD_TRANSACTION, DefenseActionType.FREEZE_SIGNER} and predicted_impact:
+    if action in _IMPACT_EDGE_ACTIONS and predicted_impact:
         return InterceptionUrgency.IMMEDIATE
     if effect >= 0.8:
         return InterceptionUrgency.IMMEDIATE
@@ -83,6 +88,17 @@ def _objective(action: DefenseActionType) -> str:
     }.get(action, "interrupt hostile progression")
 
 
+def _ranking_key(row: object, predicted_impact: bool) -> tuple[float, float, float, str]:
+    action = row.action
+    impact_edge = 1.0 if predicted_impact and action in _IMPACT_EDGE_ACTIONS else 0.0
+    return (
+        -impact_edge,
+        -row.effect_score,
+        -float(_ACTION_PRIORITY.get(action, 0)),
+        row.entity_id,
+    )
+
+
 def build_interception_plan(plan: ActiveDefensePlan) -> InterceptionPlan:
     predicted_impact = any(
         transition.to_stage.value == "IMPACT"
@@ -91,11 +107,7 @@ def build_interception_plan(plan: ActiveDefensePlan) -> InterceptionPlan:
 
     ranked = sorted(
         plan.authorized_cut_points,
-        key=lambda row: (
-            -row.effect_score,
-            -_ACTION_PRIORITY.get(row.action, 0),
-            row.entity_id,
-        ),
+        key=lambda row: _ranking_key(row, predicted_impact),
     )
 
     steps: list[InterceptionStep] = []
@@ -117,7 +129,8 @@ def build_interception_plan(plan: ActiveDefensePlan) -> InterceptionPlan:
 
     rationale = [
         "only cut points already authorized by the selected defense mode are eligible",
-        "steps are ranked by graph-level interruption effect with action priority as a tie-breaker",
+        "when impact is predicted, signer and pending-transaction controls are sequenced before broader graph cuts",
+        "otherwise steps are ranked by graph-level interruption effect with action priority as a tie-breaker",
         "every containment step requires post-action verification before the incident is considered contained",
     ]
     if predicted_impact:
