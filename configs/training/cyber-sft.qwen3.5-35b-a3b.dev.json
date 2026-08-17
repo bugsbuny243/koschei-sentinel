@@ -2,6 +2,7 @@
   "schema_version": "sentinel.cyber-sft-config.v1",
   "run_id": "sentinel-cyber-sft-qwen35-35b-a3b-dev-001",
   "stage": "DEFENSE_REFLEX",
+  "execution_profile": "MOE_DISTRIBUTED_REQUIRED",
   "base_model": "Qwen/Qwen3.5-35B-A3B-Base",
   "base_revision": "0f0813072d2358973511097385626f21fcb6d422",
   "corpus_dir": "build/cyber-training/defense-reflex-v2",
@@ -16,7 +17,9 @@
   "warmup_ratio": 0.03,
   "logging_steps": 5,
   "seed": 1701,
-  "minimum_cuda_memory_gb": 48.0,
+  "minimum_cuda_memory_gb": 0.0,
+  "gradient_checkpointing": false,
+  "enable_router_aux_loss": true,
   "quantization": {
     "bits": 4,
     "quant_type": "nf4",
