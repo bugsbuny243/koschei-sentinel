@@ -54,6 +54,7 @@ sentinel-cyber-materialize = "koschei_sentinel.cyber_snapshot_materializer_cli:m
 sentinel-cyber-batch-seal = "koschei_sentinel.cyber_collection_batch_cli:main"
 sentinel-active-defense-plan = "koschei_sentinel.active_defense_cli:main"
 sentinel-cyber-range = "koschei_sentinel.cyber_range_cli:main"
+sentinel-defense-reflex-build = "koschei_sentinel.defense_reflex_corpus_cli:main"
 sentinel-register-candidate = "koschei_sentinel.incubation_registry_cli:main"
 sentinel-job-plan = "koschei_sentinel.offline_job_cli:main"
 sentinel-job-receipt = "koschei_sentinel.offline_receipt_cli:main"
