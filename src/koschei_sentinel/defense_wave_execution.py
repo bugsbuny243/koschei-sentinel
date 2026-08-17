@@ -205,9 +205,7 @@ def start_defense_wave_execution(
     schedule: DefenseResourceSchedule,
     multi_plan: AssuredMultiIncidentDefensePlan,
 ) -> DefenseWaveExecution:
-    verify_defense_resource_schedule(schedule)
-    if schedule.graph_id != multi_plan.graph_id:
-        raise ValueError("defense resource schedule belongs to a different graph")
+    verify_defense_resource_schedule(schedule, multi_plan)
     if not schedule.scheduled:
         raise ValueError("defense wave requires at least one scheduled component")
 
