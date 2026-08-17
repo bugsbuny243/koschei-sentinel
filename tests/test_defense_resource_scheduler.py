@@ -20,6 +20,7 @@ from koschei_sentinel.defense_resource_scheduler import (
     DefenseResourcePolicy,
     DefenseSchedulerState,
     SchedulingDisposition,
+    assured_multi_incident_plan_sha256,
     build_defense_resource_schedule,
 )
 from koschei_sentinel.defense_scheduling_lineage import (
@@ -351,7 +352,8 @@ def test_schedule_is_deterministic_for_same_plan_policy_and_state() -> None:
 
     assert first.model_dump() == second.model_dump()
     assert first.schedule_sha256 == second.schedule_sha256
-    assert first.schema_version == "sentinel.defense-resource-schedule.v2"
+    assert first.schema_version == "sentinel.defense-resource-schedule.v3"
+    assert first.assured_multi_plan_sha256 == assured_multi_incident_plan_sha256(plan)
 
 
 def test_only_scheduled_component_can_produce_assured_connector_envelope() -> None:
