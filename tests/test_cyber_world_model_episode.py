@@ -1,3 +1,4 @@
+from koschei_sentinel.attack_world_lines import WorldLineTransitionType
 from koschei_sentinel.cyber_range import CyberRangeScenario, ScenarioTruth, run_cyber_range_scenario
 from koschei_sentinel.cyber_state_graph import (
     CyberEntity,
@@ -107,3 +108,12 @@ def test_world_model_episode_preserves_evidence_classes_and_reroute_transition()
     assert episode.snapshots[1].disproved_relations == 1
     assert episode.transitions[0].transition_type is TemporalTransitionType.ATTACKER_REROUTE
     assert episode.transitions[0].graph_changed is True
+    assert episode.attack_world_lines is not None
+    reroute = next(
+        row
+        for row in episode.attack_world_lines.transitions
+        if row.to_tick == 1
+        and row.transition_type is WorldLineTransitionType.REROUTED
+    )
+    assert reroute.shared_protected_anchor_ids == ["wallet:a"]
+    assert reroute.predecessor_world_line_ids == reroute.successor_world_line_ids
