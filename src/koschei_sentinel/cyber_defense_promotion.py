@@ -36,6 +36,8 @@ class CyberDefensePromotionEvidence(StrictModel):
     component_count_accuracy: float = Field(ge=0.0, le=1.0)
     world_line_transition_accuracy: float = Field(ge=0.0, le=1.0)
     component_containment_rate: float = Field(ge=0.0, le=1.0)
+    world_line_containment_rate: float = Field(ge=0.0, le=1.0)
+    mean_world_line_containment_tick_latency: float | None = Field(default=None, ge=0.0)
     cut_point_leakage_count: int = Field(ge=0)
     ready_for_promotion: bool
     evidence_sha256: str = Field(pattern=_DIGEST)
@@ -108,6 +110,12 @@ def build_cyber_defense_promotion_evidence(
         ),
         component_containment_rate=(
             multi_incident_range_report.component_containment_rate
+        ),
+        world_line_containment_rate=(
+            multi_incident_range_report.world_line_containment_rate
+        ),
+        mean_world_line_containment_tick_latency=(
+            multi_incident_range_report.mean_world_line_containment_tick_latency
         ),
         cut_point_leakage_count=multi_incident_range_report.cut_point_leakage_count,
         ready_for_promotion=ready,
