@@ -1,0 +1,12 @@
+{
+  "schema_version": "sentinel.cyber-collection-batch-spec.v3",
+  "batch_id": "cyber-v3-batch-0001",
+  "approved_catalog_path": "configs/corpus/cyber-v3.sources.approved.jsonl",
+  "inputs": [
+    {
+      "source_id": "rustsec.advisory.database",
+      "manifest_path": "build/cyber-v3/rustsec/artifacts.jsonl",
+      "corpus_path": "build/cyber-v3/rustsec/training-corpus.jsonl"
+    }
+  ]
+}
