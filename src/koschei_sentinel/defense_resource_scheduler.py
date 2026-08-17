@@ -15,6 +15,8 @@ from koschei_sentinel.interception_planner import (
 )
 from koschei_sentinel.models import StrictModel
 
+_DIGEST = r"^[a-f0-9]{64}$"
+
 
 class DefenseResourceClass(StrEnum):
     EVIDENCE = "EVIDENCE"
@@ -103,21 +105,39 @@ class DefenseResourcePolicy(StrictModel):
         return self
 
 
-class DefenseSchedulerState(StrictModel):
-    schema_version: Literal["sentinel.defense-scheduler-state.v1"] = (
-        "sentinel.defense-scheduler-state.v1"
+class DefenseSchedulingContext(StrictModel):
+    schema_version: Literal["sentinel.defense-scheduling-context.v1"] = (
+        "sentinel.defense-scheduling-context.v1"
     )
-    wait_cycles_by_component: dict[str, int] = Field(default_factory=dict)
+    context_id: str = Field(min_length=3, max_length=256)
+    scheduling_subject_by_component: dict[str, str]
+    world_line_timeline_sha256: str | None = Field(default=None, pattern=_DIGEST)
+    tick: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def scheduling_subjects_are_unique(self) -> "DefenseSchedulingContext":
+        values = list(self.scheduling_subject_by_component.values())
+        if len(values) != len(set(values)):
+            raise ValueError("one scheduling subject cannot represent multiple active components")
+        return self
+
+
+class DefenseSchedulerState(StrictModel):
+    schema_version: Literal["sentinel.defense-scheduler-state.v2"] = (
+        "sentinel.defense-scheduler-state.v2"
+    )
+    wait_cycles_by_subject: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def wait_cycles_are_valid(self) -> "DefenseSchedulerState":
-        if any(value < 0 for value in self.wait_cycles_by_component.values()):
+        if any(value < 0 for value in self.wait_cycles_by_subject.values()):
             raise ValueError("scheduler wait cycles cannot be negative")
         return self
 
 
 class DefenseScheduleItem(StrictModel):
     component_id: str
+    scheduling_subject_id: str
     component_entity_ids: list[str]
     critical_entity_ids: list[str]
     step_id: str
@@ -142,19 +162,20 @@ class DefenseScheduleItem(StrictModel):
 
 
 class DefenseResourceSchedule(StrictModel):
-    schema_version: Literal["sentinel.defense-resource-schedule.v1"] = (
-        "sentinel.defense-resource-schedule.v1"
+    schema_version: Literal["sentinel.defense-resource-schedule.v2"] = (
+        "sentinel.defense-resource-schedule.v2"
     )
     graph_id: str
     schedule_id: str
     policy: DefenseResourcePolicy
+    scheduling_context: DefenseSchedulingContext
     scheduled: list[DefenseScheduleItem]
     deferred: list[DefenseScheduleItem]
     no_action_component_ids: list[str]
     resource_usage: dict[DefenseResourceClass, int]
     previous_state: DefenseSchedulerState
     next_state: DefenseSchedulerState
-    schedule_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    schedule_sha256: str = Field(pattern=_DIGEST)
     rationale: list[str]
 
     @model_validator(mode="after")
@@ -162,6 +183,9 @@ class DefenseResourceSchedule(StrictModel):
         scheduled_components = [row.component_id for row in self.scheduled]
         if len(scheduled_components) != len(set(scheduled_components)):
             raise ValueError("only one interception step per component may be scheduled in a wave")
+        scheduled_subjects = [row.scheduling_subject_id for row in self.scheduled]
+        if len(scheduled_subjects) != len(set(scheduled_subjects)):
+            raise ValueError("only one active component per scheduling subject may be scheduled")
         scheduled_targets = [
             (row.resource_class, row.target_entity_id) for row in self.scheduled
         ]
@@ -173,6 +197,27 @@ class DefenseResourceSchedule(StrictModel):
             if used > self.policy.resource_capacities[resource]:
                 raise ValueError("scheduled wave exceeds a resource-class capacity")
         return self
+
+
+def _default_context(plan: AssuredMultiIncidentDefensePlan) -> DefenseSchedulingContext:
+    return DefenseSchedulingContext(
+        context_id=f"context:{plan.graph_id}:component-fallback",
+        scheduling_subject_by_component={
+            row.component_id: row.component_id for row in plan.component_plans
+        },
+    )
+
+
+def _validate_context(
+    plan: AssuredMultiIncidentDefensePlan,
+    context: DefenseSchedulingContext,
+) -> None:
+    component_ids = {row.component_id for row in plan.component_plans}
+    context_ids = set(context.scheduling_subject_by_component)
+    if component_ids != context_ids:
+        raise ValueError(
+            "defense scheduling context must map every active component exactly once"
+        )
 
 
 def _priority(
@@ -208,6 +253,7 @@ def _candidate_items(
     plan: AssuredMultiIncidentDefensePlan,
     state: DefenseSchedulerState,
     policy: DefenseResourcePolicy,
+    context: DefenseSchedulingContext,
 ) -> tuple[list[DefenseScheduleItem], list[str]]:
     candidates: list[DefenseScheduleItem] = []
     no_action: list[str] = []
@@ -219,10 +265,12 @@ def _candidate_items(
             continue
         step = interception.steps[0]
         resource = _ACTION_RESOURCE[step.action]
-        wait_cycles = state.wait_cycles_by_component.get(component.component_id, 0)
+        subject = context.scheduling_subject_by_component[component.component_id]
+        wait_cycles = state.wait_cycles_by_subject.get(subject, 0)
         candidates.append(
             DefenseScheduleItem(
                 component_id=component.component_id,
+                scheduling_subject_id=subject,
                 component_entity_ids=component.entity_ids,
                 critical_entity_ids=component.critical_entity_ids,
                 step_id=step.step_id,
@@ -249,6 +297,7 @@ def _candidate_items(
                 rationale=[
                     "candidate is the first currently authorized interception step for its component",
                     "scheduler priority cannot raise the component above its assured defense mode",
+                    "wait aging is keyed by scheduling subject so lineage identity can survive reroutes",
                 ],
             )
         )
@@ -257,8 +306,8 @@ def _candidate_items(
             -int(bool(row.critical_entity_ids)),
             -row.priority_score,
             -_MODE_RANK[row.defense_mode],
+            row.scheduling_subject_id,
             row.component_id,
-            row.step_id,
         )
     )
     return candidates, sorted(no_action)
@@ -315,6 +364,7 @@ def _schedule_digest(
     *,
     graph_id: str,
     policy: DefenseResourcePolicy,
+    context: DefenseSchedulingContext,
     scheduled: list[DefenseScheduleItem],
     deferred: list[DefenseScheduleItem],
     no_action: list[str],
@@ -324,6 +374,7 @@ def _schedule_digest(
     payload = {
         "graph_id": graph_id,
         "policy": policy.model_dump(mode="json"),
+        "context": context.model_dump(mode="json"),
         "scheduled": [row.model_dump(mode="json") for row in scheduled],
         "deferred": [row.model_dump(mode="json") for row in deferred],
         "no_action": no_action,
@@ -338,6 +389,7 @@ def defense_resource_schedule_sha256(schedule: DefenseResourceSchedule) -> str:
     return _schedule_digest(
         graph_id=schedule.graph_id,
         policy=schedule.policy,
+        context=schedule.scheduling_context,
         scheduled=schedule.scheduled,
         deferred=schedule.deferred,
         no_action=schedule.no_action_component_ids,
@@ -363,18 +415,23 @@ def build_defense_resource_schedule(
     *,
     policy: DefenseResourcePolicy | None = None,
     state: DefenseSchedulerState | None = None,
+    context: DefenseSchedulingContext | None = None,
 ) -> DefenseResourceSchedule:
     gate = policy or DefenseResourcePolicy()
     previous = state or DefenseSchedulerState()
-    candidates, no_action = _candidate_items(plan, previous, gate)
+    scheduling_context = context or _default_context(plan)
+    _validate_context(plan, scheduling_context)
+    candidates, no_action = _candidate_items(
+        plan,
+        previous,
+        gate,
+        scheduling_context,
+    )
     scheduled: list[DefenseScheduleItem] = []
     deferred: list[DefenseScheduleItem] = []
     usage = {resource: 0 for resource in DefenseResourceClass}
 
     critical = [row for row in candidates if row.critical_entity_ids]
-
-    # Reserve a bounded number of slots for components touching declared critical assets.
-    # Unused reservations are released to the global queue immediately.
     for item in critical[: gate.reserved_critical_slots]:
         _allocate(
             item,
@@ -393,6 +450,7 @@ def build_defense_resource_schedule(
             -row.priority_score,
             -int(bool(row.critical_entity_ids)),
             -_MODE_RANK[row.defense_mode],
+            row.scheduling_subject_id,
             row.component_id,
         )
     )
@@ -406,29 +464,29 @@ def build_defense_resource_schedule(
         )
 
     next_wait: dict[str, int] = {}
-    scheduled_ids = {row.component_id for row in scheduled}
-    deferred_ids = {row.component_id for row in deferred}
+    scheduled_subjects = {row.scheduling_subject_id for row in scheduled}
+    deferred_subjects = {row.scheduling_subject_id for row in deferred}
+    no_action_ids = set(no_action)
     for component in plan.component_plans:
-        if component.component_id in scheduled_ids:
-            next_wait[component.component_id] = 0
-        elif component.component_id in deferred_ids:
-            next_wait[component.component_id] = (
-                previous.wait_cycles_by_component.get(component.component_id, 0) + 1
-            )
+        subject = scheduling_context.scheduling_subject_by_component[component.component_id]
+        if subject in scheduled_subjects:
+            next_wait[subject] = 0
+        elif subject in deferred_subjects:
+            next_wait[subject] = previous.wait_cycles_by_subject.get(subject, 0) + 1
+        elif component.component_id in no_action_ids:
+            next_wait[subject] = 0
         else:
-            next_wait[component.component_id] = previous.wait_cycles_by_component.get(
-                component.component_id,
-                0,
-            )
+            next_wait[subject] = previous.wait_cycles_by_subject.get(subject, 0)
     next_state = DefenseSchedulerState(
-        wait_cycles_by_component=dict(sorted(next_wait.items()))
+        wait_cycles_by_subject=dict(sorted(next_wait.items()))
     )
 
-    scheduled.sort(key=lambda row: (-row.priority_score, row.component_id))
-    deferred.sort(key=lambda row: (-row.priority_score, row.component_id))
+    scheduled.sort(key=lambda row: (-row.priority_score, row.scheduling_subject_id))
+    deferred.sort(key=lambda row: (-row.priority_score, row.scheduling_subject_id))
     digest = _schedule_digest(
         graph_id=plan.graph_id,
         policy=gate,
+        context=scheduling_context,
         scheduled=scheduled,
         deferred=deferred,
         no_action=no_action,
@@ -439,6 +497,7 @@ def build_defense_resource_schedule(
         graph_id=plan.graph_id,
         schedule_id=f"schedule:{plan.graph_id}:{digest[:20]}",
         policy=gate,
+        scheduling_context=scheduling_context,
         scheduled=scheduled,
         deferred=deferred,
         no_action_component_ids=no_action,
@@ -451,7 +510,8 @@ def build_defense_resource_schedule(
             "only the first interception step of a component can enter a scheduling wave",
             "critical protected-asset components receive bounded reserved capacity",
             "per-control-plane capacities prevent one defensive subsystem from being overcommitted",
-            "deferred components accumulate bounded deterministic wait aging to reduce starvation",
+            "deferred world-line subjects accumulate bounded wait aging to reduce starvation",
+            "rerouting does not reset scheduling age when a world-line context is supplied",
             "execution and post-action verification remain separate mandatory gates",
         ],
     )
