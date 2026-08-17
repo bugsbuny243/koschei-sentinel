@@ -33,6 +33,7 @@ class CyberTrainingReadinessReport(StrictModel):
     runtime_checked: bool
     runtime_dependencies_ready: bool | None
     cuda_available: bool | None
+    cuda_device_index: int | None = Field(default=None, ge=0)
     visible_cuda_memory_gb: float | None = Field(default=None, ge=0.0)
     minimum_cuda_memory_gb: float = Field(ge=0.0)
     ready_to_execute: bool
@@ -50,7 +51,16 @@ def _use_class(plan: CyberSFTPlan) -> CyberTrainingUseClass:
 
 
 def _runtime_dependency_names() -> list[str]:
-    return ["torch", "datasets", "peft", "transformers", "bitsandbytes", "accelerate"]
+    return [
+        "torch",
+        "torchvision",
+        "PIL",
+        "datasets",
+        "peft",
+        "transformers",
+        "bitsandbytes",
+        "accelerate",
+    ]
 
 
 def audit_cyber_training_readiness(
@@ -76,6 +86,7 @@ def audit_cyber_training_readiness(
 
     dependencies_ready: bool | None = None
     cuda_available: bool | None = None
+    cuda_device_index: int | None = None
     cuda_memory: float | None = None
     if check_runtime:
         missing = [
@@ -91,13 +102,13 @@ def audit_cyber_training_readiness(
             if not cuda_available:
                 blockers.append("CUDA is not available")
             else:
-                cuda_memory = sum(
-                    torch.cuda.get_device_properties(index).total_memory
-                    for index in range(torch.cuda.device_count())
-                ) / (1024**3)
+                cuda_device_index = int(torch.cuda.current_device())
+                cuda_memory = (
+                    torch.cuda.get_device_properties(cuda_device_index).total_memory / (1024**3)
+                )
                 if cuda_memory + 1e-9 < config.minimum_cuda_memory_gb:
                     blockers.append(
-                        "visible CUDA memory below configured minimum: "
+                        "current CUDA device memory below configured minimum: "
                         f"{cuda_memory:.1f} GiB < {config.minimum_cuda_memory_gb:.1f} GiB"
                     )
                 if (
@@ -106,7 +117,7 @@ def audit_cyber_training_readiness(
                     and not torch.cuda.is_bf16_supported()
                 ):
                     blockers.append(
-                        "configured bfloat16 is not supported by visible CUDA hardware"
+                        "configured bfloat16 is not supported by current CUDA hardware"
                     )
     else:
         warnings.append(
@@ -134,6 +145,7 @@ def audit_cyber_training_readiness(
         runtime_checked=check_runtime,
         runtime_dependencies_ready=dependencies_ready,
         cuda_available=cuda_available,
+        cuda_device_index=cuda_device_index,
         visible_cuda_memory_gb=cuda_memory,
         minimum_cuda_memory_gb=config.minimum_cuda_memory_gb,
         ready_to_execute=ready,
