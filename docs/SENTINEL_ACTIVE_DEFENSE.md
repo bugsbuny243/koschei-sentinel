@@ -8,11 +8,28 @@ Koschei Sentinel is designed as a human-protective, attacker-denying cyber defen
 
 Sentinel treats telemetry as a cyber state, not as isolated alerts. Identity, endpoint, process, credential, repository, CI/CD, artifact, cloud, wallet, transaction, protocol, malware, network and threat-actor observations are represented in a Cyber State Graph. Relations are explicitly classified as OBSERVED, INFERRED, PREDICTED or DISPROVED.
 
+A prediction is never silently promoted into an observation. A disproved path cannot advance the attack state.
+
+## Attack progression engine
+
+The deterministic Attack Progression Engine converts supported graph relations into attack-stage evidence. It can recognize reconnaissance, initial access, execution, persistence, privilege escalation, credential access, discovery, lateral movement, collection, command-and-control, supply-chain compromise, signer or wallet access, exfiltration and impact.
+
+For every active incident it produces:
+
+- evidence-backed active stages,
+- a current credible stage,
+- explicitly marked predicted next transitions,
+- progression confidence,
+- active and disproved relation IDs, and
+- ranked defensive cut points inside the protected graph.
+
+A defensive cut point is a protected entity where containment can break a large part of the hostile path. Candidate controls include credential revocation, endpoint isolation, malicious process termination, workload quarantine, pipeline pause, signer freeze, transaction hold and IOC blocking. Cut-point ranking combines downstream reach, relation confidence and observed-evidence support.
+
 ## Defense modes
 
 ### Guard
 
-Used when evidence is incomplete or attack confidence remains below the active-containment threshold. Sentinel gathers evidence, observes progression and may perform low-impact defensive blocking.
+Used when evidence is incomplete or attack confidence remains below the active-containment threshold. Sentinel gathers evidence, observes progression and may perform low-impact defensive blocking. Higher-impact cut points remain withheld.
 
 ### Combat
 
@@ -21,6 +38,20 @@ Used for a corroborated attack when hostile progression is active or protected a
 ### Siege
 
 Used for a high-confidence, active attack against critical assets with broad blast-radius risk. Sentinel may activate pre-defined emergency defensive policy in addition to Combat actions.
+
+## Deterministic authority bridge
+
+The Active Defense Planner connects progression analysis to defense authority:
+
+`Cyber State Graph -> Attack Progression -> Critical Asset Risk -> Attack Assessment -> Guard/Combat/Siege -> Permitted Cut Points`
+
+The reasoning model may propose hypotheses and enrich the graph, but it cannot bypass this authority bridge. The selected defense mode determines which containment actions are permitted. A lower-confidence incident can therefore expose a useful cut point while still withholding the corresponding higher-impact action until the evidence threshold is met.
+
+The command-line planner is:
+
+`sentinel-active-defense-plan --graph <graph.json> --critical <entity-id>`
+
+`--critical` may be repeated for protected critical entities such as production pipelines, treasury signers, control-plane workloads or other assets represented in the graph.
 
 ## Defense boundary
 
@@ -32,6 +63,6 @@ A model assertion alone does not become an execution fact. Authorized defense ex
 
 The intended loop is:
 
-`SEE -> CORRELATE -> UNDERSTAND -> PREDICT -> VERIFY -> CONTAIN -> VERIFY OUTCOME -> HUNT -> RECOVER -> LEARN`
+`SEE -> CORRELATE -> UNDERSTAND -> PREDICT -> VERIFY -> FIND CUT POINT -> CONTAIN -> VERIFY OUTCOME -> HUNT -> RECOVER -> LEARN`
 
 This doctrine is the execution counterpart to the Cyber Corpus v3 knowledge plane and the future Sentinel Cyber World Model.
