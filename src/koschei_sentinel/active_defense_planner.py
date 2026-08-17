@@ -88,7 +88,10 @@ def build_active_defense_plan(
             + ", ".join(unknown_critical)
         )
 
-    progression = analyze_attack_progression(graph)
+    progression = analyze_attack_progression(
+        graph,
+        focus_entity_ids=sorted(critical),
+    )
     active_ids = set(progression.active_relation_ids)
     evidence_count = _corroborating_evidence(graph, active_ids)
     critical_at_risk = _critical_asset_at_risk(graph, progression, critical)
@@ -120,6 +123,14 @@ def build_active_defense_plan(
     ]
 
     rationale = list(decision.rationale)
+    if progression.primary_component_id is not None:
+        rationale.append(
+            "attack progression and cut points are scoped to one primary connected attack component"
+        )
+    if len(progression.components) > 1:
+        rationale.append(
+            f"{len(progression.components)} independent active components were separated before defense planning"
+        )
     if critical_at_risk:
         rationale.append("active graph path touches a declared critical protected asset")
     if authorized:
