@@ -44,8 +44,8 @@ class DefenseWaveReassessmentReceipt(StrictModel):
     next_graph_sha256: str = Field(pattern=_DIGEST)
     next_plan_sha256: str = Field(pattern=_DIGEST)
     fresh_perception: Literal[True] = True
-    graph_changed: bool
-    plan_changed: bool
+    graph_changed: Literal[True] = True
+    plan_changed: Literal[True] = True
     reassessment_sha256: str = Field(pattern=_DIGEST)
 
 
@@ -137,9 +137,14 @@ def reassess_after_defense_wave(
         registry,
     )
     next_source_batch = next_bound_graph.receipt.source_batch_sha256
+    next_graph_sha = next_bound_graph.receipt.graph_sha256
     if next_source_batch == previous_source_batch:
         raise ValueError(
             "post-wave reassessment requires a fresh fused perception batch; stale telemetry replay rejected"
+        )
+    if next_graph_sha == previous_graph_sha:
+        raise ValueError(
+            "post-wave reassessment requires materially new graph evidence before another defense wave"
         )
 
     next_plan = build_assured_multi_incident_defense_plan(
@@ -152,6 +157,9 @@ def reassess_after_defense_wave(
     )
     previous_plan_sha = assured_multi_incident_plan_sha256(previous_plan)
     next_plan_sha = assured_multi_incident_plan_sha256(next_plan)
+    if next_plan_sha == previous_plan_sha:
+        raise ValueError("post-wave reassessment unexpectedly reproduced the stale assured plan")
+
     digest = _receipt_digest(
         previous_wave_sha256=completed_wave.wave_sha256,
         previous_schedule_sha256=previous_schedule.schedule_sha256,
@@ -159,7 +167,7 @@ def reassess_after_defense_wave(
         previous_source_batch_sha256=previous_source_batch,
         previous_graph_sha256=previous_graph_sha,
         next_source_batch_sha256=next_source_batch,
-        next_graph_sha256=next_bound_graph.receipt.graph_sha256,
+        next_graph_sha256=next_graph_sha,
         next_plan_sha256=next_plan_sha,
     )
     receipt = DefenseWaveReassessmentReceipt(
@@ -170,10 +178,8 @@ def reassess_after_defense_wave(
         previous_source_batch_sha256=previous_source_batch,
         previous_graph_sha256=previous_graph_sha,
         next_source_batch_sha256=next_source_batch,
-        next_graph_sha256=next_bound_graph.receipt.graph_sha256,
+        next_graph_sha256=next_graph_sha,
         next_plan_sha256=next_plan_sha,
-        graph_changed=next_bound_graph.receipt.graph_sha256 != previous_graph_sha,
-        plan_changed=next_plan_sha != previous_plan_sha,
         reassessment_sha256=digest,
     )
     return DefenseWaveReassessment(next_plan=next_plan, receipt=receipt)
