@@ -2,6 +2,7 @@
   "schema_version": "sentinel.cyber-sft-config.v1",
   "run_id": "sentinel-cyber-sft-qwen35-9b-smoke-001",
   "stage": "DEFENSE_REFLEX",
+  "execution_profile": "DENSE_SINGLE_GPU_QLORA",
   "base_model": "Qwen/Qwen3.5-9B-Base",
   "base_revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
   "corpus_dir": "build/cyber-training/defense-reflex-v2",
@@ -17,6 +18,8 @@
   "logging_steps": 5,
   "seed": 1701,
   "minimum_cuda_memory_gb": 14.0,
+  "gradient_checkpointing": true,
+  "enable_router_aux_loss": false,
   "quantization": {
     "bits": 4,
     "quant_type": "nf4",
