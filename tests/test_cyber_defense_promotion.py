@@ -62,8 +62,12 @@ def _multi(passed: bool = True) -> MultiIncidentCyberRangeSuiteReport:
         total_component_instances=2,
         contained_component_instances=2 if passed else 1,
         component_containment_rate=1.0 if passed else 0.5,
+        total_world_lines=2,
+        contained_world_lines=2 if passed else 1,
+        world_line_containment_rate=1.0 if passed else 0.5,
         cut_point_leakage_count=0,
         mean_containment_step=1.0,
+        mean_world_line_containment_tick_latency=0.0 if passed else 1.0,
         passed=passed,
         violations=[] if passed else ["fixture failure"],
         scenario_reports=[],
@@ -100,3 +104,4 @@ def test_promotion_evidence_is_deterministic() -> None:
     second = _evidence()
     assert first.model_dump() == second.model_dump()
     assert first.evidence_sha256 == second.evidence_sha256
+    assert first.world_line_containment_rate == 1.0
