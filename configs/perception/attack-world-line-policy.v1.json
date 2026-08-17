@@ -1,0 +1,7 @@
+{
+  "schema_version": "sentinel.attack-world-line-policy.v1",
+  "min_overlap_score": 0.25,
+  "entity_weight": 0.8,
+  "relation_weight": 0.2,
+  "protected_anchor_bonus": 0.35
+}
