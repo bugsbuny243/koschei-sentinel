@@ -162,10 +162,11 @@ class DefenseScheduleItem(StrictModel):
 
 
 class DefenseResourceSchedule(StrictModel):
-    schema_version: Literal["sentinel.defense-resource-schedule.v2"] = (
-        "sentinel.defense-resource-schedule.v2"
+    schema_version: Literal["sentinel.defense-resource-schedule.v3"] = (
+        "sentinel.defense-resource-schedule.v3"
     )
     graph_id: str
+    assured_multi_plan_sha256: str = Field(pattern=_DIGEST)
     schedule_id: str
     policy: DefenseResourcePolicy
     scheduling_context: DefenseSchedulingContext
@@ -197,6 +198,15 @@ class DefenseResourceSchedule(StrictModel):
             if used > self.policy.resource_capacities[resource]:
                 raise ValueError("scheduled wave exceeds a resource-class capacity")
         return self
+
+
+def assured_multi_incident_plan_sha256(plan: AssuredMultiIncidentDefensePlan) -> str:
+    payload = json.dumps(
+        plan.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _default_context(plan: AssuredMultiIncidentDefensePlan) -> DefenseSchedulingContext:
@@ -231,8 +241,6 @@ def _priority(
     wait_cycles: int,
     policy: DefenseResourcePolicy,
 ) -> float:
-    # The assured component priority already contains risk, criticality and effective
-    # mode. Scheduling can add local urgency and bounded aging but cannot raise authority.
     wait_bonus = min(policy.max_wait_boost, wait_cycles * policy.wait_cycle_boost)
     impact_bonus = 0.20 if predicted_impact else 0.0
     mode_tiebreak = 0.02 * _MODE_RANK[mode]
@@ -363,6 +371,7 @@ def _allocate(
 def _schedule_digest(
     *,
     graph_id: str,
+    assured_multi_plan_sha256: str,
     policy: DefenseResourcePolicy,
     context: DefenseSchedulingContext,
     scheduled: list[DefenseScheduleItem],
@@ -373,6 +382,7 @@ def _schedule_digest(
 ) -> str:
     payload = {
         "graph_id": graph_id,
+        "assured_multi_plan_sha256": assured_multi_plan_sha256,
         "policy": policy.model_dump(mode="json"),
         "context": context.model_dump(mode="json"),
         "scheduled": [row.model_dump(mode="json") for row in scheduled],
@@ -388,6 +398,7 @@ def _schedule_digest(
 def defense_resource_schedule_sha256(schedule: DefenseResourceSchedule) -> str:
     return _schedule_digest(
         graph_id=schedule.graph_id,
+        assured_multi_plan_sha256=schedule.assured_multi_plan_sha256,
         policy=schedule.policy,
         context=schedule.scheduling_context,
         scheduled=schedule.scheduled,
@@ -400,6 +411,7 @@ def defense_resource_schedule_sha256(schedule: DefenseResourceSchedule) -> str:
 
 def verify_defense_resource_schedule(
     schedule: DefenseResourceSchedule,
+    multi_plan: AssuredMultiIncidentDefensePlan | None = None,
 ) -> DefenseResourceSchedule:
     expected = defense_resource_schedule_sha256(schedule)
     if expected != schedule.schedule_sha256:
@@ -407,6 +419,11 @@ def verify_defense_resource_schedule(
     expected_id = f"schedule:{schedule.graph_id}:{expected[:20]}"
     if schedule.schedule_id != expected_id:
         raise ValueError("defense resource schedule_id does not match its digest")
+    if multi_plan is not None:
+        if schedule.graph_id != multi_plan.graph_id:
+            raise ValueError("defense resource schedule belongs to a different plan graph")
+        if schedule.assured_multi_plan_sha256 != assured_multi_incident_plan_sha256(multi_plan):
+            raise ValueError("defense resource schedule belongs to a different assured multi-incident plan")
     return schedule
 
 
@@ -421,6 +438,7 @@ def build_defense_resource_schedule(
     previous = state or DefenseSchedulerState()
     scheduling_context = context or _default_context(plan)
     _validate_context(plan, scheduling_context)
+    plan_sha = assured_multi_incident_plan_sha256(plan)
     candidates, no_action = _candidate_items(
         plan,
         previous,
@@ -485,6 +503,7 @@ def build_defense_resource_schedule(
     deferred.sort(key=lambda row: (-row.priority_score, row.scheduling_subject_id))
     digest = _schedule_digest(
         graph_id=plan.graph_id,
+        assured_multi_plan_sha256=plan_sha,
         policy=gate,
         context=scheduling_context,
         scheduled=scheduled,
@@ -495,6 +514,7 @@ def build_defense_resource_schedule(
     )
     schedule = DefenseResourceSchedule(
         graph_id=plan.graph_id,
+        assured_multi_plan_sha256=plan_sha,
         schedule_id=f"schedule:{plan.graph_id}:{digest[:20]}",
         policy=gate,
         scheduling_context=scheduling_context,
@@ -507,6 +527,7 @@ def build_defense_resource_schedule(
         schedule_sha256=digest,
         rationale=[
             "resource scheduling never grants authority beyond the assured component plan",
+            "the schedule is bound to the exact assured multi-incident plan digest",
             "only the first interception step of a component can enter a scheduling wave",
             "critical protected-asset components receive bounded reserved capacity",
             "per-control-plane capacities prevent one defensive subsystem from being overcommitted",
@@ -515,4 +536,4 @@ def build_defense_resource_schedule(
             "execution and post-action verification remain separate mandatory gates",
         ],
     )
-    return verify_defense_resource_schedule(schedule)
+    return verify_defense_resource_schedule(schedule, plan)
