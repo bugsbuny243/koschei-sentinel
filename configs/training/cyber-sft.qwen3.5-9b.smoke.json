@@ -5,7 +5,7 @@
   "execution_profile": "DENSE_SINGLE_GPU_QLORA",
   "base_model": "Qwen/Qwen3.5-9B-Base",
   "base_revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
-  "corpus_dir": "build/cyber-training/defense-reflex-v2",
+  "corpus_dir": "build/cyber-training/defense-reflex-v3",
   "output_dir": "build/cyber-training/runs/qwen35-9b-smoke-001",
   "input_adapter_dir": null,
   "max_sequence_length": 4096,
