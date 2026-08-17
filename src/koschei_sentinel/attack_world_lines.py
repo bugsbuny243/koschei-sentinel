@@ -9,13 +9,14 @@ from typing import Literal
 from pydantic import Field
 
 from koschei_sentinel.attack_progression import AttackComponentReport, analyze_attack_progression
-from koschei_sentinel.cyber_state_graph import CyberStateGraph
+from koschei_sentinel.cyber_state_graph import CyberStateGraph, EvidenceStatus
 from koschei_sentinel.models import StrictModel
 
 
 class WorldLineTransitionType(StrEnum):
     NEW = "NEW"
     CONTINUED = "CONTINUED"
+    REROUTED = "REROUTED"
     SPLIT = "SPLIT"
     MERGED = "MERGED"
     RECONFIGURED = "RECONFIGURED"
@@ -29,6 +30,7 @@ class AttackWorldLinePolicy(StrictModel):
     min_overlap_score: float = Field(default=0.25, ge=0.0, le=1.0)
     entity_weight: float = Field(default=0.8, ge=0.0, le=1.0)
     relation_weight: float = Field(default=0.2, ge=0.0, le=1.0)
+    protected_anchor_bonus: float = Field(default=0.35, ge=0.0, le=1.0)
 
 
 class WorldLineComponentObservation(StrictModel):
@@ -37,6 +39,7 @@ class WorldLineComponentObservation(StrictModel):
     component_id: str
     entity_ids: list[str]
     relation_ids: list[str]
+    protected_anchor_ids: list[str]
     current_stage: str | None
     risk_score: float = Field(ge=0.0, le=1.0)
 
@@ -49,6 +52,7 @@ class AttackWorldLineTransition(StrictModel):
     successor_world_line_ids: list[str]
     predecessor_component_ids: list[str]
     successor_component_ids: list[str]
+    shared_protected_anchor_ids: list[str]
     max_overlap_score: float = Field(ge=0.0, le=1.0)
 
 
@@ -58,6 +62,7 @@ class AttackWorldLineTimeline(StrictModel):
     )
     stream_id: str = Field(min_length=3, max_length=256)
     ticks: int = Field(ge=1)
+    protected_anchor_entity_ids: list[str]
     policy: AttackWorldLinePolicy
     observations: list[WorldLineComponentObservation]
     transitions: list[AttackWorldLineTransition]
@@ -91,6 +96,27 @@ def component_overlap_score(
     )
 
 
+def _component_protected_anchors(
+    graph: CyberStateGraph,
+    component: AttackComponentReport,
+    protected_anchor_entity_ids: set[str],
+) -> set[str]:
+    if not protected_anchor_entity_ids:
+        return set()
+    component_entities = set(component.entity_ids)
+    anchors = component_entities & protected_anchor_entity_ids
+    for relation in graph.relations:
+        if relation.status is EvidenceStatus.DISPROVED or relation.confidence < 0.5:
+            continue
+        if relation.source_entity_id in component_entities:
+            if relation.target_entity_id in protected_anchor_entity_ids:
+                anchors.add(relation.target_entity_id)
+        if relation.target_entity_id in component_entities:
+            if relation.source_entity_id in protected_anchor_entity_ids:
+                anchors.add(relation.source_entity_id)
+    return anchors
+
+
 def _new_world_line_id(
     *,
     stream_id: str,
@@ -107,62 +133,78 @@ def _new_world_line_id(
 def _bipartite_groups(
     previous: list[AttackComponentReport],
     current: list[AttackComponentReport],
+    previous_anchors: dict[str, set[str]],
+    current_anchors: dict[str, set[str]],
     policy: AttackWorldLinePolicy,
-) -> tuple[list[tuple[set[int], set[int]]], dict[tuple[int, int], float]]:
+) -> tuple[
+    list[tuple[set[int], set[int]]],
+    dict[tuple[int, int], float],
+    set[tuple[int, int]],
+]:
     edge_scores: dict[tuple[int, int], float] = {}
-    prev_to_curr: dict[int, set[int]] = defaultdict(set)
-    curr_to_prev: dict[int, set[int]] = defaultdict(set)
+    anchor_only_edges: set[tuple[int, int]] = set()
+    adjacency: dict[tuple[str, int], set[tuple[str, int]]] = defaultdict(set)
+
     for p_index, p_component in enumerate(previous):
         for c_index, c_component in enumerate(current):
-            score = component_overlap_score(p_component, c_component, policy)
+            base_score = component_overlap_score(p_component, c_component, policy)
+            shared_anchors = (
+                previous_anchors.get(p_component.component_id, set())
+                & current_anchors.get(c_component.component_id, set())
+            )
+            score = min(
+                1.0,
+                base_score + (policy.protected_anchor_bonus if shared_anchors else 0.0),
+            )
             if score < policy.min_overlap_score:
                 continue
-            edge_scores[(p_index, c_index)] = score
-            prev_to_curr[p_index].add(c_index)
-            curr_to_prev[c_index].add(p_index)
+            edge = (p_index, c_index)
+            edge_scores[edge] = score
+            if base_score < policy.min_overlap_score and shared_anchors:
+                anchor_only_edges.add(edge)
+            p_node = ("p", p_index)
+            c_node = ("c", c_index)
+            adjacency[p_node].add(c_node)
+            adjacency[c_node].add(p_node)
 
     groups: list[tuple[set[int], set[int]]] = []
-    seen_prev: set[int] = set()
-    seen_curr: set[int] = set()
-    for start in sorted(set(prev_to_curr) | set(curr_to_prev)):
-        if start in seen_prev and start in seen_curr:
+    seen: set[tuple[str, int]] = set()
+    for start in sorted(adjacency):
+        if start in seen:
             continue
         p_group: set[int] = set()
         c_group: set[int] = set()
-        queue: deque[tuple[str, int]] = deque()
-        if start in prev_to_curr and start not in seen_prev:
-            queue.append(("p", start))
-        elif start in curr_to_prev and start not in seen_curr:
-            queue.append(("c", start))
-        else:
-            continue
+        queue: deque[tuple[str, int]] = deque([start])
         while queue:
-            side, index = queue.popleft()
+            node = queue.popleft()
+            if node in seen:
+                continue
+            seen.add(node)
+            side, index = node
             if side == "p":
-                if index in p_group:
-                    continue
                 p_group.add(index)
-                seen_prev.add(index)
-                for neighbor in sorted(prev_to_curr.get(index, set())):
-                    queue.append(("c", neighbor))
             else:
-                if index in c_group:
-                    continue
                 c_group.add(index)
-                seen_curr.add(index)
-                for neighbor in sorted(curr_to_prev.get(index, set())):
-                    queue.append(("p", neighbor))
-        if p_group or c_group:
-            groups.append((p_group, c_group))
-    return groups, edge_scores
+            for neighbor in sorted(adjacency.get(node, set())):
+                if neighbor not in seen:
+                    queue.append(neighbor)
+        groups.append((p_group, c_group))
+    return groups, edge_scores, anchor_only_edges
 
 
-def _transition_type(previous_count: int, current_count: int) -> WorldLineTransitionType:
-    if previous_count == 1 and current_count == 1:
+def _transition_type(
+    p_group: set[int],
+    c_group: set[int],
+    anchor_only_edges: set[tuple[int, int]],
+) -> WorldLineTransitionType:
+    if len(p_group) == 1 and len(c_group) == 1:
+        edge = (next(iter(p_group)), next(iter(c_group)))
+        if edge in anchor_only_edges:
+            return WorldLineTransitionType.REROUTED
         return WorldLineTransitionType.CONTINUED
-    if previous_count == 1 and current_count > 1:
+    if len(p_group) == 1 and len(c_group) > 1:
         return WorldLineTransitionType.SPLIT
-    if previous_count > 1 and current_count == 1:
+    if len(p_group) > 1 and len(c_group) == 1:
         return WorldLineTransitionType.MERGED
     return WorldLineTransitionType.RECONFIGURED
 
@@ -170,12 +212,14 @@ def _transition_type(previous_count: int, current_count: int) -> WorldLineTransi
 def _timeline_digest(
     *,
     stream_id: str,
+    protected_anchor_entity_ids: list[str],
     policy: AttackWorldLinePolicy,
     observations: list[WorldLineComponentObservation],
     transitions: list[AttackWorldLineTransition],
 ) -> str:
     payload = {
         "stream_id": stream_id,
+        "protected_anchor_entity_ids": protected_anchor_entity_ids,
         "policy": policy.model_dump(mode="json"),
         "observations": [row.model_dump(mode="json") for row in observations],
         "transitions": [row.model_dump(mode="json") for row in transitions],
@@ -188,6 +232,7 @@ def build_attack_world_line_timeline(
     graph_snapshots: list[CyberStateGraph],
     *,
     stream_id: str,
+    protected_anchor_entity_ids: list[str] | None = None,
     policy: AttackWorldLinePolicy | None = None,
 ) -> AttackWorldLineTimeline:
     if not graph_snapshots:
@@ -195,9 +240,17 @@ def build_attack_world_line_timeline(
     gate = policy or AttackWorldLinePolicy()
     if gate.entity_weight + gate.relation_weight <= 0.0:
         raise ValueError("attack world-line policy requires positive overlap weights")
+    anchors = set(protected_anchor_entity_ids or [])
 
     component_ticks = [
         analyze_attack_progression(graph).components for graph in graph_snapshots
+    ]
+    anchor_ticks = [
+        {
+            component.component_id: _component_protected_anchors(graph, component, anchors)
+            for component in components
+        }
+        for graph, components in zip(graph_snapshots, component_ticks, strict=True)
     ]
     observations: list[WorldLineComponentObservation] = []
     transitions: list[AttackWorldLineTransition] = []
@@ -211,6 +264,7 @@ def build_attack_world_line_timeline(
             predecessors=[],
         )
         previous_line_by_component[component.component_id] = line_id
+        component_anchors = sorted(anchor_ticks[0].get(component.component_id, set()))
         observations.append(
             WorldLineComponentObservation(
                 tick=0,
@@ -218,6 +272,7 @@ def build_attack_world_line_timeline(
                 component_id=component.component_id,
                 entity_ids=component.entity_ids,
                 relation_ids=component.active_relation_ids,
+                protected_anchor_ids=component_anchors,
                 current_stage=component.current_stage.value if component.current_stage else None,
                 risk_score=component.risk_score,
             )
@@ -231,6 +286,7 @@ def build_attack_world_line_timeline(
                 successor_world_line_ids=[line_id],
                 predecessor_component_ids=[],
                 successor_component_ids=[component.component_id],
+                shared_protected_anchor_ids=component_anchors,
                 max_overlap_score=0.0,
             )
         )
@@ -238,7 +294,13 @@ def build_attack_world_line_timeline(
     for tick in range(1, len(component_ticks)):
         previous = component_ticks[tick - 1]
         current = component_ticks[tick]
-        groups, scores = _bipartite_groups(previous, current, gate)
+        groups, scores, anchor_only_edges = _bipartite_groups(
+            previous,
+            current,
+            anchor_ticks[tick - 1],
+            anchor_ticks[tick],
+            gate,
+        )
         linked_prev = {index for group, _ in groups for index in group}
         linked_curr = {index for _, group in groups for index in group}
         current_line_by_component: dict[str, str] = {}
@@ -248,12 +310,22 @@ def build_attack_world_line_timeline(
                 previous_line_by_component[previous[index].component_id]
                 for index in p_group
             )
-            transition_type = _transition_type(len(p_group), len(c_group))
+            transition_type = _transition_type(p_group, c_group, anchor_only_edges)
             successors: list[str] = []
             successor_components: list[str] = []
+            group_shared_anchors: set[str] = set()
+            for p_index in p_group:
+                for c_index in c_group:
+                    group_shared_anchors.update(
+                        anchor_ticks[tick - 1].get(previous[p_index].component_id, set())
+                        & anchor_ticks[tick].get(current[c_index].component_id, set())
+                    )
             for c_index in sorted(c_group):
                 component = current[c_index]
-                if transition_type is WorldLineTransitionType.CONTINUED:
+                if transition_type in {
+                    WorldLineTransitionType.CONTINUED,
+                    WorldLineTransitionType.REROUTED,
+                }:
                     line_id = predecessors[0]
                 else:
                     line_id = _new_world_line_id(
@@ -272,6 +344,9 @@ def build_attack_world_line_timeline(
                         component_id=component.component_id,
                         entity_ids=component.entity_ids,
                         relation_ids=component.active_relation_ids,
+                        protected_anchor_ids=sorted(
+                            anchor_ticks[tick].get(component.component_id, set())
+                        ),
                         current_stage=(
                             component.current_stage.value if component.current_stage else None
                         ),
@@ -295,6 +370,7 @@ def build_attack_world_line_timeline(
                         previous[index].component_id for index in p_group
                     ),
                     successor_component_ids=sorted(successor_components),
+                    shared_protected_anchor_ids=sorted(group_shared_anchors),
                     max_overlap_score=max(group_scores, default=0.0),
                 )
             )
@@ -312,6 +388,7 @@ def build_attack_world_line_timeline(
                     successor_world_line_ids=[],
                     predecessor_component_ids=[component.component_id],
                     successor_component_ids=[],
+                    shared_protected_anchor_ids=[],
                     max_overlap_score=0.0,
                 )
             )
@@ -326,6 +403,7 @@ def build_attack_world_line_timeline(
                 predecessors=[],
             )
             current_line_by_component[component.component_id] = line_id
+            component_anchors = sorted(anchor_ticks[tick].get(component.component_id, set()))
             observations.append(
                 WorldLineComponentObservation(
                     tick=tick,
@@ -333,6 +411,7 @@ def build_attack_world_line_timeline(
                     component_id=component.component_id,
                     entity_ids=component.entity_ids,
                     relation_ids=component.active_relation_ids,
+                    protected_anchor_ids=component_anchors,
                     current_stage=component.current_stage.value if component.current_stage else None,
                     risk_score=component.risk_score,
                 )
@@ -346,6 +425,7 @@ def build_attack_world_line_timeline(
                     successor_world_line_ids=[line_id],
                     predecessor_component_ids=[],
                     successor_component_ids=[component.component_id],
+                    shared_protected_anchor_ids=component_anchors,
                     max_overlap_score=0.0,
                 )
             )
@@ -361,8 +441,10 @@ def build_attack_world_line_timeline(
             tuple(row.successor_world_line_ids),
         )
     )
+    sorted_anchors = sorted(anchors)
     digest = _timeline_digest(
         stream_id=stream_id,
+        protected_anchor_entity_ids=sorted_anchors,
         policy=gate,
         observations=observations,
         transitions=transitions,
@@ -370,6 +452,7 @@ def build_attack_world_line_timeline(
     return AttackWorldLineTimeline(
         stream_id=stream_id,
         ticks=len(graph_snapshots),
+        protected_anchor_entity_ids=sorted_anchors,
         policy=gate,
         observations=observations,
         transitions=transitions,
