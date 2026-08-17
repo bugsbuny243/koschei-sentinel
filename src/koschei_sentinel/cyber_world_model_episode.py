@@ -58,6 +58,7 @@ class CyberWorldModelEpisode(StrictModel):
     scenario_id: str
     truth: str
     graph_id: str
+    source_report_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     snapshots: list[WorldModelSnapshot] = Field(min_length=1, max_length=128)
     transitions: list[WorldModelTransition] = Field(default_factory=list, max_length=127)
     episode_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -109,12 +110,14 @@ def _episode_digest(
     *,
     scenario_id: str,
     graph_id: str,
+    source_report_sha256: str,
     snapshots: list[WorldModelSnapshot],
     transitions: list[WorldModelTransition],
 ) -> str:
     payload = {
         "scenario_id": scenario_id,
         "graph_id": graph_id,
+        "source_report_sha256": source_report_sha256,
         "snapshots": [row.model_dump(mode="json") for row in snapshots],
         "transitions": [row.model_dump(mode="json") for row in transitions],
     }
@@ -133,6 +136,9 @@ def build_world_model_episode(
     if len(scenario.graph_snapshots) != len(report.ticks):
         raise ValueError("scenario/report tick counts do not match")
 
+    source_report_sha256 = hashlib.sha256(
+        report.model_dump_json().encode("utf-8")
+    ).hexdigest()
     snapshots: list[WorldModelSnapshot] = []
     graph_ids = {graph.graph_id for graph in scenario.graph_snapshots}
     if len(graph_ids) != 1:
@@ -191,6 +197,7 @@ def build_world_model_episode(
     digest = _episode_digest(
         scenario_id=scenario.scenario_id,
         graph_id=graph_id,
+        source_report_sha256=source_report_sha256,
         snapshots=snapshots,
         transitions=transitions,
     )
@@ -199,6 +206,7 @@ def build_world_model_episode(
         scenario_id=scenario.scenario_id,
         truth=scenario.truth.value,
         graph_id=graph_id,
+        source_report_sha256=source_report_sha256,
         snapshots=snapshots,
         transitions=transitions,
         episode_sha256=digest,
