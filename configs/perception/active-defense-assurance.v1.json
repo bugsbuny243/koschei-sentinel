@@ -1,0 +1,5 @@
+{
+  "schema_version": "sentinel.active-defense-assurance-policy.v1",
+  "min_independent_domains_combat": 2,
+  "min_independent_domains_siege": 3
+}
