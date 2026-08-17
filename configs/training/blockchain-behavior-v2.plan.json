@@ -1,0 +1,128 @@
+{
+  "schema_version": "sentinel.blockchain-training-plan.v2",
+  "run_id": "koschei-sentinel-blockchain-behavior-v2",
+  "status": "planned_not_started",
+  "base": {
+    "model": "Qwen/Qwen2.5-Coder-7B",
+    "revision": "0396a76181e127dfc13e5c5ec48a8cee09938b02",
+    "starting_adapter": "koschei-sentinel-blockchain-run-001",
+    "starting_adapter_evidence": {
+      "heldout_base_loss": 1.260200,
+      "heldout_adapter_loss": 1.188669,
+      "heldout_relative_change_pct": -5.676,
+      "behavior_base_mean": 0.7000,
+      "behavior_adapter_mean": 0.6833,
+      "behavior_mean_delta": -0.0167,
+      "behavior_wins": 2,
+      "behavior_ties": 6,
+      "behavior_losses": 2
+    }
+  },
+  "objective": {
+    "primary": "improve evidence-grounded Web3 security behavior without erasing the measured blockchain-domain modeling gain",
+    "must_improve": [
+      "grounding",
+      "abstention",
+      "uncertainty_calibration",
+      "defensive_action_selection",
+      "false_positive_control",
+      "signing_payload_integrity",
+      "privileged_access_incident_reasoning",
+      "rpc_state_disagreement",
+      "supply_chain_provenance",
+      "bridge_domain_separation"
+    ],
+    "must_not_regress": [
+      "clean_no_overclaim",
+      "move_capability_reasoning",
+      "heldout_blockchain_loss"
+    ]
+  },
+  "data_policy": {
+    "technical_corpus_role": "retention_replay",
+    "behavior_corpus_role": "supervised_instruction",
+    "no_eval_reuse": true,
+    "no_benchmark_answer_training": true,
+    "group_level_split_required": true,
+    "deduplicate_against_eval": true,
+    "synthetic_cases_must_be_new_variants": true,
+    "target_behavior_examples": 2400,
+    "minimum_behavior_examples": 1200,
+    "retention_replay_examples": 400,
+    "target_mix": {
+      "grounding_and_abstention": 0.25,
+      "signing_and_wallet_integrity": 0.15,
+      "privileged_access_and_keys": 0.15,
+      "bridge_cross_chain": 0.10,
+      "rpc_consensus_state": 0.10,
+      "supply_chain_build_provenance": 0.10,
+      "contract_and_capability_controls": 0.10,
+      "clean_negative_no_overclaim": 0.05
+    }
+  },
+  "example_contract": {
+    "required_fields": [
+      "case_id",
+      "facts",
+      "supported_findings",
+      "unsupported_conclusions",
+      "uncertainty",
+      "defensive_actions",
+      "chain_family",
+      "threat_domains"
+    ],
+    "answer_rules": [
+      "distinguish observed facts from inference",
+      "never convert suspicion into confirmed compromise",
+      "state missing evidence explicitly",
+      "prefer reversible containment before destructive action",
+      "do not claim safety from absence of observed anomalies",
+      "do not attribute an attacker without evidence",
+      "do not override deterministic policy or verdicts"
+    ]
+  },
+  "training": {
+    "method": "QLoRA_SFT_continuation",
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ],
+    "sequence_length": 2048,
+    "learning_rate": 0.00005,
+    "epochs": 1.5,
+    "gradient_accumulation_steps": 8,
+    "seed": 1701,
+    "checkpoint_every_steps": 100,
+    "early_stop_on_behavior_regression": true
+  },
+  "promotion_gate": {
+    "heldout_domain": {
+      "adapter_loss_must_not_exceed": 1.188669,
+      "preferred_relative_improvement_vs_v1_pct": 1.0
+    },
+    "behavior": {
+      "base_reference_mean": 0.7000,
+      "v1_reference_mean": 0.6833,
+      "minimum_mean": 0.7500,
+      "target_mean": 0.8000,
+      "max_losses_vs_base": 1,
+      "clean_no_overclaim_min_score": 0.75,
+      "move_capability_min_score": 1.0
+    },
+    "sentinel_hard_gate": {
+      "authority": 1.0,
+      "grounding": 1.0,
+      "abstention": 1.0,
+      "privacy": 1.0
+    },
+    "automatic_promotion": false
+  }
+}
