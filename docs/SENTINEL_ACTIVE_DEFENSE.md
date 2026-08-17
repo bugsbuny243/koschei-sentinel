@@ -51,7 +51,7 @@ The command-line planner is:
 
 `sentinel-active-defense-plan --graph <graph.json> --critical <entity-id>`
 
-`--critical` may be repeated for protected critical entities such as production pipelines, treasury signers, control-plane workloads or other assets represented in the graph.
+`--critical` may be repeated for protected critical entities such as production pipelines, treasury signers, control-plane workloads or other assets represented in the graph. The command emits one bundle containing the active-defense assessment, interception sequence and initial execution state.
 
 ## Interception sequencing
 
@@ -66,6 +66,18 @@ This produces a two-part containment strategy:
 
 Every interception step requires post-action verification. A high-effect cut point may end the immediate sequence when verification proves that the hostile progression has been broken, but Sentinel must continue hunting for displaced or alternate attacker paths.
 
+## Verified sequential execution
+
+An interception plan is not permission to fire every containment action simultaneously. Sentinel executes the plan as a verified sequence:
+
+`PENDING -> AUTHORIZED -> EXECUTED -> VERIFIED_SUCCEEDED | VERIFIED_FAILED`
+
+Only one interception step may be active at a time. Authorization requires precondition evidence. Execution requires a connector or control-plane receipt. Verification requires fresh post-action evidence. Sentinel cannot authorize the next cut point while the current step remains merely AUTHORIZED or EXECUTED.
+
+When a verified high-effect cut point meets the plan's stop condition, remaining immediate containment steps are marked SKIPPED and the incident is considered contained for that path. Containment is not equivalent to incident closure: Sentinel must re-read the Cyber State Graph and hunt for alternate or displaced hostile paths before recovery is complete.
+
+A failed verification does not become a success by model assertion. The next authorized cut point may be attempted only after the failed outcome is recorded with evidence.
+
 ## Defense boundary
 
 Active defense applies to systems, identities, endpoints, networks, cloud resources, wallets, signers, pipelines and protocols that the defender is authorized to protect. Sentinel is not designed to retaliate against or compromise external systems. The objective is rapid containment and recovery, not hack-back.
@@ -76,6 +88,6 @@ A model assertion alone does not become an execution fact. Authorized defense ex
 
 The intended loop is:
 
-`SEE -> CORRELATE -> UNDERSTAND -> PREDICT -> VERIFY -> FIND CUT POINT -> INTERCEPT -> VERIFY OUTCOME -> COLLAPSE PATH -> HUNT -> RECOVER -> LEARN`
+`SEE -> CORRELATE -> UNDERSTAND -> PREDICT -> VERIFY -> FIND CUT POINT -> INTERCEPT -> VERIFY OUTCOME -> COLLAPSE PATH -> RE-READ GRAPH -> HUNT -> RECOVER -> LEARN`
 
 This doctrine is the execution counterpart to the Cyber Corpus v3 knowledge plane and the future Sentinel Cyber World Model.
