@@ -3,15 +3,27 @@ import pytest
 from koschei_sentinel.assured_multi_incident_defense import (
     build_assured_multi_incident_defense_plan,
 )
+from koschei_sentinel.attack_world_lines import (
+    AttackWorldLinePolicy,
+    AttackWorldLineTimeline,
+    WorldLineComponentObservation,
+)
 from koschei_sentinel.cyber_perception import TelemetrySourceType
 from koschei_sentinel.cyber_state_graph import CyberEntityType
 from koschei_sentinel.defense_connector_contract import ProtectedScope
+from koschei_sentinel.defense_load_range import (
+    DefenseLoadGatePolicy,
+    run_defense_load_range,
+)
 from koschei_sentinel.defense_resource_scheduler import (
     DefenseResourceClass,
     DefenseResourcePolicy,
     DefenseSchedulerState,
     SchedulingDisposition,
     build_defense_resource_schedule,
+)
+from koschei_sentinel.defense_scheduling_lineage import (
+    build_world_line_scheduling_context,
 )
 from koschei_sentinel.perception_adapter_sdk import (
     DeclarativeAdapterSpec,
@@ -51,8 +63,14 @@ def _adapter(
                 adapter_version="1",
                 supported_source_types=[source_type],
             ),
-            source=EntityMappingSpec(id_field=source_field, entity_type=source_entity_type),
-            target=EntityMappingSpec(id_field=target_field, entity_type=target_entity_type),
+            source=EntityMappingSpec(
+                id_field=source_field,
+                entity_type=source_entity_type,
+            ),
+            target=EntityMappingSpec(
+                id_field=target_field,
+                entity_type=target_entity_type,
+            ),
             relation_type=relation_type,
         )
     )
@@ -106,7 +124,10 @@ def _component(prefix: str, chars: tuple[str, str, str]):
             source_entity_type=CyberEntityType.CREDENTIAL,
             target_field="device_id",
             target_entity_type=CyberEntityType.DEVICE,
-            fields={"credential_id": f"credential:{prefix}", "device_id": f"device:{prefix}"},
+            fields={
+                "credential_id": f"credential:{prefix}",
+                "device_id": f"device:{prefix}",
+            },
             payload_char=chars[0],
         ),
         _result(
@@ -118,7 +139,10 @@ def _component(prefix: str, chars: tuple[str, str, str]):
             source_entity_type=CyberEntityType.DEVICE,
             target_field="pipeline_id",
             target_entity_type=CyberEntityType.PIPELINE,
-            fields={"device_id": f"device:{prefix}", "pipeline_id": f"pipeline:{prefix}"},
+            fields={
+                "device_id": f"device:{prefix}",
+                "pipeline_id": f"pipeline:{prefix}",
+            },
             payload_char=chars[1],
         ),
         _result(
@@ -130,7 +154,10 @@ def _component(prefix: str, chars: tuple[str, str, str]):
             source_entity_type=CyberEntityType.PIPELINE,
             target_field="wallet_id",
             target_entity_type=CyberEntityType.WALLET,
-            fields={"pipeline_id": f"pipeline:{prefix}", "wallet_id": f"wallet:{prefix}"},
+            fields={
+                "pipeline_id": f"pipeline:{prefix}",
+                "wallet_id": f"wallet:{prefix}",
+            },
             payload_char=chars[2],
         ),
     ]
@@ -168,7 +195,9 @@ def _plan(*, critical: list[str], b_single_domain: bool = False):
         registry_id="registry:scheduler",
         enrollments=enrollments,
     )
-    admitted = [admit_perception_adapter_result(result, registry) for _, result in rows]
+    admitted = [
+        admit_perception_adapter_result(result, registry) for _, result in rows
+    ]
     fused = fuse_admitted_perception_batches(
         admitted,
         registry=registry,
@@ -202,6 +231,36 @@ def _scope_for(item) -> ProtectedScope:
         scope_id=f"scope:{item.component_id}",
         entity_ids=[item.target_entity_id],
         permitted_actions=[item.action],
+    )
+
+
+def _timeline_for_plan(plan) -> AttackWorldLineTimeline:
+    observations = []
+    anchors = set()
+    for index, component in enumerate(plan.component_plans):
+        active = component.assured_plan.active_defense_plan
+        stage = active.progression.current_stage
+        anchors.update(component.critical_entity_ids)
+        observations.append(
+            WorldLineComponentObservation(
+                tick=0,
+                world_line_id=f"world-line:scheduler:{index}",
+                component_id=component.component_id,
+                entity_ids=component.entity_ids,
+                relation_ids=active.progression.active_relation_ids,
+                protected_anchor_ids=component.critical_entity_ids,
+                current_stage=stage.value if stage else None,
+                risk_score=component.component_risk_score,
+            )
+        )
+    return AttackWorldLineTimeline(
+        stream_id="stream:scheduler",
+        ticks=1,
+        protected_anchor_entity_ids=sorted(anchors),
+        policy=AttackWorldLinePolicy(),
+        observations=observations,
+        transitions=[],
+        timeline_sha256="9" * 64,
     )
 
 
@@ -249,6 +308,21 @@ def test_deferred_component_ages_and_wins_next_equal_capacity_wave() -> None:
     assert second.scheduled[0].component_id == deferred_component
     assert second.scheduled[0].wait_cycles == 1
     assert second.next_state.wait_cycles_by_subject[deferred_subject] == 0
+
+
+def test_world_line_context_replaces_ephemeral_component_as_wait_subject() -> None:
+    plan = _plan(critical=[])
+    timeline = _timeline_for_plan(plan)
+    context = build_world_line_scheduling_context(plan, timeline, tick=0)
+    schedule = build_defense_resource_schedule(
+        plan,
+        policy=_policy(total=1, signer=1),
+        context=context,
+    )
+
+    assert schedule.scheduling_context.world_line_timeline_sha256 == timeline.timeline_sha256
+    assert schedule.scheduled[0].scheduling_subject_id.startswith("world-line:scheduler:")
+    assert schedule.scheduled[0].scheduling_subject_id != schedule.scheduled[0].component_id
 
 
 def test_guard_component_without_authorized_cut_point_consumes_no_resource_slot() -> None:
@@ -332,3 +406,39 @@ def test_tampered_schedule_digest_is_rejected_before_connector_generation() -> N
             precondition_evidence_ids=["evidence:scheduler"],
             dry_run=True,
         )
+
+
+def test_defense_load_range_services_two_critical_signers_in_two_waves() -> None:
+    plan = _plan(critical=["wallet:a", "wallet:b"])
+    report = run_defense_load_range(
+        plan,
+        resource_policy=_policy(total=1, signer=1, reserved=1),
+        gate_policy=DefenseLoadGatePolicy(
+            max_waves=4,
+            service_coverage_min=1.0,
+            critical_first_service_wave_max=1,
+            max_wait_cycles_allowed=2,
+            capacity_violation_max=0,
+        ),
+    )
+
+    assert report.passed is True
+    assert report.serviced_components == 2
+    assert report.service_coverage == 1.0
+    assert report.waves_run == 2
+    assert report.critical_max_first_service_wave == 1
+    assert report.max_resource_utilization[DefenseResourceClass.SIGNER] == 1.0
+
+
+def test_defense_load_range_fails_closed_when_signer_capacity_is_zero() -> None:
+    plan = _plan(critical=["wallet:a", "wallet:b"])
+    report = run_defense_load_range(
+        plan,
+        resource_policy=_policy(total=2, signer=0, reserved=0),
+        gate_policy=DefenseLoadGatePolicy(max_waves=4),
+    )
+
+    assert report.passed is False
+    assert report.service_coverage == 0.0
+    assert len(report.critical_starved_component_ids) == 2
+    assert report.waves_run == 1
