@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from koschei_sentinel.assured_active_defense import ActiveDefenseAssurancePolicy
 from koschei_sentinel.assured_multi_incident_defense import (
@@ -30,6 +30,32 @@ from koschei_sentinel.perception_source_registry import (
 _DIGEST = r"^[a-f0-9]{64}$"
 
 
+def _receipt_digest(
+    *,
+    previous_wave_sha256: str,
+    previous_schedule_sha256: str,
+    previous_plan_sha256: str,
+    previous_source_batch_sha256: str,
+    previous_graph_sha256: str,
+    next_source_batch_sha256: str,
+    next_graph_sha256: str,
+    next_plan_sha256: str,
+) -> str:
+    payload = "|".join(
+        [
+            previous_wave_sha256,
+            previous_schedule_sha256,
+            previous_plan_sha256,
+            previous_source_batch_sha256,
+            previous_graph_sha256,
+            next_source_batch_sha256,
+            next_graph_sha256,
+            next_plan_sha256,
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 class DefenseWaveReassessmentReceipt(StrictModel):
     schema_version: Literal["sentinel.defense-wave-reassessment-receipt.v1"] = (
         "sentinel.defense-wave-reassessment-receipt.v1"
@@ -48,6 +74,22 @@ class DefenseWaveReassessmentReceipt(StrictModel):
     plan_changed: Literal[True] = True
     reassessment_sha256: str = Field(pattern=_DIGEST)
 
+    @model_validator(mode="after")
+    def receipt_digest_is_valid(self) -> "DefenseWaveReassessmentReceipt":
+        expected = _receipt_digest(
+            previous_wave_sha256=self.previous_wave_sha256,
+            previous_schedule_sha256=self.previous_schedule_sha256,
+            previous_plan_sha256=self.previous_plan_sha256,
+            previous_source_batch_sha256=self.previous_source_batch_sha256,
+            previous_graph_sha256=self.previous_graph_sha256,
+            next_source_batch_sha256=self.next_source_batch_sha256,
+            next_graph_sha256=self.next_graph_sha256,
+            next_plan_sha256=self.next_plan_sha256,
+        )
+        if expected != self.reassessment_sha256:
+            raise ValueError("defense wave reassessment receipt digest mismatch")
+        return self
+
 
 class DefenseWaveReassessment(StrictModel):
     schema_version: Literal["sentinel.defense-wave-reassessment.v1"] = (
@@ -55,6 +97,12 @@ class DefenseWaveReassessment(StrictModel):
     )
     next_plan: AssuredMultiIncidentDefensePlan
     receipt: DefenseWaveReassessmentReceipt
+
+    @model_validator(mode="after")
+    def next_plan_is_bound_to_receipt(self) -> "DefenseWaveReassessment":
+        if assured_multi_incident_plan_sha256(self.next_plan) != self.receipt.next_plan_sha256:
+            raise ValueError("defense wave reassessment next plan digest mismatch")
+        return self
 
 
 def _previous_binding(plan: AssuredMultiIncidentDefensePlan) -> tuple[str, str]:
@@ -82,32 +130,6 @@ def _validate_next_perception(
         raise ValueError("next perception assurance belongs to a different source registry")
     if assurance.registry_sha256 != perception_registry_sha256(registry):
         raise ValueError("next perception assurance registry digest is stale or mismatched")
-
-
-def _receipt_digest(
-    *,
-    previous_wave_sha256: str,
-    previous_schedule_sha256: str,
-    previous_plan_sha256: str,
-    previous_source_batch_sha256: str,
-    previous_graph_sha256: str,
-    next_source_batch_sha256: str,
-    next_graph_sha256: str,
-    next_plan_sha256: str,
-) -> str:
-    payload = "|".join(
-        [
-            previous_wave_sha256,
-            previous_schedule_sha256,
-            previous_plan_sha256,
-            previous_source_batch_sha256,
-            previous_graph_sha256,
-            next_source_batch_sha256,
-            next_graph_sha256,
-            next_plan_sha256,
-        ]
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def reassess_after_defense_wave(
