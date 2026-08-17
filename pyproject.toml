@@ -46,6 +46,7 @@ sentinel-compare = "koschei_sentinel.matrix_cli:main"
 sentinel-train = "koschei_sentinel.train_cli:main"
 sentinel-autotrain = "koschei_sentinel.autotrain_cli:main"
 sentinel-pretrain-audit = "koschei_sentinel.pretraining_corpus_cli:main"
+sentinel-blockchain-corpus-audit = "koschei_sentinel.blockchain_security_corpus_cli:main"
 sentinel-cyber-catalog-audit = "koschei_sentinel.cyber_corpus_catalog_cli:main"
 sentinel-cyber-artifact-audit = "koschei_sentinel.cyber_artifact_audit_cli:main"
 sentinel-cyber-extract = "koschei_sentinel.cyber_source_extractors_cli:main"
@@ -62,6 +63,7 @@ sentinel-shadow-baseline = "koschei_sentinel.shadow_baseline_cli:main"
 sentinel-owner-rotation = "koschei_sentinel.owner_rotation_cli:main"
 sentinel-curriculum-check = "koschei_sentinel.curriculum_cli:main"
 sentinel-language-foundation = "koschei_sentinel.language_foundation_cli:main"
+sentinel-language-train = "koschei_sentinel.language_training_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
