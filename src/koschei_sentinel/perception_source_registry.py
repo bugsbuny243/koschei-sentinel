@@ -6,13 +6,13 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from koschei_sentinel.cyber_perception import PerceptionBatch, TelemetrySourceType
-from koschei_sentinel.models import StrictModel
-from koschei_sentinel.perception_adapter_sdk import (
-    AdapterBatchResult,
-    AdapterRunReceipt,
+from koschei_sentinel.cyber_perception import (
+    PerceptionBatch,
     PerceptionObservation,
+    TelemetrySourceType,
 )
+from koschei_sentinel.models import StrictModel
+from koschei_sentinel.perception_adapter_sdk import AdapterBatchResult
 from koschei_sentinel.perception_fusion import perception_batch_sha256
 
 _DIGEST = r"^[a-f0-9]{64}$"
@@ -74,11 +74,19 @@ class AdmittedPerceptionBatch(StrictModel):
     schema_version: Literal["sentinel.admitted-perception-batch.v1"] = (
         "sentinel.admitted-perception-batch.v1"
     )
+    adapter_result: AdapterBatchResult
     perception_batch: PerceptionBatch
     admission: PerceptionAdmissionReceipt
 
     @model_validator(mode="after")
-    def batch_digest_matches_admission(self) -> "AdmittedPerceptionBatch":
+    def envelope_integrity(self) -> "AdmittedPerceptionBatch":
+        if (
+            self.adapter_result.perception_batch.model_dump(mode="json")
+            != self.perception_batch.model_dump(mode="json")
+        ):
+            raise ValueError("admitted perception batch differs from bound adapter result")
+        if self.adapter_result.batch_sha256 != self.admission.adapter_batch_sha256:
+            raise ValueError("admission adapter batch digest does not match bound adapter result")
         actual = perception_batch_sha256(self.perception_batch)
         if actual != self.admission.perception_batch_sha256:
             raise ValueError("admitted perception batch digest does not match admission receipt")
@@ -222,6 +230,22 @@ def admit_perception_adapter_result(
         admission_sha256=digest,
     )
     return AdmittedPerceptionBatch(
+        adapter_result=result,
         perception_batch=result.perception_batch,
         admission=admission,
     )
+
+
+def verify_admitted_perception_batch(
+    admitted: AdmittedPerceptionBatch,
+    registry: PerceptionSourceRegistry,
+) -> AdmittedPerceptionBatch:
+    expected = admit_perception_adapter_result(admitted.adapter_result, registry)
+    if (
+        expected.perception_batch.model_dump(mode="json")
+        != admitted.perception_batch.model_dump(mode="json")
+    ):
+        raise ValueError("admitted perception batch does not match verified adapter result")
+    if expected.admission.model_dump(mode="json") != admitted.admission.model_dump(mode="json"):
+        raise ValueError("perception admission receipt failed registry re-verification")
+    return admitted
