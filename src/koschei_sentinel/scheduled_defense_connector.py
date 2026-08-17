@@ -93,9 +93,7 @@ def build_scheduled_assured_connector_envelope(
     precondition_evidence_ids: list[str],
     dry_run: bool = True,
 ) -> ScheduledAssuredConnectorEnvelope:
-    verify_defense_resource_schedule(schedule)
-    if schedule.graph_id != multi_plan.graph_id:
-        raise ValueError("resource schedule belongs to a different multi-incident plan graph")
+    verify_defense_resource_schedule(schedule, multi_plan)
 
     item = next(
         (row for row in schedule.scheduled if row.component_id == component_id),
