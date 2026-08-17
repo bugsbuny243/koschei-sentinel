@@ -7,6 +7,21 @@
       "source_id": "rustsec.advisory.database",
       "manifest_path": "build/cyber-v3/rustsec/artifacts.jsonl",
       "corpus_path": "build/cyber-v3/rustsec/training-corpus.jsonl"
+    },
+    {
+      "source_id": "mitre.attack.knowledge",
+      "manifest_path": "build/cyber-v3/attack/artifacts.jsonl",
+      "corpus_path": "build/cyber-v3/attack/training-corpus.jsonl"
+    },
+    {
+      "source_id": "kubernetes.security.docs",
+      "manifest_path": "build/cyber-v3/kubernetes/artifacts.jsonl",
+      "corpus_path": "build/cyber-v3/kubernetes/training-corpus.jsonl"
+    },
+    {
+      "source_id": "yara.official.rules.docs",
+      "manifest_path": "build/cyber-v3/yara/artifacts.jsonl",
+      "corpus_path": "build/cyber-v3/yara/training-corpus.jsonl"
     }
   ]
 }
