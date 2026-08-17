@@ -110,3 +110,7 @@ def test_causal_example_binds_temporal_episode_to_reviewed_correction() -> None:
     assert example.source_report_sha256 == episode.source_report_sha256
     assert example.expected_defense_sequence[0]["action"] == "REVOKE_CREDENTIAL"
     assert example.temporal_snapshots[0]["observed_relations"] == 1
+    assert episode.attack_world_lines is not None
+    assert example.attack_world_line_sha256 == episode.attack_world_lines.timeline_sha256
+    assert example.world_line_observations
+    assert example.world_line_transitions[0]["transition_type"] == "NEW"
