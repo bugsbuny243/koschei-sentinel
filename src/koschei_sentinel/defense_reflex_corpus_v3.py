@@ -172,9 +172,6 @@ def _observed_ticks(scenario: CyberRangeScenario) -> list[dict[str, object]]:
             "current_stage": row.current_stage,
             "attack_confidence": row.attack_confidence,
             "authorized_actions": [action.value for action in row.authorized_actions],
-            "attempted_actions": [action.value for action in row.attempted_actions],
-            "succeeded_actions": [action.value for action in row.succeeded_actions],
-            "contained": row.contained,
             "reassessment_disposition": (
                 row.reassessment_disposition.value
                 if row.reassessment_disposition is not None
@@ -195,7 +192,7 @@ def _expected_sequence(lesson: ReviewedDefenseLesson) -> list[dict[str, object]]
             "target_entity_id": row.target_entity_id,
             "rationale": row.rationale,
             "supporting_evidence_ids": row.supporting_evidence_ids,
-            "outcome_verification_ids": row.outcome_verification_ids,
+            "outcome_verification_required": True,
         }
         for row in lesson.expected_steps
     ]
@@ -255,6 +252,7 @@ def build_defense_reflex_v3_example(
             "reviewer_id": lesson.reviewer_id,
             "review_method": lesson.review_method.value,
             "input_policy": "graph-protected-scope-and-observable-state-only",
+            "future_outcome_ids_in_target": "false",
         },
         promotion_eligible=lesson.promotion_eligible,
     )
@@ -293,7 +291,10 @@ def build_defense_reflex_v3_manifest(
     if not examples:
         raise ValueError("Defense Reflex v3 manifest cannot be empty")
     payload = serialize_defense_reflex_v3(examples)
-    human = sum(row.provenance.get("review_method") == DefenseReviewMethod.HUMAN.value for row in examples)
+    human = sum(
+        row.provenance.get("review_method") == DefenseReviewMethod.HUMAN.value
+        for row in examples
+    )
     synthetic = sum(
         row.provenance.get("review_method") == DefenseReviewMethod.SYNTHETIC_POLICY.value
         for row in examples
