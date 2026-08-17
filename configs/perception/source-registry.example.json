@@ -1,0 +1,38 @@
+{
+  "schema_version": "sentinel.perception-source-registry.v1",
+  "registry_id": "registry:example-production",
+  "enrollments": [
+    {
+      "schema_version": "sentinel.perception-source-enrollment.v1",
+      "source_type": "ENDPOINT",
+      "source_instance": "edr:prod",
+      "allowed_adapter_ids": ["generic.endpoint-process"],
+      "independence_domain": "endpoint-control-plane",
+      "enabled": true
+    },
+    {
+      "schema_version": "sentinel.perception-source-enrollment.v1",
+      "source_type": "CLOUD_IAM",
+      "source_instance": "iam:prod",
+      "allowed_adapter_ids": ["generic.cloud-iam"],
+      "independence_domain": "cloud-control-plane",
+      "enabled": true
+    },
+    {
+      "schema_version": "sentinel.perception-source-enrollment.v1",
+      "source_type": "CICD",
+      "source_instance": "cicd:prod",
+      "allowed_adapter_ids": ["generic.cicd"],
+      "independence_domain": "cicd-control-plane",
+      "enabled": true
+    },
+    {
+      "schema_version": "sentinel.perception-source-enrollment.v1",
+      "source_type": "SIGNER_WALLET",
+      "source_instance": "signer:prod",
+      "allowed_adapter_ids": ["generic.signer-wallet"],
+      "independence_domain": "signer-control-plane",
+      "enabled": true
+    }
+  ]
+}
