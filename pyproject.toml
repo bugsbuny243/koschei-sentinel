@@ -50,6 +50,7 @@ sentinel-blockchain-corpus-audit = "koschei_sentinel.blockchain_security_corpus_
 sentinel-cyber-catalog-audit = "koschei_sentinel.cyber_corpus_catalog_cli:main"
 sentinel-cyber-artifact-audit = "koschei_sentinel.cyber_artifact_audit_cli:main"
 sentinel-cyber-extract = "koschei_sentinel.cyber_source_extractors_cli:main"
+sentinel-cyber-materialize = "koschei_sentinel.cyber_snapshot_materializer_cli:main"
 sentinel-cyber-batch-seal = "koschei_sentinel.cyber_collection_batch_cli:main"
 sentinel-register-candidate = "koschei_sentinel.incubation_registry_cli:main"
 sentinel-job-plan = "koschei_sentinel.offline_job_cli:main"
