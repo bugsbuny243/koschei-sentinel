@@ -1,0 +1,18 @@
+{
+  "schema_version": "sentinel.defense-resource-policy.v1",
+  "max_parallel_total": 4,
+  "reserved_critical_slots": 1,
+  "resource_capacities": {
+    "EVIDENCE": 8,
+    "NETWORK": 4,
+    "IDENTITY": 2,
+    "ENDPOINT": 2,
+    "CLOUD": 2,
+    "CICD": 1,
+    "SIGNER": 1,
+    "TRANSACTION": 2,
+    "EMERGENCY": 1
+  },
+  "wait_cycle_boost": 0.05,
+  "max_wait_boost": 0.30
+}
