@@ -25,9 +25,12 @@ class CausalDefenseTrainingExample(StrictModel):
     truth: str
     source_report_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     world_model_episode_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    attack_world_line_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     correction_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     temporal_snapshots: list[dict[str, object]]
     temporal_transitions: list[dict[str, object]]
+    world_line_observations: list[dict[str, object]]
+    world_line_transitions: list[dict[str, object]]
     corrected_interpretation: str
     expected_defense_sequence: list[dict[str, object]]
     provenance: dict[str, str]
@@ -66,9 +69,17 @@ def build_causal_defense_example(
         raise ValueError("world-model episode and correction belong to different scenarios")
     if episode.source_report_sha256 != correction.source_report_sha256:
         raise ValueError("world-model episode and correction do not share the same source report digest")
+    if episode.attack_world_lines is None:
+        raise ValueError("causal-defense example requires attack world-line lineage")
 
     temporal_snapshots = [row.model_dump(mode="json") for row in episode.snapshots]
     temporal_transitions = [row.model_dump(mode="json") for row in episode.transitions]
+    world_line_observations = [
+        row.model_dump(mode="json") for row in episode.attack_world_lines.observations
+    ]
+    world_line_transitions = [
+        row.model_dump(mode="json") for row in episode.attack_world_lines.transitions
+    ]
     expected_sequence = [
         {
             "sequence": step.sequence,
@@ -84,6 +95,7 @@ def build_causal_defense_example(
     digest_payload = "|".join(
         [
             episode.episode_sha256,
+            episode.attack_world_lines.timeline_sha256,
             correction.correction_sha256,
             episode.source_report_sha256,
         ]
@@ -95,13 +107,17 @@ def build_causal_defense_example(
         truth=episode.truth,
         source_report_sha256=episode.source_report_sha256,
         world_model_episode_sha256=episode.episode_sha256,
+        attack_world_line_sha256=episode.attack_world_lines.timeline_sha256,
         correction_sha256=correction.correction_sha256,
         temporal_snapshots=temporal_snapshots,
         temporal_transitions=temporal_transitions,
+        world_line_observations=world_line_observations,
+        world_line_transitions=world_line_transitions,
         corrected_interpretation=correction.corrected_interpretation,
         expected_defense_sequence=expected_sequence,
         provenance={
             "episode_id": episode.episode_id,
+            "attack_world_line_sha256": episode.attack_world_lines.timeline_sha256,
             "correction_id": correction.correction_id,
             "reviewer_id": correction.reviewer_id,
         },
