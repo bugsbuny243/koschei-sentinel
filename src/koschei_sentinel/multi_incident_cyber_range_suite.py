@@ -20,8 +20,10 @@ class MultiIncidentCyberRangeGatePolicy(StrictModel):
     component_count_accuracy_min: float = Field(default=1.0, ge=0.0, le=1.0)
     world_line_transition_accuracy_min: float = Field(default=1.0, ge=0.0, le=1.0)
     component_containment_rate_min: float = Field(default=0.95, ge=0.0, le=1.0)
+    world_line_containment_rate_min: float = Field(default=0.95, ge=0.0, le=1.0)
     cut_point_leakage_max: int = Field(default=0, ge=0)
     mean_containment_step_max: float = Field(default=3.0, ge=0.0)
+    mean_world_line_containment_tick_latency_max: float = Field(default=2.0, ge=0.0)
 
 
 class MultiIncidentCyberRangeSuiteReport(StrictModel):
@@ -34,8 +36,12 @@ class MultiIncidentCyberRangeSuiteReport(StrictModel):
     total_component_instances: int = Field(ge=0)
     contained_component_instances: int = Field(ge=0)
     component_containment_rate: float = Field(ge=0.0, le=1.0)
+    total_world_lines: int = Field(ge=0)
+    contained_world_lines: int = Field(ge=0)
+    world_line_containment_rate: float = Field(ge=0.0, le=1.0)
     cut_point_leakage_count: int = Field(ge=0)
     mean_containment_step: float | None = Field(default=None, ge=0.0)
+    mean_world_line_containment_tick_latency: float | None = Field(default=None, ge=0.0)
     passed: bool
     violations: list[str]
     scenario_reports: list[MultiIncidentCyberRangeReport]
@@ -64,11 +70,24 @@ def run_multi_incident_cyber_range_suite(
     total_components = sum(row.total_component_instances for row in reports)
     contained_components = sum(row.contained_component_instances for row in reports)
     containment_rate = 1.0 if total_components == 0 else contained_components / total_components
+
+    total_world_lines = sum(row.world_line_count for row in reports)
+    contained_world_lines = sum(row.contained_world_lines for row in reports)
+    world_line_containment_rate = (
+        1.0 if total_world_lines == 0 else contained_world_lines / total_world_lines
+    )
+
     leakage = sum(row.cut_point_leakage_count for row in reports)
     containment_steps = [
         row.mean_containment_step for row in reports if row.mean_containment_step is not None
     ]
     mean_step = mean(containment_steps) if containment_steps else None
+    world_line_latencies = [
+        row.mean_world_line_containment_tick_latency
+        for row in reports
+        if row.mean_world_line_containment_tick_latency is not None
+    ]
+    mean_world_line_latency = mean(world_line_latencies) if world_line_latencies else None
 
     violations: list[str] = []
     if component_accuracy < gate.component_count_accuracy_min:
@@ -86,6 +105,11 @@ def run_multi_incident_cyber_range_suite(
             "component containment rate below gate: "
             f"{containment_rate:.4f} < {gate.component_containment_rate_min:.4f}"
         )
+    if world_line_containment_rate < gate.world_line_containment_rate_min:
+        violations.append(
+            "world-line containment rate below gate: "
+            f"{world_line_containment_rate:.4f} < {gate.world_line_containment_rate_min:.4f}"
+        )
     if leakage > gate.cut_point_leakage_max:
         violations.append(
             "cross-component cut-point leakage above gate: "
@@ -96,6 +120,15 @@ def run_multi_incident_cyber_range_suite(
             "mean containment step above gate: "
             f"{mean_step:.4f} > {gate.mean_containment_step_max:.4f}"
         )
+    if (
+        mean_world_line_latency is not None
+        and mean_world_line_latency > gate.mean_world_line_containment_tick_latency_max
+    ):
+        violations.append(
+            "mean world-line containment tick latency above gate: "
+            f"{mean_world_line_latency:.4f} > "
+            f"{gate.mean_world_line_containment_tick_latency_max:.4f}"
+        )
 
     return MultiIncidentCyberRangeSuiteReport(
         scenarios=len(reports),
@@ -104,8 +137,12 @@ def run_multi_incident_cyber_range_suite(
         total_component_instances=total_components,
         contained_component_instances=contained_components,
         component_containment_rate=containment_rate,
+        total_world_lines=total_world_lines,
+        contained_world_lines=contained_world_lines,
+        world_line_containment_rate=world_line_containment_rate,
         cut_point_leakage_count=leakage,
         mean_containment_step=mean_step,
+        mean_world_line_containment_tick_latency=mean_world_line_latency,
         passed=not violations,
         violations=violations,
         scenario_reports=reports,
