@@ -78,8 +78,10 @@ def build_active_defense_plan(
     graph: CyberStateGraph,
     *,
     critical_entity_ids: list[str] | None = None,
+    focus_entity_ids: list[str] | None = None,
 ) -> ActiveDefensePlan:
     critical = set(critical_entity_ids or [])
+    focus = set(focus_entity_ids or [])
     known_entities = {entity.entity_id for entity in graph.entities}
     unknown_critical = sorted(critical - known_entities)
     if unknown_critical:
@@ -87,10 +89,16 @@ def build_active_defense_plan(
             "critical_entity_ids reference unknown graph entities: "
             + ", ".join(unknown_critical)
         )
+    unknown_focus = sorted(focus - known_entities)
+    if unknown_focus:
+        raise ValueError(
+            "focus_entity_ids reference unknown graph entities: "
+            + ", ".join(unknown_focus)
+        )
 
     progression = analyze_attack_progression(
         graph,
-        focus_entity_ids=sorted(critical),
+        focus_entity_ids=sorted(focus or critical),
     )
     active_ids = set(progression.active_relation_ids)
     evidence_count = _corroborating_evidence(graph, active_ids)
@@ -127,6 +135,8 @@ def build_active_defense_plan(
         rationale.append(
             "attack progression and cut points are scoped to one primary connected attack component"
         )
+    if focus:
+        rationale.append("component selection was explicitly constrained by focus entities")
     if len(progression.components) > 1:
         rationale.append(
             f"{len(progression.components)} independent active components were separated before defense planning"
