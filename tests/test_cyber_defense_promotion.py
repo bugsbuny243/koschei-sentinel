@@ -3,6 +3,14 @@ from koschei_sentinel.cyber_defense_promotion import (
 )
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
 from koschei_sentinel.cyber_training_bundle import CyberTrainingBundle, CyberTrainingStage
+from koschei_sentinel.defense_load_range import (
+    DefenseLoadGatePolicy,
+    DefenseLoadRangeReport,
+)
+from koschei_sentinel.defense_resource_scheduler import (
+    DefenseResourceClass,
+    DefenseResourcePolicy,
+)
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
@@ -74,7 +82,36 @@ def _multi(passed: bool = True) -> MultiIncidentCyberRangeSuiteReport:
     )
 
 
-def _evidence(revision: str = "candidate-revision:1", *, multi_passed: bool = True):
+def _load(passed: bool = True) -> DefenseLoadRangeReport:
+    return DefenseLoadRangeReport(
+        graph_id="incident:load",
+        resource_policy=DefenseResourcePolicy(),
+        gate_policy=DefenseLoadGatePolicy(),
+        eligible_components=2,
+        critical_eligible_components=1,
+        serviced_components=2 if passed else 1,
+        service_coverage=1.0 if passed else 0.5,
+        waves_run=2,
+        mean_first_service_wave=0.5 if passed else 0.0,
+        max_first_service_wave=1 if passed else 0,
+        critical_max_first_service_wave=0,
+        max_wait_cycles=1 if passed else 9,
+        starved_component_ids=[] if passed else ["component:starved"],
+        critical_starved_component_ids=[],
+        max_resource_utilization={resource: 0.0 for resource in DefenseResourceClass},
+        capacity_violation_count=0,
+        passed=passed,
+        violations=[] if passed else ["fixture load failure"],
+        waves=[],
+    )
+
+
+def _evidence(
+    revision: str = "candidate-revision:1",
+    *,
+    multi_passed: bool = True,
+    load_passed: bool = True,
+):
     return build_cyber_defense_promotion_evidence(
         promotion_id="promotion:test",
         candidate_model_ref="sentinel:candidate",
@@ -82,15 +119,24 @@ def _evidence(revision: str = "candidate-revision:1", *, multi_passed: bool = Tr
         training_bundle=_bundle(),
         cyber_range_report=_single(),
         multi_incident_range_report=_multi(multi_passed),
+        defense_load_range_report=_load(load_passed),
     )
 
 
-def test_promotion_requires_both_range_families_to_pass() -> None:
+def test_promotion_requires_all_three_defense_gate_families_to_pass() -> None:
     assert _evidence().ready_for_promotion is True
-    failed = _evidence(multi_passed=False)
-    assert failed.ready_for_promotion is False
-    assert failed.cyber_range_passed is True
-    assert failed.multi_incident_range_passed is False
+
+    multi_failed = _evidence(multi_passed=False)
+    assert multi_failed.ready_for_promotion is False
+    assert multi_failed.cyber_range_passed is True
+    assert multi_failed.multi_incident_range_passed is False
+    assert multi_failed.defense_load_range_passed is True
+
+    load_failed = _evidence(load_passed=False)
+    assert load_failed.ready_for_promotion is False
+    assert load_failed.cyber_range_passed is True
+    assert load_failed.multi_incident_range_passed is True
+    assert load_failed.defense_load_range_passed is False
 
 
 def test_candidate_revision_is_bound_into_promotion_digest() -> None:
@@ -105,3 +151,5 @@ def test_promotion_evidence_is_deterministic() -> None:
     assert first.model_dump() == second.model_dump()
     assert first.evidence_sha256 == second.evidence_sha256
     assert first.world_line_containment_rate == 1.0
+    assert first.scheduler_service_coverage == 1.0
+    assert first.schema_version == "sentinel.cyber-defense-promotion-evidence.v2"
