@@ -4,7 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
-from koschei_sentinel.cyber_perception import PerceptionBatch, compile_perception_batch
+from koschei_sentinel.cyber_perception import PerceptionBatch
+from koschei_sentinel.perception_graph_binding import compile_bound_perception_graph
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -14,6 +15,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch", required=True, help="Perception batch JSON")
     parser.add_argument("--graph-id", required=True, help="Incident Cyber State Graph identifier")
     parser.add_argument("--output", required=True, help="Cyber State Graph JSON")
+    parser.add_argument(
+        "--receipt-output",
+        help="Optional perception graph receipt path; defaults next to --output",
+    )
     return parser
 
 
@@ -23,11 +28,22 @@ def main(argv: list[str] | None = None) -> int:
         batch = PerceptionBatch.model_validate_json(
             Path(args.batch).read_text(encoding="utf-8")
         )
-        graph = compile_perception_batch(batch, graph_id=args.graph_id)
+        bound = compile_bound_perception_graph(batch, graph_id=args.graph_id)
         destination = Path(args.output)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(graph.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+        payload = json.dumps(bound.graph.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
         destination.write_text(payload, encoding="utf-8")
+
+        receipt_destination = (
+            Path(args.receipt_output)
+            if args.receipt_output
+            else destination.with_name(f"{destination.stem}.receipt.json")
+        )
+        receipt_destination.parent.mkdir(parents=True, exist_ok=True)
+        receipt_destination.write_text(
+            json.dumps(bound.receipt.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         print(payload, end="")
         return 0
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
