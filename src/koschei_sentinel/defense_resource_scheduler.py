@@ -87,7 +87,10 @@ class DefenseResourcePolicy(StrictModel):
 
     @model_validator(mode="after")
     def capacities_are_complete_and_coherent(self) -> "DefenseResourcePolicy":
-        missing = sorted(set(DefenseResourceClass) - set(self.resource_capacities), key=lambda row: row.value)
+        missing = sorted(
+            set(DefenseResourceClass) - set(self.resource_capacities),
+            key=lambda row: row.value,
+        )
         if missing:
             raise ValueError(
                 "defense resource policy is missing capacities: "
@@ -159,7 +162,9 @@ class DefenseResourceSchedule(StrictModel):
         scheduled_components = [row.component_id for row in self.scheduled]
         if len(scheduled_components) != len(set(scheduled_components)):
             raise ValueError("only one interception step per component may be scheduled in a wave")
-        scheduled_targets = [(row.resource_class, row.target_entity_id) for row in self.scheduled]
+        scheduled_targets = [
+            (row.resource_class, row.target_entity_id) for row in self.scheduled
+        ]
         if len(scheduled_targets) != len(set(scheduled_targets)):
             raise ValueError("the same resource target cannot be scheduled twice in one wave")
         if len(self.scheduled) > self.policy.max_parallel_total:
@@ -181,9 +186,8 @@ def _priority(
     wait_cycles: int,
     policy: DefenseResourcePolicy,
 ) -> float:
-    # component_priority already includes risk, criticality and effective mode from the
-    # assured multi-incident planner. The scheduler adds execution-local urgency,
-    # effect, impact-edge pressure and bounded aging without overriding assurance.
+    # The assured component priority already contains risk, criticality and effective
+    # mode. Scheduling can add local urgency and bounded aging but cannot raise authority.
     wait_bonus = min(policy.max_wait_boost, wait_cycles * policy.wait_cycle_boost)
     impact_bonus = 0.20 if predicted_impact else 0.0
     mode_tiebreak = 0.02 * _MODE_RANK[mode]
@@ -289,7 +293,9 @@ def _allocate(
         policy=policy,
     )
     if reason is None:
-        scheduled.append(item.model_copy(update={"disposition": SchedulingDisposition.SCHEDULED}))
+        scheduled.append(
+            item.model_copy(update={"disposition": SchedulingDisposition.SCHEDULED})
+        )
         usage[item.resource_class] += 1
         return
     deferred.append(
@@ -328,6 +334,30 @@ def _schedule_digest(
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def defense_resource_schedule_sha256(schedule: DefenseResourceSchedule) -> str:
+    return _schedule_digest(
+        graph_id=schedule.graph_id,
+        policy=schedule.policy,
+        scheduled=schedule.scheduled,
+        deferred=schedule.deferred,
+        no_action=schedule.no_action_component_ids,
+        previous_state=schedule.previous_state,
+        next_state=schedule.next_state,
+    )
+
+
+def verify_defense_resource_schedule(
+    schedule: DefenseResourceSchedule,
+) -> DefenseResourceSchedule:
+    expected = defense_resource_schedule_sha256(schedule)
+    if expected != schedule.schedule_sha256:
+        raise ValueError("defense resource schedule digest does not match its contents")
+    expected_id = f"schedule:{schedule.graph_id}:{expected[:20]}"
+    if schedule.schedule_id != expected_id:
+        raise ValueError("defense resource schedule_id does not match its digest")
+    return schedule
+
+
 def build_defense_resource_schedule(
     plan: AssuredMultiIncidentDefensePlan,
     *,
@@ -342,10 +372,9 @@ def build_defense_resource_schedule(
     usage = {resource: 0 for resource in DefenseResourceClass}
 
     critical = [row for row in candidates if row.critical_entity_ids]
-    noncritical = [row for row in candidates if not row.critical_entity_ids]
 
-    # Reserve a bounded number of slots for active components that actually touch
-    # declared critical protected assets. Unused reservations are immediately released.
+    # Reserve a bounded number of slots for components touching declared critical assets.
+    # Unused reservations are released to the global queue immediately.
     for item in critical[: gate.reserved_critical_slots]:
         _allocate(
             item,
@@ -391,7 +420,9 @@ def build_defense_resource_schedule(
                 component.component_id,
                 0,
             )
-    next_state = DefenseSchedulerState(wait_cycles_by_component=dict(sorted(next_wait.items())))
+    next_state = DefenseSchedulerState(
+        wait_cycles_by_component=dict(sorted(next_wait.items()))
+    )
 
     scheduled.sort(key=lambda row: (-row.priority_score, row.component_id))
     deferred.sort(key=lambda row: (-row.priority_score, row.component_id))
@@ -404,7 +435,7 @@ def build_defense_resource_schedule(
         previous_state=previous,
         next_state=next_state,
     )
-    return DefenseResourceSchedule(
+    schedule = DefenseResourceSchedule(
         graph_id=plan.graph_id,
         schedule_id=f"schedule:{plan.graph_id}:{digest[:20]}",
         policy=gate,
@@ -424,3 +455,4 @@ def build_defense_resource_schedule(
             "execution and post-action verification remain separate mandatory gates",
         ],
     )
+    return verify_defense_resource_schedule(schedule)
