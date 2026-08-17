@@ -9,6 +9,7 @@ from koschei_sentinel.cyber_defense_promotion import (
 )
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
 from koschei_sentinel.cyber_training_bundle import CyberTrainingBundle
+from koschei_sentinel.defense_load_range import DefenseLoadRangeReport
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
@@ -16,7 +17,7 @@ from koschei_sentinel.multi_incident_cyber_range_suite import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Bind Sentinel training and cyber-range evidence to one promotion receipt"
+        description="Bind Sentinel training and all required defense gates to one promotion receipt"
     )
     parser.add_argument("--promotion-id", required=True)
     parser.add_argument("--candidate-model", required=True)
@@ -24,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--training-bundle", required=True)
     parser.add_argument("--cyber-range-report", required=True)
     parser.add_argument("--multi-incident-range-report", required=True)
+    parser.add_argument("--defense-load-range-report", required=True)
     parser.add_argument("--output", required=True)
     return parser
 
@@ -40,6 +42,9 @@ def main(argv: list[str] | None = None) -> int:
         multi = MultiIncidentCyberRangeSuiteReport.model_validate_json(
             Path(args.multi_incident_range_report).read_text(encoding="utf-8")
         )
+        load = DefenseLoadRangeReport.model_validate_json(
+            Path(args.defense_load_range_report).read_text(encoding="utf-8")
+        )
         evidence = build_cyber_defense_promotion_evidence(
             promotion_id=args.promotion_id,
             candidate_model_ref=args.candidate_model,
@@ -47,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
             training_bundle=bundle,
             cyber_range_report=single,
             multi_incident_range_report=multi,
+            defense_load_range_report=load,
         )
         payload = json.dumps(
             evidence.model_dump(mode="json"),
