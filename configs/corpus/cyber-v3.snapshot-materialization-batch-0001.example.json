@@ -1,0 +1,23 @@
+{
+  "schema_version": "sentinel.cyber-snapshot-materialization-spec.v3",
+  "approved_catalog_path": "configs/corpus/cyber-v3.sources.approved.jsonl",
+  "output_root": "build/cyber-v3/materialized",
+  "inputs": [
+    {
+      "source_id": "rustsec.advisory.database",
+      "snapshot_path": "snapshots/rustsec-advisory-db"
+    },
+    {
+      "source_id": "mitre.attack.knowledge",
+      "snapshot_path": "snapshots/attack-stix-data"
+    },
+    {
+      "source_id": "kubernetes.security.docs",
+      "snapshot_path": "snapshots/kubernetes-website"
+    },
+    {
+      "source_id": "yara.official.rules.docs",
+      "snapshot_path": "snapshots/yara"
+    }
+  ]
+}
