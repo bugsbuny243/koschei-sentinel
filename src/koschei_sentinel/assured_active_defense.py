@@ -182,6 +182,7 @@ def build_assured_active_defense_plan(
     perception_assurance: PerceptionAssuranceSummary,
     registry: PerceptionSourceRegistry,
     critical_entity_ids: list[str] | None = None,
+    focus_entity_ids: list[str] | None = None,
     policy: ActiveDefenseAssurancePolicy | None = None,
 ) -> AssuredActiveDefensePlan:
     gate = policy or ActiveDefenseAssurancePolicy()
@@ -194,6 +195,7 @@ def build_assured_active_defense_plan(
     base = build_active_defense_plan(
         graph,
         critical_entity_ids=critical_entity_ids,
+        focus_entity_ids=focus_entity_ids,
     )
     relation_ids, active_principals, active_domains, unknown_sources = _active_evidence_domains(
         graph=graph,
