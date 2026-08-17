@@ -68,6 +68,7 @@ sentinel-defense-reflex-review = "koschei_sentinel.defense_reflex_review_cli:mai
 sentinel-defense-reflex-build = "koschei_sentinel.defense_reflex_corpus_cli:main"
 sentinel-causal-defense-build = "koschei_sentinel.causal_defense_corpus_cli:main"
 sentinel-cyber-training-bundle = "koschei_sentinel.cyber_training_bundle_cli:main"
+sentinel-cyber-defense-promotion = "koschei_sentinel.cyber_defense_promotion_cli:main"
 sentinel-register-candidate = "koschei_sentinel.incubation_registry_cli:main"
 sentinel-job-plan = "koschei_sentinel.offline_job_cli:main"
 sentinel-job-receipt = "koschei_sentinel.offline_receipt_cli:main"
