@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from koschei_sentinel.causal_defense_corpus import CausalDefenseCorpusManifest
 from koschei_sentinel.cyber_collection_batch import CollectionBatchSeal
 from koschei_sentinel.defense_reflex_corpus import DefenseReflexCorpusManifest
 from koschei_sentinel.models import StrictModel
@@ -19,8 +20,8 @@ class CyberTrainingStage(StrEnum):
 
 
 class CyberTrainingBundle(StrictModel):
-    schema_version: Literal["sentinel.cyber-training-bundle.v1"] = (
-        "sentinel.cyber-training-bundle.v1"
+    schema_version: Literal["sentinel.cyber-training-bundle.v2"] = (
+        "sentinel.cyber-training-bundle.v2"
     )
     bundle_id: str = Field(min_length=3, max_length=256)
     foundation_model_ref: str = Field(min_length=3, max_length=512)
@@ -30,6 +31,8 @@ class CyberTrainingBundle(StrictModel):
     knowledge_artifact_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     defense_reflex_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     defense_reflex_example_count: int = Field(gt=0)
+    causal_defense_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    causal_defense_example_count: int = Field(gt=0)
     eval_holdout_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     required_stages: list[CyberTrainingStage]
     ready_for_training: bool
@@ -41,6 +44,7 @@ class CyberTrainingBundle(StrictModel):
             self.knowledge_training_corpus_sha256,
             self.knowledge_artifact_manifest_sha256,
             self.defense_reflex_examples_sha256,
+            self.causal_defense_examples_sha256,
         }
         if self.eval_holdout_sha256 in training_hashes:
             raise ValueError("eval holdout digest must be distinct from every training-plane digest")
@@ -62,6 +66,7 @@ def _bundle_digest(
     foundation_model_revision: str,
     knowledge_seal: CollectionBatchSeal,
     reflex_manifest: DefenseReflexCorpusManifest,
+    causal_manifest: CausalDefenseCorpusManifest,
     eval_holdout_sha256: str,
 ) -> str:
     payload = "|".join(
@@ -74,6 +79,8 @@ def _bundle_digest(
             knowledge_seal.artifact_manifest_sha256,
             reflex_manifest.examples_sha256,
             str(reflex_manifest.example_count),
+            causal_manifest.examples_sha256,
+            str(causal_manifest.example_count),
             eval_holdout_sha256,
         ]
     )
@@ -87,6 +94,7 @@ def build_cyber_training_bundle(
     foundation_model_revision: str,
     knowledge_seal: CollectionBatchSeal,
     reflex_manifest: DefenseReflexCorpusManifest,
+    causal_manifest: CausalDefenseCorpusManifest,
     eval_holdout_sha256: str,
 ) -> CyberTrainingBundle:
     if not knowledge_seal.ready_for_training_pipeline:
@@ -95,10 +103,10 @@ def build_cyber_training_bundle(
         raise ValueError("Cyber Corpus batch seal contains violations")
     if knowledge_seal.training_artifacts <= 0:
         raise ValueError("Cyber Corpus batch contains no training-authorized artifacts")
-    if not reflex_manifest.ready_for_training_pipeline:
-        raise ValueError("Defense Reflex Corpus manifest is not ready for the training pipeline")
-    if reflex_manifest.example_count <= 0:
-        raise ValueError("Defense Reflex Corpus contains no training examples")
+    if not reflex_manifest.ready_for_training_pipeline or reflex_manifest.example_count <= 0:
+        raise ValueError("Defense Reflex Corpus is not ready for the training pipeline")
+    if not causal_manifest.ready_for_training_pipeline or causal_manifest.example_count <= 0:
+        raise ValueError("Causal Defense Corpus is not ready for the training pipeline")
 
     stages = [
         CyberTrainingStage.KNOWLEDGE_CONTINUED_PRETRAINING,
@@ -112,6 +120,7 @@ def build_cyber_training_bundle(
         foundation_model_revision=foundation_model_revision,
         knowledge_seal=knowledge_seal,
         reflex_manifest=reflex_manifest,
+        causal_manifest=causal_manifest,
         eval_holdout_sha256=eval_holdout_sha256,
     )
     return CyberTrainingBundle(
@@ -123,6 +132,8 @@ def build_cyber_training_bundle(
         knowledge_artifact_manifest_sha256=knowledge_seal.artifact_manifest_sha256,
         defense_reflex_examples_sha256=reflex_manifest.examples_sha256,
         defense_reflex_example_count=reflex_manifest.example_count,
+        causal_defense_examples_sha256=causal_manifest.examples_sha256,
+        causal_defense_example_count=causal_manifest.example_count,
         eval_holdout_sha256=eval_holdout_sha256,
         required_stages=stages,
         ready_for_training=True,
