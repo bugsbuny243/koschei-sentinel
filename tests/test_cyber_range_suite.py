@@ -18,9 +18,9 @@ def _ev(name: str, char: str) -> EvidenceRef:
     )
 
 
-def _malicious() -> CyberRangeScenario:
-    graph = CyberStateGraph(
-        graph_id="suite:malicious",
+def _attack_graph(graph_id: str) -> CyberStateGraph:
+    return CyberStateGraph(
+        graph_id=graph_id,
         entities=[
             CyberEntity(entity_id="cred:test", entity_type=CyberEntityType.CREDENTIAL),
             CyberEntity(entity_id="device:test", entity_type=CyberEntityType.DEVICE),
@@ -47,10 +47,42 @@ def _malicious() -> CyberRangeScenario:
             ),
         ],
     )
+
+
+def _malicious() -> CyberRangeScenario:
     return CyberRangeScenario(
         scenario_id="suite-malicious",
         truth=ScenarioTruth.MALICIOUS,
-        graph_snapshots=[graph],
+        graph_snapshots=[_attack_graph("suite:malicious")],
+        critical_entity_ids=["wallet:test"],
+    )
+
+
+def _delayed_malicious() -> CyberRangeScenario:
+    graph_id = "suite:delayed"
+    initial = CyberStateGraph(
+        graph_id=graph_id,
+        entities=[
+            CyberEntity(entity_id="identity:test", entity_type=CyberEntityType.IDENTITY),
+            CyberEntity(entity_id="device:test", entity_type=CyberEntityType.DEVICE),
+            CyberEntity(entity_id="wallet:test", entity_type=CyberEntityType.WALLET),
+        ],
+        relations=[
+            CyberRelation(
+                relation_id="rel:initial",
+                source_entity_id="identity:test",
+                target_entity_id="device:test",
+                relation_type="authenticates_to",
+                status=EvidenceStatus.OBSERVED,
+                confidence=0.99,
+                evidence=[_ev("evidence:initial", "d")],
+            )
+        ],
+    )
+    return CyberRangeScenario(
+        scenario_id="suite-delayed-malicious",
+        truth=ScenarioTruth.MALICIOUS,
+        graph_snapshots=[initial, _attack_graph(graph_id)],
         critical_entity_ids=["wallet:test"],
     )
 
@@ -90,9 +122,10 @@ def test_suite_passes_containment_and_benign_safety_gates() -> None:
     assert report.benign_high_impact_false_positive_rate == 0.0
 
 
-def test_suite_can_fail_a_stricter_latency_gate() -> None:
+def test_suite_fails_a_stricter_latency_gate() -> None:
     policy = CyberRangeGatePolicy(mean_containment_tick_max=0.0)
-    report = run_cyber_range_suite([_malicious()], policy=policy)
+    report = run_cyber_range_suite([_delayed_malicious()], policy=policy)
 
-    assert report.passed is True
-    assert report.mean_containment_tick == 0.0
+    assert report.passed is False
+    assert report.mean_containment_tick == 1.0
+    assert any("mean containment tick above gate" in item for item in report.violations)
