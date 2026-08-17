@@ -22,6 +22,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Cyber State Graph snapshot JSON; repeat in chronological order",
     )
     parser.add_argument("--stream-id", required=True)
+    parser.add_argument(
+        "--anchor",
+        action="append",
+        default=[],
+        help="Protected anchor entity id used to preserve reroute lineage; repeat as needed",
+    )
     parser.add_argument("--policy", help="Optional attack world-line policy JSON")
     parser.add_argument("--output", required=True)
     return parser
@@ -44,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         timeline = build_attack_world_line_timeline(
             snapshots,
             stream_id=args.stream_id,
+            protected_anchor_entity_ids=list(dict.fromkeys(args.anchor)),
             policy=policy,
         )
         payload = json.dumps(
