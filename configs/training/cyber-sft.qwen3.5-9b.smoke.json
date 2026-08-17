@@ -1,0 +1,40 @@
+{
+  "schema_version": "sentinel.cyber-sft-config.v1",
+  "run_id": "sentinel-cyber-sft-qwen35-9b-smoke-001",
+  "stage": "DEFENSE_REFLEX",
+  "base_model": "Qwen/Qwen3.5-9B-Base",
+  "base_revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+  "corpus_dir": "build/cyber-training/defense-reflex-v2",
+  "output_dir": "build/cyber-training/runs/qwen35-9b-smoke-001",
+  "input_adapter_dir": null,
+  "max_sequence_length": 4096,
+  "epochs": 1.0,
+  "learning_rate": 0.0001,
+  "per_device_batch_size": 1,
+  "gradient_accumulation_steps": 16,
+  "validation_ratio": 0.1,
+  "warmup_ratio": 0.03,
+  "logging_steps": 5,
+  "seed": 1701,
+  "minimum_cuda_memory_gb": 14.0,
+  "quantization": {
+    "bits": 4,
+    "quant_type": "nf4",
+    "double_quant": true,
+    "compute_dtype": "float16"
+  },
+  "lora": {
+    "rank": 16,
+    "alpha": 32,
+    "dropout": 0.05,
+    "target_suffixes": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ]
+  }
+}
