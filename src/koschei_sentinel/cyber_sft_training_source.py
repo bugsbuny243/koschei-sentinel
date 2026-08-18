@@ -27,6 +27,15 @@ class CyberSFTTrainingSourceBinding(StrictModel):
     plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     corpus_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     corpus_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    explicit_validation: bool = False
+    validation_corpus_examples_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    validation_corpus_manifest_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
     source_binding_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
@@ -48,6 +57,30 @@ def _validate_repository_commit(value: str) -> None:
     valid = len(value) == 40 and all(ch in "0123456789abcdef" for ch in value)
     if not valid:
         raise ValueError("repository_commit must be a lowercase 40-character Git commit SHA")
+
+
+def _validate_explicit_validation_binding(
+    config: CyberSFTConfig,
+    plan: CyberSFTPlan,
+) -> None:
+    expected_explicit = config.validation_corpus_dir is not None
+    if plan.explicit_validation != expected_explicit:
+        raise ValueError("training source plan/config mismatch: explicit_validation")
+    if plan.explicit_validation:
+        if (
+            plan.validation_corpus_examples_sha256 is None
+            or plan.validation_corpus_manifest_sha256 is None
+        ):
+            raise ValueError(
+                "explicit validation plan lacks validation corpus SHA-256 bindings"
+            )
+    elif (
+        plan.validation_corpus_examples_sha256 is not None
+        or plan.validation_corpus_manifest_sha256 is not None
+    ):
+        raise ValueError(
+            "non-explicit validation plan must not carry validation corpus SHA-256 bindings"
+        )
 
 
 def build_training_source_binding(
@@ -73,6 +106,7 @@ def build_training_source_binding(
     for label, observed, expected in checks:
         if observed != expected:
             raise ValueError(f"training source plan/config mismatch: {label}")
+    _validate_explicit_validation_binding(config, plan)
 
     payload: dict[str, object] = {
         "schema_version": "sentinel.cyber-sft-training-source.v1",
@@ -84,6 +118,9 @@ def build_training_source_binding(
         "plan_sha256": _sha256_bytes(plan_raw),
         "corpus_examples_sha256": plan.corpus_examples_sha256,
         "corpus_manifest_sha256": plan.corpus_manifest_sha256,
+        "explicit_validation": plan.explicit_validation,
+        "validation_corpus_examples_sha256": plan.validation_corpus_examples_sha256,
+        "validation_corpus_manifest_sha256": plan.validation_corpus_manifest_sha256,
     }
     payload["source_binding_sha256"] = _source_digest(payload)
     return CyberSFTTrainingSourceBinding.model_validate(payload)
