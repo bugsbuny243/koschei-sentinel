@@ -38,8 +38,12 @@ def test_gold_release_audit_accepts_intact_split_safe_release(tmp_path) -> None:
 def test_gold_release_audit_rejects_training_example_tamper(tmp_path) -> None:
     output = _release(tmp_path)
     examples_path = output / "train" / "examples.jsonl"
-    payload = examples_path.read_text(encoding="utf-8")
-    examples_path.write_text(payload.replace("GOLD", "CORRECTION", 1), encoding="utf-8")
+    row = json.loads(examples_path.read_text(encoding="utf-8").splitlines()[0])
+    row["expected_interpretation"] += " tampered"
+    examples_path.write_text(
+        json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
 
     report = audit_gold_defense_release(output)
 
@@ -64,7 +68,10 @@ def test_gold_release_audit_rejects_holdout_case_self_hash_tamper(tmp_path) -> N
     cases_path = output / "holdout" / "cases.jsonl"
     row = json.loads(cases_path.read_text(encoding="utf-8").splitlines()[0])
     row["expected_interpretation"] += " tampered"
-    cases_path.write_text(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
+    cases_path.write_text(
+        json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
 
     report = audit_gold_defense_release(output)
 
