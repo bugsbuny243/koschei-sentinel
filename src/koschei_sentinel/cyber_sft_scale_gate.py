@@ -55,7 +55,9 @@ def _runtime_warnings(run_dir: Path) -> list[str]:
     except json.JSONDecodeError as exc:
         raise ValueError("micro runtime-warnings.json is invalid JSON") from exc
     warnings = payload.get("warnings") if isinstance(payload, dict) else None
-    if not isinstance(warnings, list) or any(not isinstance(row, str) for row in warnings):
+    if not isinstance(warnings, list) or any(
+        not isinstance(row, str) for row in warnings
+    ):
         raise ValueError("micro runtime-warnings.json warnings must be a string list")
     return warnings
 
@@ -83,9 +85,13 @@ def evaluate_9b_scale_gate(
     receipt_path = root / "run" / "training-receipt.json"
     try:
         if attestation_path.is_file():
-            attestation = CyberSFTRunAttestation.model_validate_json(attestation_path.read_bytes())
+            attestation = CyberSFTRunAttestation.model_validate_json(
+                attestation_path.read_bytes()
+            )
         if receipt_path.is_file():
-            receipt = CyberSFTTrainingReceipt.model_validate_json(receipt_path.read_bytes())
+            receipt = CyberSFTTrainingReceipt.model_validate_json(
+                receipt_path.read_bytes()
+            )
     except ValueError as exc:
         blockers.append(f"micro run evidence cannot be parsed: {exc}")
 
@@ -94,8 +100,13 @@ def evaluate_9b_scale_gate(
     else:
         if attestation.selected_profile != "micro":
             blockers.append("scale gate requires a micro-profile attestation")
-        if attestation.base_model != _MICRO_MODEL or attestation.base_revision != _MICRO_REVISION:
-            blockers.append("micro attestation does not bind the pinned Qwen3.5-0.8B-Base")
+        if (
+            attestation.base_model != _MICRO_MODEL
+            or attestation.base_revision != _MICRO_REVISION
+        ):
+            blockers.append(
+                "micro attestation does not bind the pinned Qwen3.5-0.8B-Base"
+            )
         if receipt.global_step <= 0:
             blockers.append("micro run completed zero optimizer steps")
         if receipt.cuda_total_memory_gb + 1e-9 < target.minimum_cuda_memory_gb:
@@ -110,7 +121,8 @@ def evaluate_9b_scale_gate(
         fast_warnings = _runtime_warnings(root / "run")
     if fast_warnings:
         warnings.append(
-            "Qwen3.5 fast DeltaNet kernels are incomplete; 9B may use slower, more memory-hungry fallback ops"
+            "Qwen3.5 fast DeltaNet kernels are incomplete; 9B may use slower, "
+            "more memory-hungry fallback ops"
         )
 
     allowed = not blockers
