@@ -1,5 +1,14 @@
 import json
 
+from koschei_sentinel.cyber_seed_curriculum import build_seed_curriculum
+from koschei_sentinel.defense_reflex_gold_queue import (
+    GoldReviewSplit,
+    GoldReviewSplitPolicy,
+    _report_sha256,
+    _split_basis,
+    _split_for_basis,
+    build_gold_review_packet,
+)
 from koschei_sentinel.defense_reflex_gold_release import (
     GoldHoldoutEvaluationCase,
     write_gold_defense_release,
@@ -11,7 +20,7 @@ from koschei_sentinel.gold_holdout_evaluation import (
     evaluate_gold_holdout_predictions,
     export_gold_holdout_inference_pack,
 )
-from tests.test_defense_reflex_gold_release import _release_rows
+from tests.test_defense_reflex_gold_release import _release_rows, _review
 
 
 def _fixture(tmp_path):
@@ -28,6 +37,91 @@ def _fixture(tmp_path):
     ).splitlines()[0]
     gold_case = GoldHoldoutEvaluationCase.model_validate_json(case_line)
     return release, inference, inference_case, gold_case
+
+
+def _visible_evidence_ids(value):
+    result = set()
+    if isinstance(value, dict):
+        evidence_id = value.get("evidence_id")
+        if isinstance(evidence_id, str):
+            result.add(evidence_id)
+        for nested in value.values():
+            result.update(_visible_evidence_ids(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            result.update(_visible_evidence_ids(nested))
+    return result
+
+
+def _fixture_with_alternative_visible_evidence(tmp_path):
+    seed_rows = build_seed_curriculum()
+    report_sha_by_id = {
+        scenario.scenario_id: _report_sha256(scenario)[1]
+        for _family, scenario, _lesson in seed_rows
+    }
+
+    for policy_index in range(10000):
+        policy = GoldReviewSplitPolicy(seed=f"gold-evidence-selection-{policy_index}")
+        train_row = None
+        validation_row = None
+        holdout_row = None
+        alternative = None
+        step_index = None
+
+        for _family, scenario, lesson in seed_rows:
+            report_sha = report_sha_by_id[scenario.scenario_id]
+            basis = _split_basis(scenario.scenario_id, report_sha, policy)
+            split = _split_for_basis(basis, policy)
+            if split is GoldReviewSplit.TRAIN and train_row is None:
+                train_row = (scenario, lesson)
+            elif split is GoldReviewSplit.VALIDATION and validation_row is None:
+                validation_row = (scenario, lesson)
+            elif split is GoldReviewSplit.HOLDOUT and holdout_row is None:
+                graph_payload = [graph.model_dump(mode="json") for graph in scenario.graph_snapshots]
+                visible = _visible_evidence_ids(graph_payload)
+                for index, expected_step in enumerate(lesson.expected_steps):
+                    expected = set(expected_step.supporting_evidence_ids)
+                    candidates = sorted(visible - expected)
+                    if candidates:
+                        holdout_row = (scenario, lesson)
+                        alternative = candidates[0]
+                        step_index = index
+                        break
+
+        if train_row and validation_row and holdout_row and alternative is not None:
+            selected = {
+                GoldReviewSplit.TRAIN: train_row,
+                GoldReviewSplit.VALIDATION: validation_row,
+                GoldReviewSplit.HOLDOUT: holdout_row,
+            }
+            rows = []
+            for split in (
+                GoldReviewSplit.TRAIN,
+                GoldReviewSplit.VALIDATION,
+                GoldReviewSplit.HOLDOUT,
+            ):
+                scenario, lesson = selected[split]
+                packet = build_gold_review_packet(scenario, policy=policy)
+                assert packet.split is split
+                rows.append((scenario, packet, _review(packet, scenario, lesson)))
+
+            release = tmp_path / "gold-release-evidence-selection"
+            write_gold_defense_release(rows, release)
+            inference = tmp_path / "gold-inference-evidence-selection"
+            export_gold_holdout_inference_pack(release, inference)
+            inference_case = GoldHoldoutInferenceCase.model_validate_json(
+                (inference / "inputs.jsonl").read_text(encoding="utf-8").splitlines()[0]
+            )
+            gold_case = GoldHoldoutEvaluationCase.model_validate_json(
+                (release / "holdout" / "cases.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()[0]
+            )
+            return release, inference_case, gold_case, step_index, alternative
+
+    raise AssertionError(
+        "could not construct a HOLDOUT case with an alternative visible evidence ID"
+    )
 
 
 def _perfect_prediction(inference_case, gold_case):
@@ -110,20 +204,21 @@ def test_holdout_prediction_cannot_invent_evidence(tmp_path) -> None:
     assert any("evidence absent from visible input" in row for row in report.violations)
 
 
-def test_visible_but_incomplete_evidence_selection_fails_gold_exactness(tmp_path) -> None:
-    release, _inference, inference_case, gold_case = _fixture(tmp_path)
-    steps = [GoldHoldoutPredictedStep.model_validate(row) for row in gold_case.expected_sequence]
-    assert len(steps[0].supporting_evidence_ids) >= 2
-    first = steps[0].model_copy(
-        update={"supporting_evidence_ids": [steps[0].supporting_evidence_ids[0]]}
+def test_visible_but_wrong_evidence_selection_fails_gold_exactness(tmp_path) -> None:
+    release, inference_case, gold_case, step_index, alternative = (
+        _fixture_with_alternative_visible_evidence(tmp_path)
     )
+    steps = [GoldHoldoutPredictedStep.model_validate(row) for row in gold_case.expected_sequence]
+    changed = steps[step_index].model_copy(update={"supporting_evidence_ids": [alternative]})
+    modified_steps = list(steps)
+    modified_steps[step_index] = changed
     prediction = build_gold_holdout_prediction(
         inference_case=inference_case,
         model_ref="Qwen/Qwen3.5-9B-Base",
         model_revision="candidate:test",
         adapter_digest="d" * 64,
-        interpretation="Uses a visible but incomplete evidence set.",
-        defense_sequence=[first, *steps[1:]],
+        interpretation="Uses visible evidence that is not the reviewed Gold support set.",
+        defense_sequence=modified_steps,
     )
 
     report = evaluate_gold_holdout_predictions(release, [prediction])
