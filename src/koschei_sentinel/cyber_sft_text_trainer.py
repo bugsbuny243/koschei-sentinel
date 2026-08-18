@@ -108,35 +108,47 @@ def _assert_text_only_model(model: Any) -> None:
         )
 
 
+def _dtype_name(value: Any) -> str:
+    return str(value).removeprefix("torch.")
+
+
 def _assert_requested_model_dtype(
     model: Any,
     expected_dtype: Any,
     torch: Any,
 ) -> list[str]:
+    expected_name = _dtype_name(expected_dtype)
     config_dtype = getattr(model.config, "dtype", None)
-    if config_dtype is not None and config_dtype != expected_dtype:
+    if config_dtype is not None and _dtype_name(config_dtype) != expected_name:
         raise RuntimeError(
             "Qwen3.5 text config dtype differs from the explicitly requested training dtype: "
-            f"{config_dtype} != {expected_dtype}"
+            f"{_dtype_name(config_dtype)} != {expected_name}"
         )
 
     observed = sorted(
         {
-            str(parameter.dtype).removeprefix("torch.")
+            _dtype_name(parameter.dtype)
             for parameter in model.parameters()
             if parameter.is_floating_point()
         }
     )
     if not observed:
         raise RuntimeError("Qwen3.5 text model exposes no floating parameters after load")
+    if expected_name not in observed:
+        raise RuntimeError(
+            "Qwen3.5 loaded model does not expose the explicitly requested low-precision dtype: "
+            f"{expected_name}; observed={observed}"
+        )
 
     competing = (
         torch.bfloat16 if expected_dtype == torch.float16 else torch.float16
     )
+    competing_name = _dtype_name(competing)
     mismatched = [
         name
         for name, parameter in model.named_parameters()
-        if parameter.is_floating_point() and parameter.dtype == competing
+        if parameter.is_floating_point()
+        and _dtype_name(parameter.dtype) == competing_name
     ]
     if mismatched:
         raise RuntimeError(
