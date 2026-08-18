@@ -6,6 +6,7 @@ from pathlib import Path
 
 from koschei_sentinel.cyber_sft_text_trainer import execute_cyber_sft_text
 from koschei_sentinel.cyber_sft_training import load_cyber_sft_config, plan_cyber_sft
+from koschei_sentinel.cyber_training_readiness import audit_cyber_training_readiness
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,6 +26,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _assert_gold_execution_gate(config, plan) -> None:
+    if config.stage.value != "DEFENSE_REFLEX" or plan.corpus_promotion_eligible is not True:
+        return
+    readiness = audit_cyber_training_readiness(
+        config,
+        check_runtime=False,
+        check_tokenization=False,
+    )
+    if not readiness.gold_release_audit_checked or readiness.gold_release_audit_valid is not True:
+        detail = "; ".join(readiness.blockers[:8]) or "Gold release audit was not verified"
+        raise RuntimeError(
+            "promotion-eligible Defense Reflex execution requires a valid Gold release audit: "
+            + detail
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -37,7 +54,11 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(plan.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-        result = execute_cyber_sft_text(config, plan) if args.execute else plan
+        if args.execute:
+            _assert_gold_execution_gate(config, plan)
+            result = execute_cyber_sft_text(config, plan)
+        else:
+            result = plan
         print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
         return 0
     except (FileExistsError, OSError, RuntimeError, TypeError, ValueError) as exc:
