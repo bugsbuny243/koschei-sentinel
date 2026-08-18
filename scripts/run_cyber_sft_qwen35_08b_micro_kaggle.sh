@@ -10,6 +10,7 @@ CONFIG="configs/training/cyber-sft.qwen3.5-0.8b.micro.json"
 TARGET_9B_NORMAL_CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.json"
 TARGET_9B_LOWMEM_CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.lowmem.json"
 PLAN="$TRAINING_ROOT/qwen35-08b-micro.plan.json"
+TRAINING_SOURCE="$TRAINING_ROOT/qwen35-08b-micro.training-source.json"
 RUN_DIR="$TRAINING_ROOT/runs/qwen35-08b-micro-001"
 EXPORT_ROOT="${KOSCHEI_KAGGLE_OUTPUT_ROOT:-/kaggle/working/koschei-sentinel-micro-output}"
 
@@ -49,6 +50,8 @@ if [[ ! -d "$CORPUS" ]]; then
   sentinel-cyber-seed-curriculum --output-root "$TRAINING_ROOT"
 fi
 
+REPOSITORY_COMMIT="$(git rev-parse HEAD)"
+
 printf '\n[Koschei] Qwen3.5-0.8B exact model preflight\n'
 sentinel-cyber-model-preflight \
   --config "$CONFIG" \
@@ -69,23 +72,55 @@ sentinel-cyber-training-readiness \
   --check-tokenization \
   | tee "$EXPORT_ROOT/readiness-micro.json"
 
-printf '\n[Koschei] Executing real Qwen3.5-0.8B text-only QLoRA micro-smoke\n'
-sentinel-cyber-sft \
-  --config "$CONFIG" \
-  --plan-output "$PLAN" \
-  --execute \
-  2>&1 | tee "$EXPORT_ROOT/training-micro.log"
+if [[ -d "$RUN_DIR" ]]; then
+  printf '\n[Koschei] Completed micro run exists; checking fail-closed reuse before any retraining\n'
+  if [[ ! -f "$PLAN" || ! -f "$TRAINING_SOURCE" ]]; then
+    echo "completed micro run exists but plan/source provenance is missing; refusing retraining" >&2
+    exit 2
+  fi
+  sentinel-cyber-sft-reuse-check \
+    --run-dir "$RUN_DIR" \
+    --training-source "$TRAINING_SOURCE" \
+    --config "$CONFIG" \
+    --plan "$PLAN" \
+    --repository-commit "$REPOSITORY_COMMIT" \
+    | tee "$EXPORT_ROOT/reuse-check-micro.json"
+  printf '[Koschei] REUSING VERIFIED COMPLETED MICRO RUN; GPU TRAINING SKIPPED.\n'
+  printf 'reused\n' > "$EXPORT_ROOT/training-execution.txt"
+else
+  printf '\n[Koschei] Planning micro run before training source is sealed\n'
+  sentinel-cyber-sft \
+    --config "$CONFIG" \
+    --plan-output "$PLAN" \
+    | tee "$EXPORT_ROOT/planning-micro.log"
+
+  printf '\n[Koschei] Binding micro training to exact repository/config/plan before execution\n'
+  sentinel-cyber-sft-source-bind \
+    --config "$CONFIG" \
+    --plan "$PLAN" \
+    --repository-commit "$REPOSITORY_COMMIT" \
+    --output "$TRAINING_SOURCE" \
+    | tee "$EXPORT_ROOT/training-source-bind.json"
+
+  printf '\n[Koschei] Executing real Qwen3.5-0.8B text-only QLoRA micro-smoke\n'
+  sentinel-cyber-sft \
+    --config "$CONFIG" \
+    --plan-output "$PLAN" \
+    --execute \
+    2>&1 | tee "$EXPORT_ROOT/training-micro.log"
+  printf 'executed\n' > "$EXPORT_ROOT/training-execution.txt"
+fi
 
 printf '\n[Koschei] Verifying micro adapter + receipt + text runtime\n'
 sentinel-cyber-sft-verify \
   --run-dir "$RUN_DIR" \
   | tee "$EXPORT_ROOT/verification.json"
 
-REPOSITORY_COMMIT="$(git rev-parse HEAD)"
 printf '\n[Koschei] Building fail-closed micro run attestation\n'
 sentinel-cyber-sft-attest \
   --config "$CONFIG" \
   --plan "$PLAN" \
+  --training-source "$TRAINING_SOURCE" \
   --run-dir "$RUN_DIR" \
   --model-preflight "$EXPORT_ROOT/model-preflight.json" \
   --verification "$EXPORT_ROOT/verification.json" \
@@ -96,6 +131,7 @@ sentinel-cyber-sft-attest \
 mkdir -p "$EXPORT_ROOT/run"
 cp -a "$RUN_DIR"/. "$EXPORT_ROOT/run/"
 cp "$PLAN" "$EXPORT_ROOT/training-plan.json"
+cp "$TRAINING_SOURCE" "$EXPORT_ROOT/training-source.json"
 cp "$CONFIG" "$EXPORT_ROOT/training-config.json"
 cp "$CORPUS/manifest.json" "$EXPORT_ROOT/corpus-manifest.json"
 cp "$CORPUS/examples.jsonl" "$EXPORT_ROOT/corpus-examples.jsonl"
