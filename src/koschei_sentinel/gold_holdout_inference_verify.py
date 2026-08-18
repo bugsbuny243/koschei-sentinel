@@ -21,8 +21,8 @@ from koschei_sentinel.training import canonical_json
 
 
 class GoldHoldoutInferenceVerification(StrictModel):
-    schema_version: Literal["sentinel.gold-holdout-inference-verification.v1"] = (
-        "sentinel.gold-holdout-inference-verification.v1"
+    schema_version: Literal["sentinel.gold-holdout-inference-verification.v2"] = (
+        "sentinel.gold-holdout-inference-verification.v2"
     )
     output_dir: str
     case_count: int = Field(ge=0)
@@ -266,7 +266,7 @@ def verify_gold_holdout_inference_output(
         and case_count == prediction_count + failure_count
     )
     payload: dict[str, object] = {
-        "schema_version": "sentinel.gold-holdout-inference-verification.v1",
+        "schema_version": "sentinel.gold-holdout-inference-verification.v2",
         "output_dir": str(output_dir),
         "case_count": case_count,
         "prediction_count": prediction_count,
