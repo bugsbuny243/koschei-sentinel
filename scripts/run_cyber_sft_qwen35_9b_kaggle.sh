@@ -69,10 +69,59 @@ if [[ ! -d "$MICRO_EXPORT_ROOT" ]]; then
   echo "run notebooks/koschei_sentinel_cyber_sft_08b_micro_kaggle.ipynb first" >&2
   exit 2
 fi
-sentinel-cyber-sft-scale-gate \
-  --micro-export "$MICRO_EXPORT_ROOT" \
-  --target-config "$NORMAL_CONFIG" \
-  | tee "$EXPORT_ROOT/micro-scale-gate.json"
+
+run_scale_gate() {
+  local profile="$1"
+  local config="$2"
+  local output="$EXPORT_ROOT/micro-scale-gate-${profile}.json"
+  set +e
+  sentinel-cyber-sft-scale-gate \
+    --micro-export "$MICRO_EXPORT_ROOT" \
+    --target-config "$config" \
+    | tee "$output"
+  local status=${PIPESTATUS[0]}
+  set -e
+  return "$status"
+}
+
+case "$PROFILE_MODE" in
+  normal)
+    run_scale_gate normal "$NORMAL_CONFIG"
+    cp "$EXPORT_ROOT/micro-scale-gate-normal.json" "$EXPORT_ROOT/micro-scale-gate.json"
+    ;;
+  lowmem)
+    run_scale_gate lowmem "$LOWMEM_CONFIG"
+    cp "$EXPORT_ROOT/micro-scale-gate-lowmem.json" "$EXPORT_ROOT/micro-scale-gate.json"
+    ;;
+  auto)
+    if run_scale_gate normal "$NORMAL_CONFIG"; then
+      cp "$EXPORT_ROOT/micro-scale-gate-normal.json" "$EXPORT_ROOT/micro-scale-gate.json"
+    else
+      NORMAL_GATE_STATUS=$?
+      if [[ "$NORMAL_GATE_STATUS" -eq 2 ]]; then
+        echo "[Koschei] Normal scale gate failed to execute." >&2
+        exit 2
+      fi
+      printf '\n[Koschei] Normal 9B gate blocked; checking low-memory 9B profile.\n'
+      if run_scale_gate lowmem "$LOWMEM_CONFIG"; then
+        PROFILE_MODE="lowmem"
+        cp "$EXPORT_ROOT/micro-scale-gate-lowmem.json" "$EXPORT_ROOT/micro-scale-gate.json"
+      else
+        LOWMEM_GATE_STATUS=$?
+        if [[ "$LOWMEM_GATE_STATUS" -eq 2 ]]; then
+          echo "[Koschei] Low-memory scale gate failed to execute." >&2
+          exit 2
+        fi
+        echo "[Koschei] Micro evidence blocks both normal and low-memory 9B profiles." >&2
+        exit 1
+      fi
+    fi
+    ;;
+  *)
+    echo "KOSCHEI_KAGGLE_PROFILE must be auto, normal, or lowmem" >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! -d "$CORPUS" ]]; then
   sentinel-cyber-seed-curriculum --output-root "$TRAINING_ROOT"
@@ -214,10 +263,6 @@ case "$PROFILE_MODE" in
         exit 2
       fi
     fi
-    ;;
-  *)
-    echo "KOSCHEI_KAGGLE_PROFILE must be auto, normal, or lowmem" >&2
-    exit 2
     ;;
 esac
 
