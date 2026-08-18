@@ -11,6 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Build a fail-closed attestation for a verified Koschei Sentinel Cyber SFT run"
     )
     parser.add_argument("--config", required=True)
+    parser.add_argument("--plan", required=True)
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--model-preflight", required=True)
     parser.add_argument("--verification", required=True)
@@ -24,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         attestation = build_cyber_sft_run_attestation(
             config_path=args.config,
+            plan_path=args.plan,
             run_dir=args.run_dir,
             model_preflight_path=args.model_preflight,
             verification_path=args.verification,
