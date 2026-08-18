@@ -4,7 +4,7 @@ import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import Field
 
@@ -134,6 +134,7 @@ def _load_inference_pack(
         lines = raw_inputs.decode("utf-8").splitlines()
     except UnicodeDecodeError as exc:
         raise ValueError("Gold HOLDOUT inference inputs are not valid UTF-8") from exc
+
     rows: list[GoldHoldoutInferenceCase] = []
     seen_case_ids: set[str] = set()
     for line_number, line in enumerate(lines, start=1):
@@ -151,13 +152,14 @@ def _load_inference_pack(
             raise ValueError(f"Gold HOLDOUT input-context digest mismatch: {case.case_id}")
         _allowed_input_context(case)
         rows.append(case)
+
     rows = sorted(rows, key=lambda row: row.case_id)
+    if not rows:
+        raise ValueError("Gold HOLDOUT inference pack is empty")
     if len(rows) != manifest.case_count:
         raise ValueError("Gold HOLDOUT inference case count differs from manifest")
     if [row.case_id for row in rows] != manifest.case_ids:
         raise ValueError("Gold HOLDOUT inference case IDs differ from manifest")
-    if not rows:
-        raise ValueError("Gold HOLDOUT inference pack is empty")
     return rows, manifest, manifest_raw
 
 
@@ -187,7 +189,10 @@ def _load_candidate_identity(
             raise ValueError(f"Gold HOLDOUT candidate config/run mismatch: {label}")
     if manifest.corpus_promotion_eligible is not True:
         raise ValueError("Gold HOLDOUT promotion evaluation requires a promotion-eligible adapter")
-    return config, manifest, run_path
+    adapter_path = run_path / "adapter"
+    if not adapter_path.is_dir():
+        raise ValueError("verified Cyber SFT run is missing its adapter directory")
+    return config, manifest, adapter_path
 
 
 def build_gold_holdout_inference_plan(
@@ -200,7 +205,7 @@ def build_gold_holdout_inference_plan(
     root: str | Path = ".",
 ) -> GoldHoldoutInferencePlan:
     rows, inference_manifest, manifest_raw = _load_inference_pack(inference_pack_dir)
-    config, adapter_manifest, _run_path = _load_candidate_identity(
+    config, adapter_manifest, _adapter_path = _load_candidate_identity(
         run_dir=run_dir,
         training_config_path=training_config_path,
         root=root,
@@ -309,8 +314,8 @@ def execute_gold_holdout_inference(
     generation_policy: GoldHoldoutGenerationPolicy | None = None,
     root: str | Path = ".",
 ) -> GoldHoldoutInferenceRunReceipt:
-    rows, inference_manifest, _manifest_raw = _load_inference_pack(inference_pack_dir)
-    config, adapter_manifest, run_path = _load_candidate_identity(
+    rows, _inference_manifest, _manifest_raw = _load_inference_pack(inference_pack_dir)
+    config, adapter_manifest, adapter_path = _load_candidate_identity(
         run_dir=run_dir,
         training_config_path=training_config_path,
         root=root,
@@ -337,6 +342,7 @@ def execute_gold_holdout_inference(
         raise RuntimeError("Gold HOLDOUT inference requires project training dependencies") from exc
 
     device_index = _cuda_preflight(config, torch)
+    device = torch.device(f"cuda:{device_index}")
     dtype = torch.bfloat16 if config.quantization.compute_dtype == "bfloat16" else torch.float16
     tokenizer = AutoTokenizer.from_pretrained(
         config.base_model,
@@ -363,7 +369,7 @@ def execute_gold_holdout_inference(
     )
     _assert_text_only_model(base_model)
     _assert_requested_model_dtype(base_model, dtype, torch)
-    model = PeftModel.from_pretrained(base_model, str(run_path), is_trainable=False)
+    model = PeftModel.from_pretrained(base_model, str(adapter_path), is_trainable=False)
     model.eval()
 
     predictions: list[GoldHoldoutPrediction] = []
@@ -391,7 +397,7 @@ def execute_gold_holdout_inference(
                 )
             )
             continue
-        encoded = {key: value.to(device_index) for key, value in encoded.items()}
+        encoded = {key: value.to(device) for key, value in encoded.items()}
         with torch.inference_mode():
             output_ids = model.generate(
                 **encoded,
