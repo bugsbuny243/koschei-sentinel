@@ -1,3 +1,5 @@
+import pytest
+
 from koschei_sentinel.cyber_defense_promotion import (
     build_cyber_defense_promotion_evidence,
 )
@@ -11,6 +13,7 @@ from koschei_sentinel.defense_resource_scheduler import (
     DefenseResourceClass,
     DefenseResourcePolicy,
 )
+from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationReport
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
@@ -106,11 +109,43 @@ def _load(passed: bool = True) -> DefenseLoadRangeReport:
     )
 
 
+def _gold(
+    revision: str = "candidate-revision:1",
+    *,
+    passed: bool = True,
+) -> GoldHoldoutEvaluationReport:
+    score = 1.0 if passed else 0.5
+    return GoldHoldoutEvaluationReport(
+        model_ref="sentinel:candidate",
+        model_revision=revision,
+        adapter_digest="9" * 64,
+        case_count=2,
+        prediction_count=2,
+        missing_case_ids=[],
+        extra_case_ids=[],
+        structural_exact_cases=2 if passed else 1,
+        structural_exact_rate=score,
+        compared_steps=2,
+        predicted_steps=2,
+        mode_accuracy=score,
+        action_accuracy=score,
+        target_accuracy=score,
+        evidence_grounding_rate=1.0,
+        target_grounding_rate=1.0,
+        outcome_verification_rate=1.0,
+        case_results=[],
+        passed=passed,
+        violations=[] if passed else ["fixture Gold HOLDOUT failure"],
+        report_sha256="8" * 64,
+    )
+
+
 def _evidence(
     revision: str = "candidate-revision:1",
     *,
     multi_passed: bool = True,
     load_passed: bool = True,
+    gold_passed: bool = True,
 ):
     return build_cyber_defense_promotion_evidence(
         promotion_id="promotion:test",
@@ -120,10 +155,11 @@ def _evidence(
         cyber_range_report=_single(),
         multi_incident_range_report=_multi(multi_passed),
         defense_load_range_report=_load(load_passed),
+        gold_holdout_report=_gold(revision, passed=gold_passed),
     )
 
 
-def test_promotion_requires_all_three_defense_gate_families_to_pass() -> None:
+def test_promotion_requires_all_four_defense_gate_families_to_pass() -> None:
     assert _evidence().ready_for_promotion is True
 
     multi_failed = _evidence(multi_passed=False)
@@ -131,12 +167,35 @@ def test_promotion_requires_all_three_defense_gate_families_to_pass() -> None:
     assert multi_failed.cyber_range_passed is True
     assert multi_failed.multi_incident_range_passed is False
     assert multi_failed.defense_load_range_passed is True
+    assert multi_failed.gold_holdout_passed is True
 
     load_failed = _evidence(load_passed=False)
     assert load_failed.ready_for_promotion is False
     assert load_failed.cyber_range_passed is True
     assert load_failed.multi_incident_range_passed is True
     assert load_failed.defense_load_range_passed is False
+    assert load_failed.gold_holdout_passed is True
+
+    gold_failed = _evidence(gold_passed=False)
+    assert gold_failed.ready_for_promotion is False
+    assert gold_failed.cyber_range_passed is True
+    assert gold_failed.multi_incident_range_passed is True
+    assert gold_failed.defense_load_range_passed is True
+    assert gold_failed.gold_holdout_passed is False
+
+
+def test_gold_holdout_report_must_belong_to_candidate_revision() -> None:
+    with pytest.raises(ValueError, match="model_revision differs"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:test",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision="candidate-revision:2",
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_report=_gold("candidate-revision:1"),
+        )
 
 
 def test_candidate_revision_is_bound_into_promotion_digest() -> None:
@@ -152,4 +211,5 @@ def test_promotion_evidence_is_deterministic() -> None:
     assert first.evidence_sha256 == second.evidence_sha256
     assert first.world_line_containment_rate == 1.0
     assert first.scheduler_service_coverage == 1.0
-    assert first.schema_version == "sentinel.cyber-defense-promotion-evidence.v2"
+    assert first.gold_holdout_structural_exact_rate == 1.0
+    assert first.schema_version == "sentinel.cyber-defense-promotion-evidence.v3"
