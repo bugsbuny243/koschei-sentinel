@@ -7,6 +7,7 @@ cd "$ROOT"
 TRAINING_ROOT="build/cyber-training"
 CORPUS="$TRAINING_ROOT/defense-reflex-v3"
 EXPORT_ROOT="${KOSCHEI_KAGGLE_OUTPUT_ROOT:-/kaggle/working/koschei-sentinel-output}"
+MICRO_EXPORT_ROOT="${KOSCHEI_MICRO_EXPORT_ROOT:-/kaggle/working/koschei-sentinel-micro-output}"
 PROFILE_MODE="${KOSCHEI_KAGGLE_PROFILE:-auto}"
 
 NORMAL_CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.json"
@@ -20,18 +21,31 @@ LOWMEM_RUN_DIR="$TRAINING_ROOT/runs/qwen35-9b-smoke-lowmem-001"
 export HF_HOME="${HF_HOME:-/kaggle/working/hf-cache}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
 
-EXPORT_ROOT="$(python - "$EXPORT_ROOT" "$PWD" "$HF_HOME" <<'PY'
+MICRO_EXPORT_ROOT="$(python - "$MICRO_EXPORT_ROOT" <<'PY'
+from pathlib import Path
+import sys
+
+print(Path(sys.argv[1]).expanduser().resolve())
+PY
+)"
+
+EXPORT_ROOT="$(python - "$EXPORT_ROOT" "$PWD" "$HF_HOME" "$MICRO_EXPORT_ROOT" <<'PY'
 from pathlib import Path
 import sys
 
 candidate = Path(sys.argv[1]).expanduser().resolve()
 repo = Path(sys.argv[2]).resolve()
 hf_home = Path(sys.argv[3]).expanduser().resolve()
+micro_export = Path(sys.argv[4]).expanduser().resolve()
 working = Path("/kaggle/working").resolve()
 
 if candidate == working or working not in candidate.parents:
     raise SystemExit("KOSCHEI_KAGGLE_OUTPUT_ROOT must be a child of /kaggle/working")
-for protected, label in ((repo, "repository"), (hf_home, "HF_HOME")):
+for protected, label in (
+    (repo, "repository"),
+    (hf_home, "HF_HOME"),
+    (micro_export, "micro export"),
+):
     overlaps = (
         candidate == protected
         or candidate in protected.parents
@@ -48,6 +62,17 @@ mkdir -p "$EXPORT_ROOT"
 
 printf '\n[Koschei] Installing text-only Cyber SFT runtime\n'
 python -m pip install -e '.[training]'
+
+printf '\n[Koschei] Requiring verified micro-smoke evidence before any 9B work\n'
+if [[ ! -d "$MICRO_EXPORT_ROOT" ]]; then
+  echo "micro export is missing: $MICRO_EXPORT_ROOT" >&2
+  echo "run notebooks/koschei_sentinel_cyber_sft_08b_micro_kaggle.ipynb first" >&2
+  exit 2
+fi
+sentinel-cyber-sft-scale-gate \
+  --micro-export "$MICRO_EXPORT_ROOT" \
+  --target-config "$NORMAL_CONFIG" \
+  | tee "$EXPORT_ROOT/micro-scale-gate.json"
 
 if [[ ! -d "$CORPUS" ]]; then
   sentinel-cyber-seed-curriculum --output-root "$TRAINING_ROOT"
