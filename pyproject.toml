@@ -30,9 +30,7 @@ training = [
   "bitsandbytes",
   "datasets",
   "peft",
-  "pillow",
   "torch",
-  "torchvision",
   "transformers>=5.8,<6",
 ]
 
