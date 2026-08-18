@@ -7,7 +7,10 @@ from pathlib import Path
 import koschei_sentinel.cyber_sft_export_verify as export_module
 from koschei_sentinel.cyber_sft_artifact_verify import CyberSFTArtifactVerification
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
-from koschei_sentinel.cyber_sft_run_attestation import _attestation_digest, _config_sha256
+from koschei_sentinel.cyber_sft_run_attestation import (
+    _attestation_digest,
+    _config_sha256,
+)
 from koschei_sentinel.cyber_sft_training import CyberSFTConfig
 
 
@@ -36,7 +39,10 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         minimum_cuda_memory_gb=0.0,
         quantization={"bits": 4, "compute_dtype": "float16"},
     )
-    _write_json(root / "selected-training-config.json", config.model_dump(mode="json"))
+    _write_json(
+        root / "selected-training-config.json",
+        config.model_dump(mode="json"),
+    )
     config_sha = _config_sha256(config)
 
     examples_raw = b'{"example_id":"portable"}\n'
@@ -107,7 +113,11 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
     }
     verification_raw = _write_json(root / "verification.json", verification_payload)
     verification = CyberSFTArtifactVerification.model_validate(verification_payload)
-    monkeypatch.setattr(export_module, "verify_cyber_sft_run", lambda *_args, **_kwargs: verification)
+    monkeypatch.setattr(
+        export_module,
+        "verify_cyber_sft_run",
+        lambda *_args, **_kwargs: verification,
+    )
 
     adapter_digest = "d" * 64
     receipt_sha = "e" * 64
@@ -191,7 +201,10 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
     )
 
     (root / "selected-profile.txt").write_text("normal\n", encoding="utf-8")
-    (root / "repository-commit.txt").write_text("f" * 40 + "\n", encoding="utf-8")
+    (root / "repository-commit.txt").write_text(
+        "f" * 40 + "\n",
+        encoding="utf-8",
+    )
 
     attestation_payload: dict[str, object] = {
         "schema_version": "sentinel.cyber-sft-run-attestation.v1",
@@ -217,12 +230,17 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         "smoke_only": True,
         "promotion_eligible": False,
     }
-    attestation_payload["attestation_sha256"] = _attestation_digest(attestation_payload)
+    attestation_payload["attestation_sha256"] = _attestation_digest(
+        attestation_payload
+    )
     _write_json(root / "run-attestation.json", attestation_payload)
     return root
 
 
-def test_portable_export_verifies_when_all_bindings_match(monkeypatch, tmp_path: Path) -> None:
+def test_portable_export_verifies_when_all_bindings_match(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     root = _build_export(tmp_path, monkeypatch)
 
     report = verify_cyber_sft_export(root)
@@ -235,7 +253,10 @@ def test_portable_export_verifies_when_all_bindings_match(monkeypatch, tmp_path:
     assert report.violations == []
 
 
-def test_portable_export_rejects_corpus_example_tampering(monkeypatch, tmp_path: Path) -> None:
+def test_portable_export_rejects_corpus_example_tampering(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     root = _build_export(tmp_path, monkeypatch)
     with (root / "defense-reflex-v3.examples.jsonl").open("ab") as handle:
         handle.write(b'{"tampered":true}\n')
@@ -247,7 +268,10 @@ def test_portable_export_rejects_corpus_example_tampering(monkeypatch, tmp_path:
     assert any("corpus examples" in row for row in report.violations)
 
 
-def test_portable_export_rejects_plan_tampering(monkeypatch, tmp_path: Path) -> None:
+def test_portable_export_rejects_plan_tampering(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     root = _build_export(tmp_path, monkeypatch)
     path = root / "qwen35-9b-smoke.plan.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
