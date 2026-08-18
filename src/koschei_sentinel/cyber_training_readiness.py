@@ -14,6 +14,7 @@ from koschei_sentinel.cyber_sft_training import (
     CyberSFTPlan,
     cyber_sft_messages,
     load_cyber_sft_examples,
+    load_cyber_sft_validation_examples,
     plan_cyber_sft,
 )
 from koschei_sentinel.models import StrictModel
@@ -129,6 +130,24 @@ def _quantization_capability_blocker(
     return None
 
 
+def _tokenization_rows(
+    config: CyberSFTConfig,
+    *,
+    root: str | Path,
+) -> list[object]:
+    training_rows, _examples_sha, _manifest_sha, _promotion_eligible = (
+        load_cyber_sft_examples(config, root=root)
+    )
+    rows = list(training_rows)
+    validation_loaded = load_cyber_sft_validation_examples(config, root=root)
+    if validation_loaded is not None:
+        validation_rows, _validation_examples_sha, _validation_manifest_sha, _validation_promotion = (
+            validation_loaded
+        )
+        rows.extend(validation_rows)
+    return rows
+
+
 def _tokenization_preflight(
     config: CyberSFTConfig,
     *,
@@ -139,10 +158,7 @@ def _tokenization_preflight(
     except ImportError as exc:
         raise RuntimeError("transformers is required for tokenization preflight") from exc
 
-    rows, _examples_sha, _manifest_sha, _promotion_eligible = load_cyber_sft_examples(
-        config,
-        root=root,
-    )
+    rows = _tokenization_rows(config, root=root)
     tokenizer = AutoTokenizer.from_pretrained(
         config.base_model,
         revision=config.base_revision,
