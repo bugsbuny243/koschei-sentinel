@@ -8,6 +8,7 @@ CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.json"
 TRAINING_ROOT="build/cyber-training"
 CORPUS="$TRAINING_ROOT/defense-reflex-v3"
 PLAN="$TRAINING_ROOT/qwen35-9b-smoke.plan.json"
+RUN_DIR="$TRAINING_ROOT/runs/qwen35-9b-smoke-001"
 
 python -m pip install -e '.[training]'
 
@@ -24,3 +25,6 @@ sentinel-cyber-sft \
   --config "$CONFIG" \
   --plan-output "$PLAN" \
   --execute
+
+sentinel-cyber-sft-verify \
+  --run-dir "$RUN_DIR"
