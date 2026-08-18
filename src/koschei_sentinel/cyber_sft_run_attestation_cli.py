@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--model-preflight", required=True)
     parser.add_argument("--verification", required=True)
-    parser.add_argument("--profile", choices=("normal", "lowmem"), required=True)
+    parser.add_argument("--profile", choices=("micro", "normal", "lowmem"), required=True)
     parser.add_argument("--repository-commit", required=True)
     return parser
 
