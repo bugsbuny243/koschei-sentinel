@@ -50,11 +50,19 @@ def test_transformers_511_is_blocked_for_qwen35_dtype_integrity() -> None:
     assert "5.12" in blocker
 
 
-def test_transformers_512_is_accepted() -> None:
+def test_transformers_512_final_is_accepted() -> None:
     assert _transformers_version_blocker("5.12.0") is None
+    assert _transformers_version_blocker("5.13.1") is None
 
 
-def test_transformers_release_suffix_parses_release_components() -> None:
+def test_transformers_prereleases_are_blocked_fail_closed() -> None:
+    for version in ("5.12.0.dev0", "5.12.0rc1", "5.13.0a1", "5.13.1b2"):
+        blocker = _transformers_version_blocker(version)
+        assert blocker is not None
+        assert "prerelease" in blocker
+
+
+def test_transformers_release_suffix_still_parses_numeric_components() -> None:
     assert _release_version_tuple("5.12.0.dev0") == (5, 12, 0)
     assert _release_version_tuple("5.13.1rc1") == (5, 13, 1)
 
