@@ -32,7 +32,7 @@ class GoldHoldoutEvaluationEvidence(StrictModel):
         "sentinel.gold-holdout-evaluation-evidence.v1"
     )
     model_ref: str
-    model_revision: str
+    model_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
     adapter_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     source_gold_audit_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     inference_inputs_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -52,6 +52,8 @@ class GoldHoldoutEvaluationEvidence(StrictModel):
 
     @model_validator(mode="after")
     def evidence_is_fail_closed(self) -> "GoldHoldoutEvaluationEvidence":
+        if self.model_revision != self.adapter_digest:
+            raise ValueError("Gold HOLDOUT model revision must equal the verified adapter digest")
         if self.report.model_ref != self.model_ref:
             raise ValueError("Gold HOLDOUT evidence report model_ref mismatch")
         if self.report.model_revision != self.model_revision:
