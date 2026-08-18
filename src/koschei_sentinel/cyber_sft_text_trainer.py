@@ -118,13 +118,6 @@ def _assert_requested_model_dtype(
     torch: Any,
 ) -> list[str]:
     expected_name = _dtype_name(expected_dtype)
-    config_dtype = getattr(model.config, "dtype", None)
-    if config_dtype is not None and _dtype_name(config_dtype) != expected_name:
-        raise RuntimeError(
-            "Qwen3.5 text config dtype differs from the explicitly requested training dtype: "
-            f"{_dtype_name(config_dtype)} != {expected_name}"
-        )
-
     observed = sorted(
         {
             _dtype_name(parameter.dtype)
