@@ -23,6 +23,38 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     )
 
 
+def _plan_payload(
+    config: CyberSFTConfig,
+    *,
+    explicit_validation: bool = False,
+    validation_examples_sha: str | None = None,
+    validation_manifest_sha: str | None = None,
+) -> dict[str, object]:
+    return {
+        "schema_version": "sentinel.cyber-sft-plan.v1",
+        "run_id": config.run_id,
+        "stage": "DEFENSE_REFLEX",
+        "execution_profile": "DENSE_SINGLE_GPU_QLORA",
+        "executable_with_current_trainer": True,
+        "corpus_promotion_eligible": False,
+        "base_model": config.base_model,
+        "base_revision": config.base_revision,
+        "corpus_examples_sha256": "b" * 64,
+        "corpus_manifest_sha256": "c" * 64,
+        "validation_corpus_examples_sha256": validation_examples_sha,
+        "validation_corpus_manifest_sha256": validation_manifest_sha,
+        "explicit_validation": explicit_validation,
+        "example_count": 10,
+        "training_examples": 9 if not explicit_validation else 8,
+        "validation_examples": 1 if not explicit_validation else 2,
+        "effective_batch_size": config.effective_batch_size,
+        "estimated_optimizer_steps": 1,
+        "input_adapter_dir": None,
+        "output_dir": config.output_dir,
+        "warnings": [],
+    }
+
+
 def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, CyberSFTConfig]:
     config = CyberSFTConfig(
         run_id="source-binding-test",
@@ -36,30 +68,42 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, CyberSFTConfig]:
     config_path = tmp_path / "config.json"
     _write_json(config_path, config.model_dump(mode="json"))
     plan_path = tmp_path / "plan.json"
+    _write_json(plan_path, _plan_payload(config))
+    source_path = tmp_path / "training-source.json"
+    source = build_training_source_binding(
+        config_path=config_path,
+        plan_path=plan_path,
+        repository_commit="f" * 40,
+    )
+    _write_json(source_path, source.model_dump(mode="json"))
+    return config_path, plan_path, source_path, config
+
+
+def _explicit_fixture(tmp_path: Path) -> tuple[Path, Path, Path, CyberSFTConfig]:
+    config = CyberSFTConfig(
+        run_id="source-binding-gold-test",
+        stage="DEFENSE_REFLEX",
+        base_model="Qwen/Qwen3.5-9B-Base",
+        base_revision="a" * 40,
+        corpus_dir="build/gold/train",
+        validation_corpus_dir="build/gold/validation",
+        validation_ratio=0.0,
+        output_dir="build/gold/run",
+        minimum_cuda_memory_gb=0.0,
+    )
+    config_path = tmp_path / "gold-config.json"
+    _write_json(config_path, config.model_dump(mode="json"))
+    plan_path = tmp_path / "gold-plan.json"
     _write_json(
         plan_path,
-        {
-            "schema_version": "sentinel.cyber-sft-plan.v1",
-            "run_id": config.run_id,
-            "stage": "DEFENSE_REFLEX",
-            "execution_profile": "DENSE_SINGLE_GPU_QLORA",
-            "executable_with_current_trainer": True,
-            "corpus_promotion_eligible": False,
-            "base_model": config.base_model,
-            "base_revision": config.base_revision,
-            "corpus_examples_sha256": "b" * 64,
-            "corpus_manifest_sha256": "c" * 64,
-            "example_count": 10,
-            "training_examples": 9,
-            "validation_examples": 1,
-            "effective_batch_size": config.effective_batch_size,
-            "estimated_optimizer_steps": 1,
-            "input_adapter_dir": None,
-            "output_dir": config.output_dir,
-            "warnings": [],
-        },
+        _plan_payload(
+            config,
+            explicit_validation=True,
+            validation_examples_sha="d" * 64,
+            validation_manifest_sha="e" * 64,
+        ),
     )
-    source_path = tmp_path / "training-source.json"
+    source_path = tmp_path / "gold-training-source.json"
     source = build_training_source_binding(
         config_path=config_path,
         plan_path=plan_path,
@@ -85,6 +129,46 @@ def test_training_source_binding_is_deterministic(tmp_path: Path) -> None:
 
     assert first == second
     assert first.source_binding_sha256
+    assert first.explicit_validation is False
+    assert first.validation_corpus_examples_sha256 is None
+    assert first.validation_corpus_manifest_sha256 is None
+
+
+def test_explicit_validation_source_binds_validation_corpus_hashes(tmp_path: Path) -> None:
+    config_path, plan_path, _source_path, _config = _explicit_fixture(tmp_path)
+
+    source = build_training_source_binding(
+        config_path=config_path,
+        plan_path=plan_path,
+        repository_commit="f" * 40,
+    )
+
+    assert source.explicit_validation is True
+    assert source.validation_corpus_examples_sha256 == "d" * 64
+    assert source.validation_corpus_manifest_sha256 == "e" * 64
+
+
+def test_explicit_validation_source_rejects_validation_plan_drift(tmp_path: Path) -> None:
+    config_path, plan_path, source_path, _config = _explicit_fixture(tmp_path)
+    source_payload = json.loads(source_path.read_text(encoding="utf-8"))
+    source = build_training_source_binding(
+        config_path=config_path,
+        plan_path=plan_path,
+        repository_commit="f" * 40,
+    )
+    assert source_payload["source_binding_sha256"] == source.source_binding_sha256
+
+    plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan_payload["validation_corpus_examples_sha256"] = "9" * 64
+    _write_json(plan_path, plan_payload)
+
+    with pytest.raises(ValueError, match="differs from current repo/config/plan"):
+        verify_training_source_binding(
+            source,
+            config_path=config_path,
+            plan_path=plan_path,
+            repository_commit="f" * 40,
+        )
 
 
 def test_training_source_binding_rejects_repository_commit_drift(tmp_path: Path) -> None:
