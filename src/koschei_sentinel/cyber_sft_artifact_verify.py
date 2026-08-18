@@ -70,6 +70,20 @@ def _verify_model_runtime(path: Path) -> tuple[bool, str | None]:
     for key, expected in _EXPECTED_TEXT_RUNTIME.items():
         if payload.get(key) != expected:
             return False, f"model runtime mismatch: {key}"
+
+    requested = payload.get("requested_compute_dtype")
+    if requested not in {"float16", "bfloat16"}:
+        return False, "model runtime lacks a supported requested compute dtype"
+    observed = payload.get("observed_floating_dtypes_before_kbit_prepare")
+    if not isinstance(observed, list) or not observed:
+        return False, "model runtime lacks pre-kbit floating dtype evidence"
+    if any(not isinstance(row, str) for row in observed):
+        return False, "model runtime floating dtype evidence must contain strings"
+    if requested not in observed:
+        return False, "requested compute dtype was not observed before k-bit preparation"
+    competing = "bfloat16" if requested == "float16" else "float16"
+    if competing in observed:
+        return False, "competing low-precision dtype leaked into loaded model weights"
     return True, None
 
 
