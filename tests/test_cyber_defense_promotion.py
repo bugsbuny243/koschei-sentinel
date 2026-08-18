@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 from koschei_sentinel.cyber_defense_promotion import (
@@ -13,10 +15,14 @@ from koschei_sentinel.defense_resource_scheduler import (
     DefenseResourceClass,
     DefenseResourcePolicy,
 )
-from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationReport
+from koschei_sentinel.gold_holdout_evaluation import (
+    GoldHoldoutEvaluationPolicy,
+    GoldHoldoutEvaluationReport,
+)
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
+from koschei_sentinel.training import canonical_json
 
 
 STAGES = [
@@ -113,31 +119,34 @@ def _gold(
     revision: str = "candidate-revision:1",
     *,
     passed: bool = True,
+    score: float | None = None,
 ) -> GoldHoldoutEvaluationReport:
-    score = 1.0 if passed else 0.5
-    return GoldHoldoutEvaluationReport(
-        model_ref="sentinel:candidate",
-        model_revision=revision,
-        adapter_digest="9" * 64,
-        case_count=2,
-        prediction_count=2,
-        missing_case_ids=[],
-        extra_case_ids=[],
-        structural_exact_cases=2 if passed else 1,
-        structural_exact_rate=score,
-        compared_steps=2,
-        predicted_steps=2,
-        mode_accuracy=score,
-        action_accuracy=score,
-        target_accuracy=score,
-        evidence_grounding_rate=1.0,
-        target_grounding_rate=1.0,
-        outcome_verification_rate=1.0,
-        case_results=[],
-        passed=passed,
-        violations=[] if passed else ["fixture Gold HOLDOUT failure"],
-        report_sha256="8" * 64,
-    )
+    metric = score if score is not None else (1.0 if passed else 0.5)
+    payload = {
+        "schema_version": "sentinel.gold-holdout-evaluation-report.v1",
+        "model_ref": "sentinel:candidate",
+        "model_revision": revision,
+        "adapter_digest": "9" * 64,
+        "case_count": 2,
+        "prediction_count": 2,
+        "missing_case_ids": [],
+        "extra_case_ids": [],
+        "structural_exact_cases": 2 if metric == 1.0 else 1,
+        "structural_exact_rate": metric,
+        "compared_steps": 2,
+        "predicted_steps": 2,
+        "mode_accuracy": metric,
+        "action_accuracy": metric,
+        "target_accuracy": metric,
+        "evidence_grounding_rate": 1.0,
+        "target_grounding_rate": 1.0,
+        "outcome_verification_rate": 1.0,
+        "case_results": [],
+        "passed": passed,
+        "violations": [] if passed else ["fixture Gold HOLDOUT failure"],
+    }
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return GoldHoldoutEvaluationReport(**payload, report_sha256=digest)
 
 
 def _evidence(
@@ -146,6 +155,7 @@ def _evidence(
     multi_passed: bool = True,
     load_passed: bool = True,
     gold_passed: bool = True,
+    gold_policy: GoldHoldoutEvaluationPolicy | None = None,
 ):
     return build_cyber_defense_promotion_evidence(
         promotion_id="promotion:test",
@@ -156,6 +166,7 @@ def _evidence(
         multi_incident_range_report=_multi(multi_passed),
         defense_load_range_report=_load(load_passed),
         gold_holdout_report=_gold(revision, passed=gold_passed),
+        gold_holdout_policy=gold_policy or GoldHoldoutEvaluationPolicy(),
     )
 
 
@@ -195,6 +206,47 @@ def test_gold_holdout_report_must_belong_to_candidate_revision() -> None:
             multi_incident_range_report=_multi(),
             defense_load_range_report=_load(),
             gold_holdout_report=_gold("candidate-revision:1"),
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+        )
+
+
+def test_promotion_rechecks_gold_report_under_supplied_policy() -> None:
+    report = _gold(passed=True, score=0.90)
+    evidence = build_cyber_defense_promotion_evidence(
+        promotion_id="promotion:test",
+        candidate_model_ref="sentinel:candidate",
+        candidate_model_revision="candidate-revision:1",
+        training_bundle=_bundle(),
+        cyber_range_report=_single(),
+        multi_incident_range_report=_multi(),
+        defense_load_range_report=_load(),
+        gold_holdout_report=report,
+        gold_holdout_policy=GoldHoldoutEvaluationPolicy(
+            minimum_structural_exact_rate=0.95,
+            minimum_mode_accuracy=0.95,
+            minimum_action_accuracy=0.95,
+            minimum_target_accuracy=0.95,
+        ),
+    )
+
+    assert report.passed is True
+    assert evidence.gold_holdout_passed is False
+    assert evidence.ready_for_promotion is False
+
+
+def test_gold_report_self_hash_is_verified() -> None:
+    tampered = _gold().model_copy(update={"structural_exact_rate": 0.5})
+    with pytest.raises(ValueError, match="self-hash does not verify"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:test",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision="candidate-revision:1",
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_report=tampered,
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
         )
 
 
@@ -212,4 +264,5 @@ def test_promotion_evidence_is_deterministic() -> None:
     assert first.world_line_containment_rate == 1.0
     assert first.scheduler_service_coverage == 1.0
     assert first.gold_holdout_structural_exact_rate == 1.0
+    assert first.gold_holdout_policy_sha256
     assert first.schema_version == "sentinel.cyber-defense-promotion-evidence.v3"
