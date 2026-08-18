@@ -1,0 +1,45 @@
+{
+  "schema_version": "sentinel.cyber-sft-config.v1",
+  "run_id": "sentinel-cyber-sft-qwen35-9b-smoke-lowmem-001",
+  "stage": "DEFENSE_REFLEX",
+  "execution_profile": "DENSE_SINGLE_GPU_QLORA",
+  "base_model": "Qwen/Qwen3.5-9B-Base",
+  "base_revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+  "corpus_dir": "build/cyber-training/defense-reflex-v3",
+  "output_dir": "build/cyber-training/runs/qwen35-9b-smoke-lowmem-001",
+  "input_adapter_dir": null,
+  "max_sequence_length": 1024,
+  "epochs": 1.0,
+  "learning_rate": 0.0001,
+  "per_device_batch_size": 1,
+  "gradient_accumulation_steps": 2,
+  "validation_ratio": 0.1,
+  "warmup_ratio": 0.03,
+  "logging_steps": 1,
+  "seed": 1701,
+  "minimum_cuda_memory_gb": 12.0,
+  "gradient_checkpointing": true,
+  "enable_router_aux_loss": false,
+  "quantization": {
+    "bits": 4,
+    "quant_type": "nf4",
+    "double_quant": true,
+    "compute_dtype": "float16"
+  },
+  "lora": {
+    "rank": 8,
+    "alpha": 16,
+    "dropout": 0.05,
+    "target_suffixes": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "in_proj_qkv",
+      "in_proj_z",
+      "in_proj_b",
+      "in_proj_a",
+      "out_proj"
+    ]
+  }
+}
