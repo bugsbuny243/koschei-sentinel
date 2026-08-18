@@ -17,6 +17,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also check installed training packages, CUDA visibility and configured memory",
     )
+    parser.add_argument(
+        "--check-tokenization",
+        action="store_true",
+        help=(
+            "Load only the pinned processor/tokenizer and verify every supervision fits "
+            "max_sequence_length before model weights are loaded"
+        ),
+    )
     return parser
 
 
@@ -27,10 +35,11 @@ def main(argv: list[str] | None = None) -> int:
         report = audit_cyber_training_readiness(
             config,
             check_runtime=args.check_runtime,
+            check_tokenization=args.check_tokenization,
         )
         print(json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True))
         return 0 if report.ready_to_execute else 1
-    except (OSError, TypeError, ValueError) as exc:
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
         print(f"sentinel-cyber-training-readiness: {exc}")
         return 2
 
