@@ -14,5 +14,10 @@ def test_qwen35_micro_and_9b_smoke_pins_are_exact() -> None:
     assert nine_b.base_model == "Qwen/Qwen3.5-9B-Base"
     assert nine_b.base_revision == "68c46c4b3498877f3ef123c856ecfde50c39f404"
     assert micro.quantization.bits == nine_b.quantization.bits == 4
-    assert micro.quantization.compute_dtype == nine_b.quantization.compute_dtype == "float16"
+    assert (
+        micro.quantization.compute_dtype
+        == nine_b.quantization.compute_dtype
+        == "float16"
+    )
+    assert micro.max_sequence_length == nine_b.max_sequence_length == 2048
     assert micro.minimum_cuda_memory_gb < nine_b.minimum_cuda_memory_gb
