@@ -12,10 +12,12 @@ PROFILE_MODE="${KOSCHEI_KAGGLE_PROFILE:-auto}"
 
 NORMAL_CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.json"
 NORMAL_PLAN="$TRAINING_ROOT/qwen35-9b-smoke.plan.json"
+NORMAL_SOURCE="$TRAINING_ROOT/qwen35-9b-smoke.training-source.json"
 NORMAL_RUN_DIR="$TRAINING_ROOT/runs/qwen35-9b-smoke-001"
 
 LOWMEM_CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.lowmem.json"
 LOWMEM_PLAN="$TRAINING_ROOT/qwen35-9b-smoke-lowmem.plan.json"
+LOWMEM_SOURCE="$TRAINING_ROOT/qwen35-9b-smoke-lowmem.training-source.json"
 LOWMEM_RUN_DIR="$TRAINING_ROOT/runs/qwen35-9b-smoke-lowmem-001"
 
 export HF_HOME="${HF_HOME:-/kaggle/working/hf-cache}"
@@ -127,6 +129,8 @@ if [[ ! -d "$CORPUS" ]]; then
   sentinel-cyber-seed-curriculum --output-root "$TRAINING_ROOT"
 fi
 
+REPOSITORY_COMMIT="$(git rev-parse HEAD)"
+
 printf '\n[Koschei] Kaggle GPU preflight\n'
 if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi | tee "$EXPORT_ROOT/nvidia-smi.txt"
@@ -159,7 +163,48 @@ run_training() {
   local profile="$1"
   local config="$2"
   local plan="$3"
+  local source="$4"
+  local run_dir="$5"
   local log="$EXPORT_ROOT/training-${profile}.log"
+
+  if [[ -d "$run_dir" ]]; then
+    printf '\n[Koschei] Completed %s run exists; checking fail-closed reuse\n' "$profile"
+    if [[ ! -f "$plan" || ! -f "$source" ]]; then
+      echo "completed run exists but plan/source provenance is missing; refusing retraining" >&2
+      return 2
+    fi
+    set +e
+    sentinel-cyber-sft-reuse-check \
+      --run-dir "$run_dir" \
+      --training-source "$source" \
+      --config "$config" \
+      --plan "$plan" \
+      --repository-commit "$REPOSITORY_COMMIT" \
+      | tee "$EXPORT_ROOT/reuse-check-${profile}.json"
+    local reuse_status=${PIPESTATUS[0]}
+    set -e
+    if [[ "$reuse_status" -ne 0 ]]; then
+      echo "[Koschei] Completed run reuse validation failed; refusing automatic retraining." >&2
+      return 2
+    fi
+    printf '[Koschei] REUSING VERIFIED COMPLETED %s RUN; GPU TRAINING SKIPPED.\n' "$profile"
+    printf 'reused\n' > "$EXPORT_ROOT/training-execution-${profile}.txt"
+    return 0
+  fi
+
+  printf '\n[Koschei] Planning %s run before training source is sealed\n' "$profile"
+  sentinel-cyber-sft \
+    --config "$config" \
+    --plan-output "$plan" \
+    | tee "$EXPORT_ROOT/planning-${profile}.log"
+
+  printf '\n[Koschei] Binding %s training to exact repository/config/plan\n' "$profile"
+  sentinel-cyber-sft-source-bind \
+    --config "$config" \
+    --plan "$plan" \
+    --repository-commit "$REPOSITORY_COMMIT" \
+    --output "$source" \
+    | tee "$EXPORT_ROOT/training-source-bind-${profile}.json"
 
   printf '\n[Koschei] Executing real text-only QLoRA smoke run (%s)\n' "$profile"
   set +e
@@ -170,6 +215,9 @@ run_training() {
     2>&1 | tee "$log"
   local status=${PIPESTATUS[0]}
   set -e
+  if [[ "$status" -eq 0 ]]; then
+    printf 'executed\n' > "$EXPORT_ROOT/training-execution-${profile}.txt"
+  fi
   return "$status"
 }
 
@@ -177,10 +225,9 @@ verify_attest_and_export() {
   local profile="$1"
   local config="$2"
   local plan="$3"
-  local run_dir="$4"
+  local source="$4"
+  local run_dir="$5"
   local profile_preflight="$EXPORT_ROOT/model-preflight-${profile}.json"
-  local repository_commit
-  repository_commit="$(git rev-parse HEAD)"
 
   if [[ ! -f "$profile_preflight" ]]; then
     echo "selected profile has no model preflight report: $profile_preflight" >&2
@@ -196,11 +243,12 @@ verify_attest_and_export() {
   sentinel-cyber-sft-attest \
     --config "$config" \
     --plan "$plan" \
+    --training-source "$source" \
     --run-dir "$run_dir" \
     --model-preflight "$profile_preflight" \
     --verification "$EXPORT_ROOT/verification.json" \
     --profile "$profile" \
-    --repository-commit "$repository_commit" \
+    --repository-commit "$REPOSITORY_COMMIT" \
     | tee "$EXPORT_ROOT/run-attestation.json"
 
   cp "$profile_preflight" "$EXPORT_ROOT/model-preflight.json"
@@ -208,55 +256,66 @@ verify_attest_and_export() {
   mkdir -p "$EXPORT_ROOT/run"
   cp -a "$run_dir"/. "$EXPORT_ROOT/run/"
   cp "$plan" "$EXPORT_ROOT/training-plan.json"
+  cp "$source" "$EXPORT_ROOT/training-source.json"
   cp "$config" "$EXPORT_ROOT/training-config.json"
   cp "$CORPUS/manifest.json" "$EXPORT_ROOT/corpus-manifest.json"
   cp "$CORPUS/examples.jsonl" "$EXPORT_ROOT/corpus-examples.jsonl"
   printf '%s\n' "$profile" > "$EXPORT_ROOT/selected-profile.txt"
-  printf '%s\n' "$repository_commit" > "$EXPORT_ROOT/repository-commit.txt"
+  printf '%s\n' "$REPOSITORY_COMMIT" > "$EXPORT_ROOT/repository-commit.txt"
 }
 
 SELECTED_PROFILE=""
 SELECTED_CONFIG=""
 SELECTED_PLAN=""
+SELECTED_SOURCE=""
 SELECTED_RUN_DIR=""
 
 case "$PROFILE_MODE" in
   normal)
     run_model_preflight normal "$NORMAL_CONFIG"
     run_readiness normal "$NORMAL_CONFIG"
-    run_training normal "$NORMAL_CONFIG" "$NORMAL_PLAN"
+    run_training normal "$NORMAL_CONFIG" "$NORMAL_PLAN" "$NORMAL_SOURCE" "$NORMAL_RUN_DIR"
     SELECTED_PROFILE="normal"
     SELECTED_CONFIG="$NORMAL_CONFIG"
     SELECTED_PLAN="$NORMAL_PLAN"
+    SELECTED_SOURCE="$NORMAL_SOURCE"
     SELECTED_RUN_DIR="$NORMAL_RUN_DIR"
     ;;
   lowmem)
     run_model_preflight lowmem "$LOWMEM_CONFIG"
     run_readiness lowmem "$LOWMEM_CONFIG"
-    run_training lowmem "$LOWMEM_CONFIG" "$LOWMEM_PLAN"
+    run_training lowmem "$LOWMEM_CONFIG" "$LOWMEM_PLAN" "$LOWMEM_SOURCE" "$LOWMEM_RUN_DIR"
     SELECTED_PROFILE="lowmem"
     SELECTED_CONFIG="$LOWMEM_CONFIG"
     SELECTED_PLAN="$LOWMEM_PLAN"
+    SELECTED_SOURCE="$LOWMEM_SOURCE"
     SELECTED_RUN_DIR="$LOWMEM_RUN_DIR"
     ;;
   auto)
     run_model_preflight normal "$NORMAL_CONFIG"
     run_readiness normal "$NORMAL_CONFIG"
-    if run_training normal "$NORMAL_CONFIG" "$NORMAL_PLAN"; then
+    if run_training normal "$NORMAL_CONFIG" "$NORMAL_PLAN" "$NORMAL_SOURCE" "$NORMAL_RUN_DIR"; then
       SELECTED_PROFILE="normal"
       SELECTED_CONFIG="$NORMAL_CONFIG"
       SELECTED_PLAN="$NORMAL_PLAN"
+      SELECTED_SOURCE="$NORMAL_SOURCE"
       SELECTED_RUN_DIR="$NORMAL_RUN_DIR"
     else
+      NORMAL_STATUS=$?
       NORMAL_LOG="$EXPORT_ROOT/training-normal.log"
-      if grep -Eqi 'CUDA.*out of memory|torch\.OutOfMemoryError|CUBLAS_STATUS_ALLOC_FAILED|CUDA error:.*memory' "$NORMAL_LOG"; then
+      if [[ "$NORMAL_STATUS" -eq 2 && ! -f "$NORMAL_LOG" ]]; then
+        echo "[Koschei] Normal profile failed before training; refusing automatic fallback." >&2
+        exit 2
+      fi
+      if [[ -f "$NORMAL_LOG" ]] && grep -Eqi 'CUDA.*out of memory|torch\.OutOfMemoryError|CUBLAS_STATUS_ALLOC_FAILED|CUDA error:.*memory' "$NORMAL_LOG"; then
         printf '\n[Koschei] Normal profile hit a CUDA-memory failure; validating low-memory profile before retry.\n'
         run_model_preflight lowmem "$LOWMEM_CONFIG"
         run_readiness lowmem "$LOWMEM_CONFIG"
-        run_training lowmem "$LOWMEM_CONFIG" "$LOWMEM_PLAN"
+        run_training lowmem "$LOWMEM_CONFIG" "$LOWMEM_PLAN" "$LOWMEM_SOURCE" "$LOWMEM_RUN_DIR"
         SELECTED_PROFILE="lowmem"
         SELECTED_CONFIG="$LOWMEM_CONFIG"
         SELECTED_PLAN="$LOWMEM_PLAN"
+        SELECTED_SOURCE="$LOWMEM_SOURCE"
         SELECTED_RUN_DIR="$LOWMEM_RUN_DIR"
       else
         echo "[Koschei] Normal profile failed for a non-CUDA-memory reason; refusing automatic fallback." >&2
@@ -266,7 +325,12 @@ case "$PROFILE_MODE" in
     ;;
 esac
 
-verify_attest_and_export "$SELECTED_PROFILE" "$SELECTED_CONFIG" "$SELECTED_PLAN" "$SELECTED_RUN_DIR"
+verify_attest_and_export \
+  "$SELECTED_PROFILE" \
+  "$SELECTED_CONFIG" \
+  "$SELECTED_PLAN" \
+  "$SELECTED_SOURCE" \
+  "$SELECTED_RUN_DIR"
 
 printf '\n[Koschei] Offline-verifying portable export bundle\n'
 sentinel-cyber-sft-export-verify \
