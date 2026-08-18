@@ -114,6 +114,31 @@ def _validate_model_runtime(
         raise ValueError("competing low-precision dtype leaked into loaded model weights")
 
 
+def _expected_resume_binding(
+    config: CyberSFTConfig,
+    plan: CyberSFTPlan,
+    manifest: CyberSFTAdapterManifest,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": "sentinel.cyber-sft-resume-binding.v1",
+        "run_id": config.run_id,
+        "base_model": config.base_model,
+        "base_revision": config.base_revision,
+        "corpus_examples_sha256": manifest.corpus_examples_sha256,
+        "corpus_manifest_sha256": manifest.corpus_manifest_sha256,
+        "config_sha256": _config_sha256(config),
+    }
+    if plan.explicit_validation:
+        payload.update(
+            {
+                "explicit_validation": True,
+                "validation_corpus_examples_sha256": plan.validation_corpus_examples_sha256,
+                "validation_corpus_manifest_sha256": plan.validation_corpus_manifest_sha256,
+            }
+        )
+    return payload
+
+
 def build_cyber_sft_run_attestation(
     *,
     config_path: str | Path,
@@ -167,6 +192,11 @@ def build_cyber_sft_run_attestation(
         ("base_revision", plan.base_revision, config.base_revision),
         ("output_dir", plan.output_dir, config.output_dir),
         ("input_adapter_dir", plan.input_adapter_dir, config.input_adapter_dir),
+        (
+            "explicit_validation",
+            plan.explicit_validation,
+            config.validation_corpus_dir is not None,
+        ),
         (
             "corpus examples",
             plan.corpus_examples_sha256,
@@ -226,15 +256,7 @@ def build_cyber_sft_run_attestation(
         run_path / "resume-runtime.json",
         label="resume-runtime.json",
     )
-    expected_binding = {
-        "schema_version": "sentinel.cyber-sft-resume-binding.v1",
-        "run_id": config.run_id,
-        "base_model": config.base_model,
-        "base_revision": config.base_revision,
-        "corpus_examples_sha256": manifest.corpus_examples_sha256,
-        "corpus_manifest_sha256": manifest.corpus_manifest_sha256,
-        "config_sha256": _config_sha256(config),
-    }
+    expected_binding = _expected_resume_binding(config, plan, manifest)
     if resume_runtime.get("resume_binding") != expected_binding:
         raise ValueError(
             "resume-runtime.json is not bound to the selected model/corpus/config"
@@ -258,6 +280,21 @@ def build_cyber_sft_run_attestation(
         ("source run_id", training_source.run_id, config.run_id),
         ("source base_model", training_source.base_model, config.base_model),
         ("source base_revision", training_source.base_revision, config.base_revision),
+        (
+            "source explicit validation",
+            training_source.explicit_validation,
+            plan.explicit_validation,
+        ),
+        (
+            "source validation examples",
+            training_source.validation_corpus_examples_sha256,
+            plan.validation_corpus_examples_sha256,
+        ),
+        (
+            "source validation manifest",
+            training_source.validation_corpus_manifest_sha256,
+            plan.validation_corpus_manifest_sha256,
+        ),
         (
             "source corpus examples",
             training_source.corpus_examples_sha256,
