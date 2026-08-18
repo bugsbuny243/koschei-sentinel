@@ -130,7 +130,7 @@ def _gold_report(
         "schema_version": "sentinel.gold-holdout-evaluation-report.v1",
         "model_ref": "sentinel:candidate",
         "model_revision": revision,
-        "adapter_digest": ADAPTER_DIGEST,
+        "adapter_digest": revision,
         "case_count": 2,
         "prediction_count": 2,
         "missing_case_ids": [],
