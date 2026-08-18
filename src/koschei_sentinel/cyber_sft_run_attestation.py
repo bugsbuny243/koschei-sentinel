@@ -24,13 +24,15 @@ from koschei_sentinel.cyber_sft_training import (
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json, resolve_under_root
 
+CyberSFTProfile = Literal["micro", "normal", "lowmem"]
+
 
 class CyberSFTRunAttestation(StrictModel):
     schema_version: Literal["sentinel.cyber-sft-run-attestation.v1"] = (
         "sentinel.cyber-sft-run-attestation.v1"
     )
     run_id: str
-    selected_profile: Literal["normal", "lowmem"]
+    selected_profile: CyberSFTProfile
     repository_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     base_model: str
     base_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
@@ -85,7 +87,7 @@ def build_cyber_sft_run_attestation(
     run_dir: str,
     model_preflight_path: str | Path,
     verification_path: str | Path,
-    selected_profile: Literal["normal", "lowmem"],
+    selected_profile: CyberSFTProfile,
     repository_commit: str,
     root: str | Path = ".",
 ) -> CyberSFTRunAttestation:
