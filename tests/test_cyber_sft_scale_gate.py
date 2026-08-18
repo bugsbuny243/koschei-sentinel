@@ -13,7 +13,10 @@ from koschei_sentinel.cyber_sft_scale_gate import (
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _micro_export(tmp_path: Path, *, total_memory_gb: float, fast_warning: bool) -> Path:
@@ -90,8 +93,16 @@ def _target_config() -> str:
     return "configs/training/cyber-sft.qwen3.5-9b.smoke.json"
 
 
+def _mark_export_valid(monkeypatch) -> None:
+    monkeypatch.setattr(
+        scale_module,
+        "verify_cyber_sft_export",
+        lambda _root: SimpleNamespace(valid=True),
+    )
+
+
 def test_valid_micro_on_sufficient_gpu_permits_9b(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(scale_module, "verify_cyber_sft_export", lambda _root: SimpleNamespace(valid=True))
+    _mark_export_valid(monkeypatch)
     root = _micro_export(tmp_path, total_memory_gb=16.0, fast_warning=False)
 
     report = evaluate_9b_scale_gate(
@@ -106,7 +117,7 @@ def test_valid_micro_on_sufficient_gpu_permits_9b(monkeypatch, tmp_path: Path) -
 
 
 def test_missing_fast_kernels_is_caution_not_block(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(scale_module, "verify_cyber_sft_export", lambda _root: SimpleNamespace(valid=True))
+    _mark_export_valid(monkeypatch)
     root = _micro_export(tmp_path, total_memory_gb=16.0, fast_warning=True)
 
     report = evaluate_9b_scale_gate(
@@ -121,7 +132,7 @@ def test_missing_fast_kernels_is_caution_not_block(monkeypatch, tmp_path: Path) 
 
 
 def test_gpu_below_9b_minimum_blocks_scale_up(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(scale_module, "verify_cyber_sft_export", lambda _root: SimpleNamespace(valid=True))
+    _mark_export_valid(monkeypatch)
     root = _micro_export(tmp_path, total_memory_gb=12.0, fast_warning=False)
 
     report = evaluate_9b_scale_gate(
