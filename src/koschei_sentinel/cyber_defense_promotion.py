@@ -9,6 +9,7 @@ from pydantic import Field, model_validator
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
 from koschei_sentinel.cyber_training_bundle import CyberTrainingBundle
 from koschei_sentinel.defense_load_range import DefenseLoadRangeReport
+from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationReport
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
@@ -19,8 +20,8 @@ _DIGEST = r"^[a-f0-9]{64}$"
 
 
 class CyberDefensePromotionEvidence(StrictModel):
-    schema_version: Literal["sentinel.cyber-defense-promotion-evidence.v2"] = (
-        "sentinel.cyber-defense-promotion-evidence.v2"
+    schema_version: Literal["sentinel.cyber-defense-promotion-evidence.v3"] = (
+        "sentinel.cyber-defense-promotion-evidence.v3"
     )
     promotion_id: str = Field(min_length=3, max_length=256)
     candidate_model_ref: str = Field(min_length=3, max_length=512)
@@ -30,9 +31,11 @@ class CyberDefensePromotionEvidence(StrictModel):
     cyber_range_suite_sha256: str = Field(pattern=_DIGEST)
     multi_incident_range_suite_sha256: str = Field(pattern=_DIGEST)
     defense_load_range_sha256: str = Field(pattern=_DIGEST)
+    gold_holdout_evaluation_sha256: str = Field(pattern=_DIGEST)
     cyber_range_passed: bool
     multi_incident_range_passed: bool
     defense_load_range_passed: bool
+    gold_holdout_passed: bool
     malicious_containment_rate: float = Field(ge=0.0, le=1.0)
     reroute_detection_rate: float = Field(ge=0.0, le=1.0)
     benign_high_impact_false_positive_rate: float = Field(ge=0.0, le=1.0)
@@ -46,6 +49,13 @@ class CyberDefensePromotionEvidence(StrictModel):
     scheduler_critical_max_first_service_wave: int | None = Field(default=None, ge=0)
     scheduler_max_wait_cycles: int = Field(ge=0)
     scheduler_capacity_violation_count: int = Field(ge=0)
+    gold_holdout_structural_exact_rate: float = Field(ge=0.0, le=1.0)
+    gold_holdout_mode_accuracy: float = Field(ge=0.0, le=1.0)
+    gold_holdout_action_accuracy: float = Field(ge=0.0, le=1.0)
+    gold_holdout_target_accuracy: float = Field(ge=0.0, le=1.0)
+    gold_holdout_evidence_grounding_rate: float = Field(ge=0.0, le=1.0)
+    gold_holdout_target_grounding_rate: float = Field(ge=0.0, le=1.0)
+    gold_holdout_outcome_verification_rate: float = Field(ge=0.0, le=1.0)
     ready_for_promotion: bool
     evidence_sha256: str = Field(pattern=_DIGEST)
 
@@ -55,6 +65,7 @@ class CyberDefensePromotionEvidence(StrictModel):
             self.cyber_range_passed
             and self.multi_incident_range_passed
             and self.defense_load_range_passed
+            and self.gold_holdout_passed
         )
         if self.ready_for_promotion != expected:
             raise ValueError("promotion readiness must equal all required defense gates")
@@ -79,17 +90,24 @@ def build_cyber_defense_promotion_evidence(
     cyber_range_report: CyberRangeSuiteReport,
     multi_incident_range_report: MultiIncidentCyberRangeSuiteReport,
     defense_load_range_report: DefenseLoadRangeReport,
+    gold_holdout_report: GoldHoldoutEvaluationReport,
 ) -> CyberDefensePromotionEvidence:
     if not training_bundle.ready_for_training:
         raise ValueError("cyber training bundle is not ready")
+    if gold_holdout_report.model_ref != candidate_model_ref:
+        raise ValueError("Gold HOLDOUT report model_ref differs from promotion candidate")
+    if gold_holdout_report.model_revision != candidate_model_revision:
+        raise ValueError("Gold HOLDOUT report model_revision differs from promotion candidate")
 
     single_sha = _stable_sha(cyber_range_report)
     multi_sha = _stable_sha(multi_incident_range_report)
     load_sha = _stable_sha(defense_load_range_report)
+    gold_sha = _stable_sha(gold_holdout_report)
     ready = (
         cyber_range_report.passed
         and multi_incident_range_report.passed
         and defense_load_range_report.passed
+        and gold_holdout_report.passed
     )
     digest_payload = "|".join(
         [
@@ -101,9 +119,11 @@ def build_cyber_defense_promotion_evidence(
             single_sha,
             multi_sha,
             load_sha,
+            gold_sha,
             str(int(cyber_range_report.passed)),
             str(int(multi_incident_range_report.passed)),
             str(int(defense_load_range_report.passed)),
+            str(int(gold_holdout_report.passed)),
         ]
     )
     digest = hashlib.sha256(digest_payload.encode("utf-8")).hexdigest()
@@ -117,9 +137,11 @@ def build_cyber_defense_promotion_evidence(
         cyber_range_suite_sha256=single_sha,
         multi_incident_range_suite_sha256=multi_sha,
         defense_load_range_sha256=load_sha,
+        gold_holdout_evaluation_sha256=gold_sha,
         cyber_range_passed=cyber_range_report.passed,
         multi_incident_range_passed=multi_incident_range_report.passed,
         defense_load_range_passed=defense_load_range_report.passed,
+        gold_holdout_passed=gold_holdout_report.passed,
         malicious_containment_rate=cyber_range_report.malicious_containment_rate,
         reroute_detection_rate=cyber_range_report.reroute_detection_rate,
         benign_high_impact_false_positive_rate=(
@@ -146,6 +168,15 @@ def build_cyber_defense_promotion_evidence(
         scheduler_max_wait_cycles=defense_load_range_report.max_wait_cycles,
         scheduler_capacity_violation_count=(
             defense_load_range_report.capacity_violation_count
+        ),
+        gold_holdout_structural_exact_rate=gold_holdout_report.structural_exact_rate,
+        gold_holdout_mode_accuracy=gold_holdout_report.mode_accuracy,
+        gold_holdout_action_accuracy=gold_holdout_report.action_accuracy,
+        gold_holdout_target_accuracy=gold_holdout_report.target_accuracy,
+        gold_holdout_evidence_grounding_rate=gold_holdout_report.evidence_grounding_rate,
+        gold_holdout_target_grounding_rate=gold_holdout_report.target_grounding_rate,
+        gold_holdout_outcome_verification_rate=(
+            gold_holdout_report.outcome_verification_rate
         ),
         ready_for_promotion=ready,
         evidence_sha256=digest,
