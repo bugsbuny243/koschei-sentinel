@@ -17,7 +17,8 @@ fi
 
 sentinel-cyber-training-readiness \
   --config "$CONFIG" \
-  --check-runtime
+  --check-runtime \
+  --check-tokenization
 
 sentinel-cyber-sft \
   --config "$CONFIG" \
