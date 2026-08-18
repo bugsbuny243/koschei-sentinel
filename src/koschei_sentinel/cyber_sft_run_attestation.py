@@ -80,6 +80,35 @@ def _load_json_object(path: Path, *, label: str) -> tuple[dict[str, object], byt
     return payload, raw
 
 
+def _validate_model_runtime(
+    model_runtime: dict[str, object],
+    config: CyberSFTConfig,
+) -> None:
+    expected_pairs = {
+        "expected_model_class": "Qwen3_5ForCausalLM",
+        "loader": "AutoModelForCausalLM",
+        "model_class": "Qwen3_5ForCausalLM",
+        "text_only": True,
+        "requested_compute_dtype": config.quantization.compute_dtype,
+    }
+    for key, expected in expected_pairs.items():
+        if model_runtime.get(key) != expected:
+            raise ValueError(f"model-runtime.json mismatch: {key}")
+
+    observed = model_runtime.get("observed_floating_dtypes_before_kbit_prepare")
+    if not isinstance(observed, list) or not observed:
+        raise ValueError("model-runtime.json lacks pre-kbit floating dtype evidence")
+    if any(not isinstance(row, str) for row in observed):
+        raise ValueError("model-runtime.json floating dtype evidence must be strings")
+
+    requested = config.quantization.compute_dtype
+    if requested not in observed:
+        raise ValueError("requested compute dtype was not observed in loaded model weights")
+    competing = "bfloat16" if requested == "float16" else "float16"
+    if competing in observed:
+        raise ValueError("competing low-precision dtype leaked into loaded model weights")
+
+
 def build_cyber_sft_run_attestation(
     *,
     config_path: str | Path,
@@ -176,13 +205,7 @@ def build_cyber_sft_run_attestation(
         run_path / "model-runtime.json",
         label="model-runtime.json",
     )
-    if model_runtime != {
-        "expected_model_class": "Qwen3_5ForCausalLM",
-        "loader": "AutoModelForCausalLM",
-        "model_class": "Qwen3_5ForCausalLM",
-        "text_only": True,
-    }:
-        raise ValueError("model-runtime.json does not prove the expected text-only runtime")
+    _validate_model_runtime(model_runtime, config)
 
     resume_runtime, resume_runtime_raw = _load_json_object(
         run_path / "resume-runtime.json",
