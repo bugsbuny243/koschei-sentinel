@@ -52,6 +52,18 @@ def _write_run(tmp_path, *, global_step=8):
         json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    (run / "model-runtime.json").write_text(
+        json.dumps(
+            {
+                "loader": "AutoModelForCausalLM",
+                "model_class": "Qwen3_5ForCausalLM",
+                "expected_model_class": "Qwen3_5ForCausalLM",
+                "text_only": True,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
 
     payload = {
         "schema_version": "sentinel.cyber-sft-training-receipt.v1",
@@ -99,6 +111,7 @@ def test_completed_smoke_run_verifies(tmp_path) -> None:
     assert report.adapter_digest_verified is True
     assert report.receipt_digest_verified is True
     assert report.receipt_bindings_verified is True
+    assert report.model_runtime_verified is True
     assert report.global_step == 8
     assert report.violations == []
 
@@ -124,11 +137,25 @@ def test_receipt_tamper_is_detected(tmp_path) -> None:
     assert report.receipt_digest_verified is False
 
 
+def test_wrong_model_runtime_is_detected(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    runtime_path = run / "model-runtime.json"
+    payload = json.loads(runtime_path.read_text(encoding="utf-8"))
+    payload["text_only"] = False
+    runtime_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+    assert report.valid is False
+    assert report.model_runtime_verified is False
+    assert any("model runtime mismatch" in row for row in report.violations)
+
+
 def test_zero_step_run_is_not_real_training(tmp_path) -> None:
     _write_run(tmp_path, global_step=0)
     report = verify_cyber_sft_run("build/run", root=tmp_path)
 
     assert report.valid is False
     assert report.receipt_digest_verified is True
+    assert report.model_runtime_verified is True
     assert report.global_step == 0
     assert any("zero optimizer steps" in row for row in report.violations)
