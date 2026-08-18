@@ -20,6 +20,29 @@ LOWMEM_RUN_DIR="$TRAINING_ROOT/runs/qwen35-9b-smoke-lowmem-001"
 export HF_HOME="${HF_HOME:-/kaggle/working/hf-cache}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
 
+EXPORT_ROOT="$(python - "$EXPORT_ROOT" "$PWD" "$HF_HOME" <<'PY'
+from pathlib import Path
+import sys
+
+candidate = Path(sys.argv[1]).expanduser().resolve()
+repo = Path(sys.argv[2]).resolve()
+hf_home = Path(sys.argv[3]).expanduser().resolve()
+working = Path("/kaggle/working").resolve()
+
+if candidate == working or working not in candidate.parents:
+    raise SystemExit("KOSCHEI_KAGGLE_OUTPUT_ROOT must be a child of /kaggle/working")
+for protected, label in ((repo, "repository"), (hf_home, "HF_HOME")):
+    overlaps = (
+        candidate == protected
+        or candidate in protected.parents
+        or protected in candidate.parents
+    )
+    if overlaps:
+        raise SystemExit(f"KOSCHEI_KAGGLE_OUTPUT_ROOT overlaps protected {label} path")
+print(candidate)
+PY
+)"
+
 rm -rf "$EXPORT_ROOT"
 mkdir -p "$EXPORT_ROOT"
 
