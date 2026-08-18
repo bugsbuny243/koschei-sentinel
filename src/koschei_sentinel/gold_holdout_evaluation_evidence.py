@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from typing import Literal
 
@@ -22,6 +21,9 @@ from koschei_sentinel.gold_holdout_inference_runner import (
 from koschei_sentinel.gold_holdout_inference_verify import (
     GoldHoldoutInferenceVerification,
     verify_gold_holdout_inference_output,
+)
+from koschei_sentinel.gold_holdout_zero_prediction import (
+    build_zero_prediction_gold_report,
 )
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
@@ -101,8 +103,6 @@ def _load_predictions(path: Path) -> list[GoldHoldoutPrediction]:
             raise ValueError(
                 f"invalid Gold HOLDOUT prediction at line {line_number}"
             ) from exc
-    if not rows:
-        raise ValueError("Gold HOLDOUT evaluation evidence requires at least one valid prediction")
     return rows
 
 
@@ -144,11 +144,20 @@ def build_gold_holdout_evaluation_evidence(
         (output / "receipt.json").read_bytes()
     )
     predictions = _load_predictions(output / "predictions.jsonl")
-    report = evaluate_gold_holdout_predictions(
-        release_dir,
-        predictions,
-        policy=selected_policy,
-    )
+    if predictions:
+        report = evaluate_gold_holdout_predictions(
+            release_dir,
+            predictions,
+            policy=selected_policy,
+        )
+    else:
+        report = build_zero_prediction_gold_report(
+            release_dir,
+            model_ref=receipt.model_ref,
+            model_revision=receipt.model_revision,
+            adapter_digest=receipt.adapter_digest,
+            policy=selected_policy,
+        )
     _verify_evaluation_report_digest(report)
 
     identity = (report.model_ref, report.model_revision, report.adapter_digest)
