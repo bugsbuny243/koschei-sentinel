@@ -71,16 +71,28 @@ run_training() {
   return "$status"
 }
 
-verify_and_export() {
+verify_attest_and_export() {
   local profile="$1"
   local config="$2"
   local plan="$3"
   local run_dir="$4"
+  local repository_commit
+  repository_commit="$(git rev-parse HEAD)"
 
   printf '\n[Koschei] Verifying adapter + training receipt + text-only runtime (%s)\n' "$profile"
   sentinel-cyber-sft-verify \
     --run-dir "$run_dir" \
     | tee "$EXPORT_ROOT/verification.json"
+
+  printf '\n[Koschei] Building fail-closed run attestation (%s)\n' "$profile"
+  sentinel-cyber-sft-attest \
+    --config "$config" \
+    --run-dir "$run_dir" \
+    --model-preflight "$EXPORT_ROOT/model-preflight.json" \
+    --verification "$EXPORT_ROOT/verification.json" \
+    --profile "$profile" \
+    --repository-commit "$repository_commit" \
+    | tee "$EXPORT_ROOT/run-attestation.json"
 
   rm -rf "$EXPORT_ROOT/run"
   mkdir -p "$EXPORT_ROOT/run"
@@ -89,7 +101,7 @@ verify_and_export() {
   cp "$config" "$EXPORT_ROOT/selected-training-config.json"
   cp "$CORPUS/manifest.json" "$EXPORT_ROOT/defense-reflex-v3.manifest.json"
   printf '%s\n' "$profile" > "$EXPORT_ROOT/selected-profile.txt"
-  git rev-parse HEAD > "$EXPORT_ROOT/repository-commit.txt"
+  printf '%s\n' "$repository_commit" > "$EXPORT_ROOT/repository-commit.txt"
 }
 
 SELECTED_PROFILE=""
@@ -143,7 +155,7 @@ case "$PROFILE_MODE" in
     ;;
 esac
 
-verify_and_export "$SELECTED_PROFILE" "$SELECTED_CONFIG" "$SELECTED_PLAN" "$SELECTED_RUN_DIR"
+verify_attest_and_export "$SELECTED_PROFILE" "$SELECTED_CONFIG" "$SELECTED_PLAN" "$SELECTED_RUN_DIR"
 
 python - "$EXPORT_ROOT" <<'PY'
 from pathlib import Path
