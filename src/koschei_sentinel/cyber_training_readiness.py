@@ -40,6 +40,9 @@ class CyberTrainingReadinessReport(StrictModel):
     overlength_example_ids: list[str]
     cuda_available: bool | None
     cuda_device_index: int | None = Field(default=None, ge=0)
+    cuda_device_name: str | None = None
+    cuda_compute_capability_major: int | None = Field(default=None, ge=0)
+    cuda_compute_capability_minor: int | None = Field(default=None, ge=0)
     visible_cuda_memory_gb: float | None = Field(default=None, ge=0.0)
     minimum_cuda_memory_gb: float = Field(ge=0.0)
     ready_to_execute: bool
@@ -66,6 +69,23 @@ def _runtime_dependency_names() -> list[str]:
         "bitsandbytes",
         "accelerate",
     ]
+
+
+def _quantization_capability_blocker(
+    config: CyberSFTConfig,
+    capability: tuple[int, int],
+) -> str | None:
+    if config.quantization.bits == 4 and capability < (6, 0):
+        return (
+            "configured NF4/FP4 quantization requires NVIDIA compute capability 6.0+; "
+            f"current device reports {capability[0]}.{capability[1]}"
+        )
+    if config.quantization.bits == 8 and capability < (7, 5):
+        return (
+            "configured load_in_8bit path requires NVIDIA compute capability 7.5+; "
+            f"current device reports {capability[0]}.{capability[1]}"
+        )
+    return None
 
 
 def _tokenization_preflight(
@@ -145,6 +165,8 @@ def audit_cyber_training_readiness(
     dependencies_ready: bool | None = None
     cuda_available: bool | None = None
     cuda_device_index: int | None = None
+    cuda_device_name: str | None = None
+    cuda_capability: tuple[int, int] | None = None
     cuda_memory: float | None = None
     if check_runtime:
         missing = [
@@ -161,9 +183,17 @@ def audit_cyber_training_readiness(
                 blockers.append("CUDA is not available")
             else:
                 cuda_device_index = int(torch.cuda.current_device())
-                cuda_memory = (
-                    torch.cuda.get_device_properties(cuda_device_index).total_memory / (1024**3)
+                properties = torch.cuda.get_device_properties(cuda_device_index)
+                cuda_device_name = str(properties.name)
+                cuda_memory = properties.total_memory / (1024**3)
+                capability = torch.cuda.get_device_capability(cuda_device_index)
+                cuda_capability = (int(capability[0]), int(capability[1]))
+                capability_blocker = _quantization_capability_blocker(
+                    config,
+                    cuda_capability,
                 )
+                if capability_blocker is not None:
+                    blockers.append(capability_blocker)
                 if cuda_memory + 1e-9 < config.minimum_cuda_memory_gb:
                     blockers.append(
                         "current CUDA device memory below configured minimum: "
@@ -236,6 +266,13 @@ def audit_cyber_training_readiness(
         overlength_example_ids=overlength,
         cuda_available=cuda_available,
         cuda_device_index=cuda_device_index,
+        cuda_device_name=cuda_device_name,
+        cuda_compute_capability_major=(
+            cuda_capability[0] if cuda_capability is not None else None
+        ),
+        cuda_compute_capability_minor=(
+            cuda_capability[1] if cuda_capability is not None else None
+        ),
         visible_cuda_memory_gb=cuda_memory,
         minimum_cuda_memory_gb=config.minimum_cuda_memory_gb,
         ready_to_execute=ready,
