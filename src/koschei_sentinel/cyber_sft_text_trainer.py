@@ -214,6 +214,7 @@ def _train_text(
         device_map={"": device_index},
     )
     _assert_text_only_model(model)
+    loaded_model_class = model.__class__.__name__
     if hasattr(model.config, "use_cache"):
         model.config.use_cache = False
     model = dependencies["prepare_model_for_kbit_training"](
@@ -342,9 +343,7 @@ def _train_text(
         json.dumps(
             {
                 "loader": "AutoModelForCausalLM",
-                "model_class": model.get_base_model().__class__.__name__
-                if hasattr(model, "get_base_model")
-                else model.__class__.__name__,
+                "model_class": loaded_model_class,
                 "expected_model_class": _EXPECTED_MODEL_CLASS,
                 "text_only": True,
             },
