@@ -55,6 +55,7 @@ class GoldDefenseReviewPacket(StrictModel):
     source_report_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     split: GoldReviewSplit
     split_basis_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    split_policy_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     purpose: GoldReviewPurpose
     model_visible_context: dict[str, object]
     model_visible_context_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -85,6 +86,10 @@ class GoldReviewQueueManifest(StrictModel):
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _split_policy_sha256(policy: GoldReviewSplitPolicy) -> str:
+    return _sha256_text(canonical_json(policy.model_dump(mode="json")))
 
 
 def _report_sha256(scenario: CyberRangeScenario) -> tuple[object, str]:
@@ -148,6 +153,7 @@ def build_gold_review_packet(
     candidates = mine_defense_reflex_candidates(report)
     split_basis = _split_basis(scenario.scenario_id, report_sha, policy)
     split = _split_for_basis(split_basis, policy)
+    policy_sha = _split_policy_sha256(policy)
     purpose = (
         GoldReviewPurpose.CORRECTION
         if candidates
@@ -178,6 +184,7 @@ def build_gold_review_packet(
         "source_report_sha256": report_sha,
         "split": split.value,
         "split_basis_sha256": split_basis,
+        "split_policy_sha256": policy_sha,
         "purpose": purpose.value,
         "model_visible_context": model_visible_context,
         "model_visible_context_sha256": visible_sha,
@@ -252,7 +259,7 @@ def write_gold_review_queue(
     train_sha = _sha256_text(serialized[GoldReviewSplit.TRAIN])
     validation_sha = _sha256_text(serialized[GoldReviewSplit.VALIDATION])
     holdout_sha = _sha256_text(serialized[GoldReviewSplit.HOLDOUT])
-    policy_sha = _sha256_text(policy_payload)
+    policy_sha = _split_policy_sha256(selected_policy)
     queue_sha = _sha256_text(
         canonical_json(
             {
