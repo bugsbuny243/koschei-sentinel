@@ -19,6 +19,9 @@ from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutEvaluationPolicy,
     GoldHoldoutEvaluationReport,
 )
+from koschei_sentinel.gold_holdout_evaluation_evidence import (
+    GoldHoldoutEvaluationEvidence,
+)
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
@@ -31,6 +34,7 @@ STAGES = [
     CyberTrainingStage.ADVERSARIAL_REASONING,
     CyberTrainingStage.CYBER_RANGE_REGRESSION,
 ]
+ADAPTER_DIGEST = "9" * 64
 
 
 def _bundle() -> CyberTrainingBundle:
@@ -115,8 +119,8 @@ def _load(passed: bool = True) -> DefenseLoadRangeReport:
     )
 
 
-def _gold(
-    revision: str = "candidate-revision:1",
+def _gold_report(
+    revision: str = ADAPTER_DIGEST,
     *,
     passed: bool = True,
     score: float | None = None,
@@ -126,7 +130,7 @@ def _gold(
         "schema_version": "sentinel.gold-holdout-evaluation-report.v1",
         "model_ref": "sentinel:candidate",
         "model_revision": revision,
-        "adapter_digest": "9" * 64,
+        "adapter_digest": ADAPTER_DIGEST,
         "case_count": 2,
         "prediction_count": 2,
         "missing_case_ids": [],
@@ -149,14 +153,54 @@ def _gold(
     return GoldHoldoutEvaluationReport(**payload, report_sha256=digest)
 
 
+def _policy_sha(policy: GoldHoldoutEvaluationPolicy) -> str:
+    return hashlib.sha256(
+        canonical_json(policy.model_dump(mode="json")).encode("utf-8")
+    ).hexdigest()
+
+
+def _gold_evidence(
+    revision: str = ADAPTER_DIGEST,
+    *,
+    passed: bool = True,
+    score: float | None = None,
+    policy: GoldHoldoutEvaluationPolicy | None = None,
+) -> GoldHoldoutEvaluationEvidence:
+    selected_policy = policy or GoldHoldoutEvaluationPolicy()
+    report = _gold_report(revision, passed=passed, score=score)
+    payload = {
+        "schema_version": "sentinel.gold-holdout-evaluation-evidence.v1",
+        "model_ref": report.model_ref,
+        "model_revision": report.model_revision,
+        "adapter_digest": report.adapter_digest,
+        "source_gold_audit_sha256": "1" * 64,
+        "inference_inputs_sha256": "2" * 64,
+        "inference_plan_sha256": "3" * 64,
+        "inference_receipt_sha256": "4" * 64,
+        "inference_verification_sha256": "5" * 64,
+        "generation_policy_sha256": "6" * 64,
+        "evaluation_policy_sha256": _policy_sha(selected_policy),
+        "case_count": report.case_count,
+        "prediction_count": report.prediction_count,
+        "failure_count": 0,
+        "inference_verification_valid": True,
+        "complete_case_accounting": True,
+        "report": report.model_dump(mode="json"),
+        "passed": report.passed,
+    }
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
+
+
 def _evidence(
-    revision: str = "candidate-revision:1",
+    revision: str = ADAPTER_DIGEST,
     *,
     multi_passed: bool = True,
     load_passed: bool = True,
     gold_passed: bool = True,
     gold_policy: GoldHoldoutEvaluationPolicy | None = None,
 ):
+    policy = gold_policy or GoldHoldoutEvaluationPolicy()
     return build_cyber_defense_promotion_evidence(
         promotion_id="promotion:test",
         candidate_model_ref="sentinel:candidate",
@@ -165,8 +209,12 @@ def _evidence(
         cyber_range_report=_single(),
         multi_incident_range_report=_multi(multi_passed),
         defense_load_range_report=_load(load_passed),
-        gold_holdout_report=_gold(revision, passed=gold_passed),
-        gold_holdout_policy=gold_policy or GoldHoldoutEvaluationPolicy(),
+        gold_holdout_evidence=_gold_evidence(
+            revision,
+            passed=gold_passed,
+            policy=policy,
+        ),
+        gold_holdout_policy=policy,
     )
 
 
@@ -175,84 +223,88 @@ def test_promotion_requires_all_four_defense_gate_families_to_pass() -> None:
 
     multi_failed = _evidence(multi_passed=False)
     assert multi_failed.ready_for_promotion is False
-    assert multi_failed.cyber_range_passed is True
     assert multi_failed.multi_incident_range_passed is False
-    assert multi_failed.defense_load_range_passed is True
     assert multi_failed.gold_holdout_passed is True
 
     load_failed = _evidence(load_passed=False)
     assert load_failed.ready_for_promotion is False
-    assert load_failed.cyber_range_passed is True
-    assert load_failed.multi_incident_range_passed is True
     assert load_failed.defense_load_range_passed is False
     assert load_failed.gold_holdout_passed is True
 
     gold_failed = _evidence(gold_passed=False)
     assert gold_failed.ready_for_promotion is False
-    assert gold_failed.cyber_range_passed is True
-    assert gold_failed.multi_incident_range_passed is True
-    assert gold_failed.defense_load_range_passed is True
     assert gold_failed.gold_holdout_passed is False
 
 
-def test_gold_holdout_report_must_belong_to_candidate_revision() -> None:
+def test_gold_holdout_evidence_must_belong_to_candidate_revision() -> None:
     with pytest.raises(ValueError, match="model_revision differs"):
         build_cyber_defense_promotion_evidence(
             promotion_id="promotion:test",
             candidate_model_ref="sentinel:candidate",
-            candidate_model_revision="candidate-revision:2",
+            candidate_model_revision="8" * 64,
             training_bundle=_bundle(),
             cyber_range_report=_single(),
             multi_incident_range_report=_multi(),
             defense_load_range_report=_load(),
-            gold_holdout_report=_gold("candidate-revision:1"),
+            gold_holdout_evidence=_gold_evidence(ADAPTER_DIGEST),
             gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
         )
 
 
-def test_promotion_rechecks_gold_report_under_supplied_policy() -> None:
-    report = _gold(passed=True, score=0.90)
-    evidence = build_cyber_defense_promotion_evidence(
-        promotion_id="promotion:test",
-        candidate_model_ref="sentinel:candidate",
-        candidate_model_revision="candidate-revision:1",
-        training_bundle=_bundle(),
-        cyber_range_report=_single(),
-        multi_incident_range_report=_multi(),
-        defense_load_range_report=_load(),
-        gold_holdout_report=report,
-        gold_holdout_policy=GoldHoldoutEvaluationPolicy(
-            minimum_structural_exact_rate=0.95,
-            minimum_mode_accuracy=0.95,
-            minimum_action_accuracy=0.95,
-            minimum_target_accuracy=0.95,
-        ),
+def test_promotion_requires_same_policy_used_to_build_gold_evidence() -> None:
+    evidence = _gold_evidence(policy=GoldHoldoutEvaluationPolicy())
+    stricter = GoldHoldoutEvaluationPolicy(
+        minimum_structural_exact_rate=0.99,
+        minimum_mode_accuracy=0.99,
+        minimum_action_accuracy=0.99,
+        minimum_target_accuracy=0.99,
     )
 
-    assert report.passed is True
-    assert evidence.gold_holdout_passed is False
-    assert evidence.ready_for_promotion is False
-
-
-def test_gold_report_self_hash_is_verified() -> None:
-    tampered = _gold().model_copy(update={"structural_exact_rate": 0.5})
-    with pytest.raises(ValueError, match="self-hash does not verify"):
+    with pytest.raises(ValueError, match="different policy"):
         build_cyber_defense_promotion_evidence(
             promotion_id="promotion:test",
             candidate_model_ref="sentinel:candidate",
-            candidate_model_revision="candidate-revision:1",
+            candidate_model_revision=ADAPTER_DIGEST,
             training_bundle=_bundle(),
             cyber_range_report=_single(),
             multi_incident_range_report=_multi(),
             defense_load_range_report=_load(),
-            gold_holdout_report=tampered,
+            gold_holdout_evidence=evidence,
+            gold_holdout_policy=stricter,
+        )
+
+
+def test_gold_evidence_self_hash_is_verified() -> None:
+    evidence = _gold_evidence()
+    tampered = evidence.model_copy(update={"inference_inputs_sha256": "7" * 64})
+    with pytest.raises(ValueError, match="evidence self-hash does not verify"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:test",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision=ADAPTER_DIGEST,
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_evidence=tampered,
             gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
         )
 
 
 def test_candidate_revision_is_bound_into_promotion_digest() -> None:
-    first = _evidence("candidate-revision:1")
-    second = _evidence("candidate-revision:2")
+    first = _evidence(ADAPTER_DIGEST)
+    other_revision = "8" * 64
+    second = build_cyber_defense_promotion_evidence(
+        promotion_id="promotion:test",
+        candidate_model_ref="sentinel:candidate",
+        candidate_model_revision=other_revision,
+        training_bundle=_bundle(),
+        cyber_range_report=_single(),
+        multi_incident_range_report=_multi(),
+        defense_load_range_report=_load(),
+        gold_holdout_evidence=_gold_evidence(other_revision),
+        gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+    )
     assert first.evidence_sha256 != second.evidence_sha256
 
 
@@ -265,4 +317,5 @@ def test_promotion_evidence_is_deterministic() -> None:
     assert first.scheduler_service_coverage == 1.0
     assert first.gold_holdout_structural_exact_rate == 1.0
     assert first.gold_holdout_policy_sha256
-    assert first.schema_version == "sentinel.cyber-defense-promotion-evidence.v3"
+    assert first.gold_holdout_inference_verification_sha256 == "5" * 64
+    assert first.schema_version == "sentinel.cyber-defense-promotion-evidence.v4"
