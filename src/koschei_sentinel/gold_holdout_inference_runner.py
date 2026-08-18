@@ -4,7 +4,7 @@ import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -314,6 +314,34 @@ def _runtime_versions() -> dict[str, str]:
     return result
 
 
+def _prepare_prompt(
+    case: GoldHoldoutInferenceCase,
+    tokenizer: Any,
+    max_sequence_length: int,
+) -> tuple[dict[str, Any] | None, int, GoldHoldoutInferenceFailure | None]:
+    prompt = tokenizer.apply_chat_template(
+        _prompt_messages(case),
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=False,
+    )
+    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
+    prompt_tokens = int(encoded["input_ids"].shape[-1])
+    if prompt_tokens <= max_sequence_length:
+        return encoded, prompt_tokens, None
+    failure = GoldHoldoutInferenceFailure(
+        case_id=case.case_id,
+        scenario_id=case.scenario_id,
+        input_context_sha256=case.input_context_sha256,
+        failure_type="PROMPT_TOO_LONG",
+        detail=(
+            f"prompt requires {prompt_tokens} tokens, above "
+            f"max_sequence_length={max_sequence_length}"
+        ),
+    )
+    return None, prompt_tokens, failure
+
+
 def execute_gold_holdout_inference(
     *,
     inference_pack_dir: str | Path,
@@ -372,89 +400,83 @@ def execute_gold_holdout_inference(
     )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
-    quantization = BitsAndBytesConfig(
-        load_in_4bit=config.quantization.bits == 4,
-        load_in_8bit=config.quantization.bits == 8,
-        bnb_4bit_quant_type=config.quantization.quant_type,
-        bnb_4bit_use_double_quant=config.quantization.double_quant,
-        bnb_4bit_compute_dtype=dtype,
-    )
-    base_model = AutoModelForCausalLM.from_pretrained(
-        config.base_model,
-        revision=config.base_revision,
-        trust_remote_code=False,
-        dtype=dtype,
-        quantization_config=quantization,
-        device_map={"": device_index},
-    )
-    _assert_text_only_model(base_model)
-    _assert_requested_model_dtype(base_model, dtype, torch)
-    model = PeftModel.from_pretrained(
-        base_model,
-        str(adapter_path),
-        is_trainable=False,
-    )
-    model.eval()
+
+    failures: list[GoldHoldoutInferenceFailure] = []
+    prepared: list[tuple[GoldHoldoutInferenceCase, dict[str, Any], int]] = []
+    for case in rows:
+        encoded, prompt_tokens, failure = _prepare_prompt(
+            case,
+            tokenizer,
+            config.max_sequence_length,
+        )
+        if failure is not None:
+            failures.append(failure)
+            continue
+        if encoded is None:
+            raise RuntimeError("Gold HOLDOUT prompt preparation returned no inputs or failure")
+        prepared.append((case, encoded, prompt_tokens))
 
     predictions: list[GoldHoldoutPrediction] = []
-    failures: list[GoldHoldoutInferenceFailure] = []
-    for case in rows:
-        prompt = tokenizer.apply_chat_template(
-            _prompt_messages(case),
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
+    if prepared:
+        quantization = BitsAndBytesConfig(
+            load_in_4bit=config.quantization.bits == 4,
+            load_in_8bit=config.quantization.bits == 8,
+            bnb_4bit_quant_type=config.quantization.quant_type,
+            bnb_4bit_use_double_quant=config.quantization.double_quant,
+            bnb_4bit_compute_dtype=dtype,
         )
-        encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
-        prompt_tokens = int(encoded["input_ids"].shape[-1])
-        if prompt_tokens > config.max_sequence_length:
-            failures.append(
-                GoldHoldoutInferenceFailure(
-                    case_id=case.case_id,
-                    scenario_id=case.scenario_id,
-                    input_context_sha256=case.input_context_sha256,
-                    failure_type="PROMPT_TOO_LONG",
-                    detail=(
-                        f"prompt requires {prompt_tokens} tokens, above "
-                        f"max_sequence_length={config.max_sequence_length}"
-                    ),
+        base_model = AutoModelForCausalLM.from_pretrained(
+            config.base_model,
+            revision=config.base_revision,
+            trust_remote_code=False,
+            dtype=dtype,
+            quantization_config=quantization,
+            device_map={"": device_index},
+        )
+        _assert_text_only_model(base_model)
+        _assert_requested_model_dtype(base_model, dtype, torch)
+        model = PeftModel.from_pretrained(
+            base_model,
+            str(adapter_path),
+            is_trainable=False,
+        )
+        model.eval()
+
+        for case, encoded, prompt_tokens in prepared:
+            encoded = {key: value.to(device) for key, value in encoded.items()}
+            with torch.inference_mode():
+                output_ids = model.generate(
+                    **encoded,
+                    max_new_tokens=policy.max_new_tokens,
+                    do_sample=False,
+                    num_beams=1,
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
                 )
-            )
-            continue
-        encoded = {key: value.to(device) for key, value in encoded.items()}
-        with torch.inference_mode():
-            output_ids = model.generate(
-                **encoded,
-                max_new_tokens=policy.max_new_tokens,
-                do_sample=False,
-                num_beams=1,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-            )
-        generated_ids = output_ids[0, prompt_tokens:]
-        generated_text = tokenizer.decode(
-            generated_ids,
-            skip_special_tokens=True,
-        ).strip()
-        try:
-            prediction = _prediction_from_generated_text(
-                case=case,
-                generated_text=generated_text,
-                model_ref=model_ref,
-                adapter_digest=adapter_manifest.adapter_digest,
-            )
-        except ValueError as exc:
-            failures.append(
-                GoldHoldoutInferenceFailure(
-                    case_id=case.case_id,
-                    scenario_id=case.scenario_id,
-                    input_context_sha256=case.input_context_sha256,
-                    failure_type="GENERATION_PARSE_ERROR",
-                    detail=str(exc),
+            generated_ids = output_ids[0, prompt_tokens:]
+            generated_text = tokenizer.decode(
+                generated_ids,
+                skip_special_tokens=True,
+            ).strip()
+            try:
+                prediction = _prediction_from_generated_text(
+                    case=case,
+                    generated_text=generated_text,
+                    model_ref=model_ref,
+                    adapter_digest=adapter_manifest.adapter_digest,
                 )
-            )
-        else:
-            predictions.append(prediction)
+            except ValueError as exc:
+                failures.append(
+                    GoldHoldoutInferenceFailure(
+                        case_id=case.case_id,
+                        scenario_id=case.scenario_id,
+                        input_context_sha256=case.input_context_sha256,
+                        failure_type="GENERATION_PARSE_ERROR",
+                        detail=str(exc),
+                    )
+                )
+            else:
+                predictions.append(prediction)
 
     prediction_payload = _serialize_predictions(predictions)
     failure_payload = _serialize_failures(failures)
