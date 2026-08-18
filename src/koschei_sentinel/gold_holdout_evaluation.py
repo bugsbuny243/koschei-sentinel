@@ -76,6 +76,7 @@ class GoldHoldoutEvaluationPolicy(StrictModel):
     schema_version: Literal["sentinel.gold-holdout-evaluation-policy.v1"] = (
         "sentinel.gold-holdout-evaluation-policy.v1"
     )
+    minimum_case_count: int = Field(default=1, ge=1, le=100000)
     minimum_structural_exact_rate: float = Field(default=0.90, ge=0.0, le=1.0)
     minimum_mode_accuracy: float = Field(default=0.95, ge=0.0, le=1.0)
     minimum_action_accuracy: float = Field(default=0.95, ge=0.0, le=1.0)
@@ -399,6 +400,11 @@ def evaluate_gold_holdout_predictions(
     outcome_verification_rate = ratio(verified_outcomes, predicted_steps)
 
     violations: list[str] = []
+    if len(cases) < selected_policy.minimum_case_count:
+        violations.append(
+            "Gold HOLDOUT case count below policy: "
+            f"{len(cases)} < {selected_policy.minimum_case_count}"
+        )
     if missing:
         violations.append("missing Gold HOLDOUT predictions")
     if extra:
