@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from enum import StrEnum
+from importlib import metadata
 from pathlib import Path
 from typing import Literal
 
@@ -15,6 +17,8 @@ from koschei_sentinel.cyber_sft_training import (
     plan_cyber_sft,
 )
 from koschei_sentinel.models import StrictModel
+
+_MIN_TRANSFORMERS_VERSION = (5, 12, 0)
 
 
 class CyberTrainingUseClass(StrEnum):
@@ -34,6 +38,7 @@ class CyberTrainingReadinessReport(StrictModel):
     static_plan_ready: bool
     runtime_checked: bool
     runtime_dependencies_ready: bool | None
+    transformers_version: str | None = None
     tokenization_checked: bool
     tokenization_ready: bool | None
     max_observed_sequence_tokens: int | None = Field(default=None, ge=0)
@@ -69,6 +74,29 @@ def _runtime_dependency_names() -> list[str]:
         "bitsandbytes",
         "accelerate",
     ]
+
+
+def _release_version_tuple(value: str) -> tuple[int, int, int] | None:
+    match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", value.strip())
+    if match is None:
+        return None
+    return (
+        int(match.group(1)),
+        int(match.group(2)),
+        int(match.group(3) or 0),
+    )
+
+
+def _transformers_version_blocker(version: str) -> str | None:
+    parsed = _release_version_tuple(version)
+    if parsed is None:
+        return f"cannot parse installed transformers version: {version!r}"
+    if parsed < _MIN_TRANSFORMERS_VERSION:
+        return (
+            "transformers>=5.12 is required for the fixed Qwen3.5 composite-to-text "
+            f"dtype loading path; installed version is {version}"
+        )
+    return None
 
 
 def _quantization_capability_blocker(
@@ -163,6 +191,7 @@ def audit_cyber_training_readiness(
             )
 
     dependencies_ready: bool | None = None
+    transformers_version: str | None = None
     cuda_available: bool | None = None
     cuda_device_index: int | None = None
     cuda_device_name: str | None = None
@@ -175,6 +204,17 @@ def audit_cyber_training_readiness(
         dependencies_ready = not missing
         if missing:
             blockers.append("missing training runtime packages: " + ", ".join(missing))
+        if dependencies_ready:
+            try:
+                transformers_version = metadata.version("transformers")
+            except metadata.PackageNotFoundError:
+                blockers.append("installed transformers package metadata is unavailable")
+                dependencies_ready = False
+            else:
+                version_blocker = _transformers_version_blocker(transformers_version)
+                if version_blocker is not None:
+                    blockers.append(version_blocker)
+                    dependencies_ready = False
         if dependencies_ready:
             import torch
 
@@ -260,6 +300,7 @@ def audit_cyber_training_readiness(
         static_plan_ready=static_ready,
         runtime_checked=check_runtime,
         runtime_dependencies_ready=dependencies_ready,
+        transformers_version=transformers_version,
         tokenization_checked=check_tokenization,
         tokenization_ready=tokenization_ready,
         max_observed_sequence_tokens=maximum_tokens,
