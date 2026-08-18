@@ -9,6 +9,7 @@ from koschei_sentinel.gold_holdout_inference_runner import (
     GoldHoldoutInferenceRunReceipt,
     _digest_without,
     _load_inference_pack,
+    _policy_sha256,
     _prediction_from_generated_text,
 )
 from koschei_sentinel.gold_holdout_inference_verify import (
@@ -48,6 +49,7 @@ def _fixture(tmp_path):
     export_gold_holdout_inference_pack(release, pack)
     cases, inference_manifest, manifest_raw = _load_inference_pack(pack)
 
+    generation_policy = GoldHoldoutGenerationPolicy()
     adapter_digest = "a" * 64
     plan_payload = {
         "schema_version": "sentinel.gold-holdout-inference-plan.v1",
@@ -60,13 +62,7 @@ def _fixture(tmp_path):
         "case_count": len(cases),
         "inputs_sha256": inference_manifest.inputs_sha256,
         "inference_manifest_sha256": _sha256_bytes(manifest_raw),
-        "generation_policy_sha256": hashlib.sha256(
-            json.dumps(
-                GoldHoldoutGenerationPolicy().model_dump(mode="json"),
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest(),
+        "generation_policy_sha256": _policy_sha256(generation_policy),
         "answer_key_isolated": True,
         "deterministic_generation": True,
     }
@@ -119,6 +115,10 @@ def _fixture(tmp_path):
         json.dumps(receipt.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    (output / "generation-policy.json").write_text(
+        json.dumps(generation_policy.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     (output / "predictions.jsonl").write_text(prediction_payload, encoding="utf-8")
     (output / "failures.jsonl").write_text(failure_payload, encoding="utf-8")
     return pack, output, cases, plan
@@ -136,10 +136,28 @@ def test_offline_inference_verifier_accepts_complete_bound_output(tmp_path) -> N
     assert report.plan_verified is True
     assert report.receipt_verified is True
     assert report.input_binding_verified is True
+    assert report.generation_policy_verified is True
     assert report.prediction_hashes_verified is True
     assert report.identity_verified is True
     assert report.complete_case_accounting is True
     assert report.violations == []
+
+
+def test_offline_inference_verifier_rejects_generation_policy_drift(tmp_path) -> None:
+    pack, output, _cases, _plan = _fixture(tmp_path)
+    policy_path = output / "generation-policy.json"
+    payload = json.loads(policy_path.read_text(encoding="utf-8"))
+    payload["max_new_tokens"] = 2048
+    policy_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    report = verify_gold_holdout_inference_output(output, pack)
+
+    assert report.valid is False
+    assert report.generation_policy_verified is False
+    assert any("generation policy SHA differs" in row for row in report.violations)
 
 
 def test_offline_inference_verifier_rejects_missing_case_even_with_rewritten_receipt(tmp_path) -> None:
