@@ -7,7 +7,8 @@ cd "$ROOT"
 TRAINING_ROOT="build/cyber-training"
 CORPUS="$TRAINING_ROOT/defense-reflex-v3"
 CONFIG="configs/training/cyber-sft.qwen3.5-0.8b.micro.json"
-TARGET_9B_CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.json"
+TARGET_9B_NORMAL_CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.json"
+TARGET_9B_LOWMEM_CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.lowmem.json"
 PLAN="$TRAINING_ROOT/qwen35-08b-micro.plan.json"
 RUN_DIR="$TRAINING_ROOT/runs/qwen35-08b-micro-001"
 EXPORT_ROOT="${KOSCHEI_KAGGLE_OUTPUT_ROOT:-/kaggle/working/koschei-sentinel-micro-output}"
@@ -106,17 +107,46 @@ sentinel-cyber-sft-export-verify \
   --export-dir "$EXPORT_ROOT" \
   | tee "$EXPORT_ROOT/export-verification.json"
 
-printf '\n[Koschei] Evaluating micro-to-9B scale gate\n'
-set +e
-sentinel-cyber-sft-scale-gate \
-  --micro-export "$EXPORT_ROOT" \
-  --target-config "$TARGET_9B_CONFIG" \
-  | tee "$EXPORT_ROOT/scale-gate.json"
-SCALE_STATUS=${PIPESTATUS[0]}
-set -e
-if [[ "$SCALE_STATUS" -eq 2 ]]; then
-  echo "[Koschei] Scale gate execution failed; refusing to package ambiguous evidence." >&2
-  exit 2
+run_scale_gate() {
+  local profile="$1"
+  local config="$2"
+  local output="$EXPORT_ROOT/scale-gate-${profile}.json"
+  set +e
+  sentinel-cyber-sft-scale-gate \
+    --micro-export "$EXPORT_ROOT" \
+    --target-config "$config" \
+    | tee "$output"
+  local status=${PIPESTATUS[0]}
+  set -e
+  return "$status"
+}
+
+printf '\n[Koschei] Evaluating micro-to-9B normal profile gate\n'
+if run_scale_gate normal "$TARGET_9B_NORMAL_CONFIG"; then
+  SCALE_STATUS=0
+  cp "$EXPORT_ROOT/scale-gate-normal.json" "$EXPORT_ROOT/scale-gate.json"
+  printf 'normal\n' > "$EXPORT_ROOT/recommended-9b-profile.txt"
+else
+  NORMAL_SCALE_STATUS=$?
+  if [[ "$NORMAL_SCALE_STATUS" -eq 2 ]]; then
+    echo "[Koschei] Normal scale gate execution failed; refusing ambiguous evidence." >&2
+    exit 2
+  fi
+  printf '\n[Koschei] Normal 9B gate blocked; evaluating low-memory profile.\n'
+  if run_scale_gate lowmem "$TARGET_9B_LOWMEM_CONFIG"; then
+    SCALE_STATUS=0
+    cp "$EXPORT_ROOT/scale-gate-lowmem.json" "$EXPORT_ROOT/scale-gate.json"
+    printf 'lowmem\n' > "$EXPORT_ROOT/recommended-9b-profile.txt"
+  else
+    LOWMEM_SCALE_STATUS=$?
+    if [[ "$LOWMEM_SCALE_STATUS" -eq 2 ]]; then
+      echo "[Koschei] Low-memory scale gate execution failed; refusing ambiguous evidence." >&2
+      exit 2
+    fi
+    SCALE_STATUS=1
+    cp "$EXPORT_ROOT/scale-gate-lowmem.json" "$EXPORT_ROOT/scale-gate.json"
+    printf 'blocked\n' > "$EXPORT_ROOT/recommended-9b-profile.txt"
+  fi
 fi
 
 python - "$EXPORT_ROOT" <<'PY'
@@ -132,8 +162,8 @@ PY
 
 printf '\n[Koschei] REAL QLoRA MICRO-SMOKE COMPLETE\n'
 if [[ "$SCALE_STATUS" -eq 0 ]]; then
-  printf '[Koschei] Micro evidence permits a 9B attempt; inspect scale-gate.json for cautions.\n'
+  printf '[Koschei] Micro evidence permits a 9B attempt; inspect scale-gate.json and recommended-9b-profile.txt.\n'
 else
-  printf '[Koschei] Micro run is valid, but scale-gate.json blocks a 9B attempt on this runtime.\n'
+  printf '[Koschei] Micro run is valid, but both 9B profiles are blocked on this runtime.\n'
 fi
 printf '[Koschei] Pipeline proof only: promotion_eligible=false by design.\n'
