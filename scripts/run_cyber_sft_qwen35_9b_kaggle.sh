@@ -29,11 +29,6 @@ if [[ ! -d "$CORPUS" ]]; then
   sentinel-cyber-seed-curriculum --output-root "$TRAINING_ROOT"
 fi
 
-printf '\n[Koschei] Pinned model access + CausalLM mapping preflight\n'
-sentinel-cyber-model-preflight \
-  --config "$NORMAL_CONFIG" \
-  | tee "$EXPORT_ROOT/model-preflight.json"
-
 printf '\n[Koschei] Kaggle GPU preflight\n'
 if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi | tee "$EXPORT_ROOT/nvidia-smi.txt"
@@ -41,6 +36,15 @@ else
   echo "nvidia-smi is unavailable; Kaggle GPU accelerator may not be enabled" >&2
   exit 2
 fi
+
+run_model_preflight() {
+  local profile="$1"
+  local config="$2"
+  printf '\n[Koschei] Pinned model access + CausalLM mapping preflight (%s)\n' "$profile"
+  sentinel-cyber-model-preflight \
+    --config "$config" \
+    | tee "$EXPORT_ROOT/model-preflight-${profile}.json"
+}
 
 run_readiness() {
   local profile="$1"
@@ -76,8 +80,14 @@ verify_attest_and_export() {
   local config="$2"
   local plan="$3"
   local run_dir="$4"
+  local profile_preflight="$EXPORT_ROOT/model-preflight-${profile}.json"
   local repository_commit
   repository_commit="$(git rev-parse HEAD)"
+
+  if [[ ! -f "$profile_preflight" ]]; then
+    echo "selected profile has no model preflight report: $profile_preflight" >&2
+    exit 2
+  fi
 
   printf '\n[Koschei] Verifying adapter + training receipt + text-only runtime (%s)\n' "$profile"
   sentinel-cyber-sft-verify \
@@ -88,12 +98,13 @@ verify_attest_and_export() {
   sentinel-cyber-sft-attest \
     --config "$config" \
     --run-dir "$run_dir" \
-    --model-preflight "$EXPORT_ROOT/model-preflight.json" \
+    --model-preflight "$profile_preflight" \
     --verification "$EXPORT_ROOT/verification.json" \
     --profile "$profile" \
     --repository-commit "$repository_commit" \
     | tee "$EXPORT_ROOT/run-attestation.json"
 
+  cp "$profile_preflight" "$EXPORT_ROOT/model-preflight.json"
   rm -rf "$EXPORT_ROOT/run"
   mkdir -p "$EXPORT_ROOT/run"
   cp -a "$run_dir"/. "$EXPORT_ROOT/run/"
@@ -111,6 +122,7 @@ SELECTED_RUN_DIR=""
 
 case "$PROFILE_MODE" in
   normal)
+    run_model_preflight normal "$NORMAL_CONFIG"
     run_readiness normal "$NORMAL_CONFIG"
     run_training normal "$NORMAL_CONFIG" "$NORMAL_PLAN"
     SELECTED_PROFILE="normal"
@@ -119,6 +131,7 @@ case "$PROFILE_MODE" in
     SELECTED_RUN_DIR="$NORMAL_RUN_DIR"
     ;;
   lowmem)
+    run_model_preflight lowmem "$LOWMEM_CONFIG"
     run_readiness lowmem "$LOWMEM_CONFIG"
     run_training lowmem "$LOWMEM_CONFIG" "$LOWMEM_PLAN"
     SELECTED_PROFILE="lowmem"
@@ -127,6 +140,7 @@ case "$PROFILE_MODE" in
     SELECTED_RUN_DIR="$LOWMEM_RUN_DIR"
     ;;
   auto)
+    run_model_preflight normal "$NORMAL_CONFIG"
     run_readiness normal "$NORMAL_CONFIG"
     if run_training normal "$NORMAL_CONFIG" "$NORMAL_PLAN"; then
       SELECTED_PROFILE="normal"
@@ -136,7 +150,8 @@ case "$PROFILE_MODE" in
     else
       NORMAL_LOG="$EXPORT_ROOT/training-normal.log"
       if grep -Eqi 'CUDA.*out of memory|out of memory|CUBLAS_STATUS_ALLOC_FAILED|CUDA error:.*memory' "$NORMAL_LOG"; then
-        printf '\n[Koschei] Normal profile hit a CUDA-memory failure; retrying low-memory profile.\n'
+        printf '\n[Koschei] Normal profile hit a CUDA-memory failure; validating low-memory profile before retry.\n'
+        run_model_preflight lowmem "$LOWMEM_CONFIG"
         run_readiness lowmem "$LOWMEM_CONFIG"
         run_training lowmem "$LOWMEM_CONFIG" "$LOWMEM_PLAN"
         SELECTED_PROFILE="lowmem"
