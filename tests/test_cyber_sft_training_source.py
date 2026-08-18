@@ -10,6 +10,7 @@ import koschei_sentinel.cyber_sft_run_reuse as reuse_module
 from koschei_sentinel.cyber_sft_run_reuse import evaluate_completed_run_reuse
 from koschei_sentinel.cyber_sft_training import CyberSFTConfig
 from koschei_sentinel.cyber_sft_training_source import (
+    CyberSFTTrainingSourceBinding,
     build_training_source_binding,
     verify_training_source_binding,
 )
@@ -190,9 +191,35 @@ def test_training_source_binding_rejects_repository_commit_drift(tmp_path: Path)
     assert source_path.is_file()
 
 
-def _write_run_manifest(tmp_path: Path, config: CyberSFTConfig) -> None:
+def _expected_resume_binding(source: CyberSFTTrainingSourceBinding) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": "sentinel.cyber-sft-resume-binding.v1",
+        "run_id": source.run_id,
+        "base_model": source.base_model,
+        "base_revision": source.base_revision,
+        "corpus_examples_sha256": source.corpus_examples_sha256,
+        "corpus_manifest_sha256": source.corpus_manifest_sha256,
+        "config_sha256": source.config_sha256,
+    }
+    if source.explicit_validation:
+        payload.update(
+            {
+                "explicit_validation": True,
+                "validation_corpus_examples_sha256": source.validation_corpus_examples_sha256,
+                "validation_corpus_manifest_sha256": source.validation_corpus_manifest_sha256,
+            }
+        )
+    return payload
+
+
+def _write_run_manifest(
+    tmp_path: Path,
+    config: CyberSFTConfig,
+    source: CyberSFTTrainingSourceBinding,
+) -> None:
+    run = tmp_path / config.output_dir
     _write_json(
-        tmp_path / "build" / "run" / "adapter-manifest.json",
+        run / "adapter-manifest.json",
         {
             "schema_version": "sentinel.cyber-sft-adapter-manifest.v1",
             "run_id": config.run_id,
@@ -215,6 +242,17 @@ def _write_run_manifest(tmp_path: Path, config: CyberSFTConfig) -> None:
             "output_dir": config.output_dir,
         },
     )
+    _write_json(
+        run / "resume-runtime.json",
+        {
+            "schema_version": "sentinel.cyber-sft-resume-runtime.v1",
+            "resumed": False,
+            "resume_checkpoint": None,
+            "checkpoint_every_optimizer_steps": 2,
+            "checkpoint_retention": 2,
+            "resume_binding": _expected_resume_binding(source),
+        },
+    )
 
 
 def _mark_run_valid(monkeypatch) -> None:
@@ -230,11 +268,12 @@ def test_completed_run_is_reusable_only_under_same_source_identity(
     tmp_path: Path,
 ) -> None:
     config_path, plan_path, source_path, config = _fixture(tmp_path)
-    _write_run_manifest(tmp_path, config)
+    source = CyberSFTTrainingSourceBinding.model_validate_json(source_path.read_bytes())
+    _write_run_manifest(tmp_path, config, source)
     _mark_run_valid(monkeypatch)
 
     report = evaluate_completed_run_reuse(
-        run_dir="build/run",
+        run_dir=config.output_dir,
         source_binding_path=source_path,
         config_path=config_path,
         plan_path=plan_path,
@@ -254,11 +293,12 @@ def test_completed_run_reuse_rejects_new_repository_commit(
     tmp_path: Path,
 ) -> None:
     config_path, plan_path, source_path, config = _fixture(tmp_path)
-    _write_run_manifest(tmp_path, config)
+    source = CyberSFTTrainingSourceBinding.model_validate_json(source_path.read_bytes())
+    _write_run_manifest(tmp_path, config, source)
     _mark_run_valid(monkeypatch)
 
     report = evaluate_completed_run_reuse(
-        run_dir="build/run",
+        run_dir=config.output_dir,
         source_binding_path=source_path,
         config_path=config_path,
         plan_path=plan_path,
@@ -269,3 +309,33 @@ def test_completed_run_reuse_rejects_new_repository_commit(
     assert report.reusable is False
     assert report.source_binding_valid is False
     assert any("training source binding is invalid" in row for row in report.violations)
+
+
+def test_completed_gold_run_reuse_rejects_validation_identity_drift(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_path, plan_path, source_path, config = _explicit_fixture(tmp_path)
+    source = CyberSFTTrainingSourceBinding.model_validate_json(source_path.read_bytes())
+    _write_run_manifest(tmp_path, config, source)
+    _mark_run_valid(monkeypatch)
+
+    run = tmp_path / config.output_dir
+    resume_path = run / "resume-runtime.json"
+    resume = json.loads(resume_path.read_text(encoding="utf-8"))
+    resume["resume_binding"]["validation_corpus_examples_sha256"] = "9" * 64
+    _write_json(resume_path, resume)
+
+    report = evaluate_completed_run_reuse(
+        run_dir=config.output_dir,
+        source_binding_path=source_path,
+        config_path=config_path,
+        plan_path=plan_path,
+        repository_commit="f" * 40,
+        root=tmp_path,
+    )
+
+    assert report.reusable is False
+    assert report.source_binding_valid is True
+    assert report.run_source_identity_valid is False
+    assert any("resume binding differs" in row for row in report.violations)
