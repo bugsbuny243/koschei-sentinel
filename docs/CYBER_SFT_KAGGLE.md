@@ -1,139 +1,165 @@
 # Koschei Sentinel Cyber SFT — Kaggle GPU Run
 
-This is the Kaggle execution path for the first real Qwen3.5-9B Cyber SFT smoke adapter when Google Colab GPU quota is unavailable.
+The preferred free-GPU path is now **micro-first**. Do not make Qwen3.5-9B the first proof of the training stack.
+
+Start with:
+
+`notebooks/koschei_sentinel_cyber_sft_micro_first_kaggle.ipynb`
+
+The notebook first performs a real QLoRA update on pinned `Qwen/Qwen3.5-0.8B-Base`, verifies and attests the resulting adapter, evaluates the micro-to-9B scale gate, and leaves the 9B phase disabled by default. The 9B phase should be enabled only when `scale-gate.json` reports `allowed_to_attempt_9b=true`.
 
 ## Runtime model path
 
-Cyber SFT is text-only. The executor uses `AutoTokenizer` and `AutoModelForCausalLM` against the pinned `Qwen/Qwen3.5-9B-Base` checkpoint. The executor refuses to train unless the loaded class is exactly `Qwen3_5ForCausalLM` and no module name contains `visual` or `vision`.
+Cyber SFT is text-only. The executor uses `AutoTokenizer` and `AutoModelForCausalLM` and refuses to train unless the loaded model class is exactly `Qwen3_5ForCausalLM` and no module name contains `visual` or `vision`.
 
-The completed run writes `model-runtime.json`, and `sentinel-cyber-sft-verify` requires that file to confirm `AutoModelForCausalLM`, `Qwen3_5ForCausalLM`, and `text_only=true` before a run is considered valid.
+The current real training progression is:
+
+- micro proof: `Qwen/Qwen3.5-0.8B-Base` at revision `dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68`
+- 9B smoke: `Qwen/Qwen3.5-9B-Base` at revision `68c46c4b3498877f3ef123c856ecfde50c39f404`
+
+Both use Defense Reflex v3 synthetic-policy supervision and remain `promotion_eligible=false`.
+
+## Transformers and dtype integrity
+
+Cyber SFT requires a final `transformers>=5.12,<6` release. Prerelease, RC, dev, and nightly builds are rejected by readiness even when their numeric prefix is 5.12 or newer.
+
+The text trainer explicitly passes the configured dtype to `AutoModelForCausalLM.from_pretrained`. For the Kaggle micro and 9B profiles this is `float16`.
+
+Before PEFT k-bit preparation, the trainer inspects the loaded floating parameters and writes the result to `model-runtime.json`:
+
+- `requested_compute_dtype`
+- `observed_floating_dtypes_before_kbit_prepare`
+
+The requested dtype must actually be observed. A competing low-precision dtype is forbidden: a float16 run cannot contain bfloat16 leakage and a bfloat16 run cannot contain float16 leakage. This check is independently enforced by the run verifier, run attestation, and portable export verifier.
 
 ## Exact model-access gate
 
-Before each profile trains, `sentinel-cyber-model-preflight` checks that profile's configured Hugging Face model and exact 40-character revision. The gate requires:
+Before a profile trains, `sentinel-cyber-model-preflight` requires:
 
-- the pinned revision to resolve to the exact configured commit SHA,
-- the repository to be public and ungated for anonymous Kaggle execution,
-- safetensors weights to be present,
-- `AutoConfig.model_type` to be `qwen3_5`, and
-- `AutoModelForCausalLM` to resolve the config to `Qwen3_5ForCausalLM`.
+- exact 40-character model revision resolution,
+- public and ungated model access,
+- safetensors weights,
+- `AutoConfig.model_type=qwen3_5`, and
+- `AutoModelForCausalLM -> Qwen3_5ForCausalLM` mapping.
 
-Profile-specific reports are kept as `model-preflight-normal.json` and, when needed, `model-preflight-lowmem.json`. The report for the profile that actually completed is copied to `model-preflight.json`. A low-memory fallback is therefore never trained against an unverified model pin.
+A profile is never trained against an unverified model pin.
 
-## Platform assumptions
+## GPU readiness
 
-- Kaggle Notebook accelerator is set to GPU.
-- Notebook Internet is enabled so the repository and pinned Hugging Face checkpoint can be fetched.
-- The normal smoke config is `DENSE_SINGLE_GPU_QLORA`, 4-bit NF4, float16, 2048 max sequence length, paged AdamW 8-bit, gradient checkpointing, and LoRA rank 16.
-- The low-memory fallback is 4-bit NF4, float16, 1024 max sequence length, LoRA rank 8, and excludes MLP LoRA targets to reduce training memory.
-- The training corpus is Defense Reflex v3 synthetic-policy seed curriculum and is intentionally `promotion_eligible=false`.
+The Kaggle readiness gate checks the actual current CUDA device rather than summing multiple GPUs. It records GPU name, VRAM, and compute capability.
 
-## Notebook
+Current quantization requirements are fail-closed:
 
-Use:
+- 4-bit NF4/FP4 requires NVIDIA compute capability 6.0 or newer.
+- the 8-bit loading path requires compute capability 7.5 or newer.
+
+The micro profile requires at least 6 GiB visible VRAM. The normal 9B profile requires 14 GiB; the low-memory 9B profile requires 12 GiB.
+
+Qwen3.5 DeltaNet can use optional acceleration packages. If they are absent, the model can fall back to slower, more memory-intensive PyTorch paths. Their absence is therefore recorded as a scale-up caution rather than being hidden. P100-class execution must not depend on optional kernels that target newer SM architectures.
+
+## Phase 1 — micro-smoke
+
+Preferred notebook:
+
+`notebooks/koschei_sentinel_cyber_sft_micro_first_kaggle.ipynb`
+
+Standalone micro notebook:
+
+`notebooks/koschei_sentinel_cyber_sft_08b_micro_kaggle.ipynb`
+
+Standalone launcher:
+
+`bash scripts/run_cyber_sft_qwen35_08b_micro_kaggle.sh .`
+
+The micro profile uses 4-bit NF4, float16, 2048-token context, paged AdamW 8-bit, gradient checkpointing, LoRA rank 8, and the same LoRA target classes required by the normal 9B recipe.
+
+A valid micro run must perform real optimizer steps and pass adapter verification, run attestation, and portable export verification. It then executes `sentinel-cyber-sft-scale-gate`.
+
+## Micro-to-9B scale gate
+
+`sentinel-cyber-sft-scale-gate` emits one of:
+
+- `PROCEED_9B`
+- `PROCEED_9B_CAUTION`
+- `BLOCK_9B`
+
+The gate validates the complete micro export and requires the micro run to bind the pinned 0.8B model, perform `global_step > 0`, run on sufficient VRAM for the selected 9B target, and prove recipe compatibility.
+
+Recipe checks include:
+
+- quantization bit parity,
+- compute dtype parity,
+- LoRA target-class coverage,
+- training stage and execution-profile parity, and
+- context-length coverage.
+
+Missing required LoRA target classes or a different quantization/dtype recipe block scale-up. A shorter micro context or missing optional fast kernels produces caution rather than silent approval.
+
+## Phase 2 — 9B smoke
+
+Standalone notebook:
 
 `notebooks/koschei_sentinel_cyber_sft_9b_kaggle.ipynb`
 
-The notebook clones or updates the repository, checks the GPU, runs the Kaggle launcher, verifies the completed run, verifies the portable export, and leaves the final archive in `/kaggle/working`.
-
-## Launcher
+Standalone launcher:
 
 `bash scripts/run_cyber_sft_qwen35_9b_kaggle.sh .`
 
-The default profile mode is `auto`. It first attempts the normal smoke profile. Automatic fallback is permitted **only** when the training log contains a CUDA-memory allocation failure. A non-memory failure stops the run instead of being hidden by a weaker profile.
+The launcher itself requires a verified micro export before doing any 9B model work, so bypassing the notebook does not bypass the micro gate.
 
-To force a profile:
+In `auto` mode the launcher evaluates the normal 9B scale gate first. If the micro evidence cannot satisfy normal-profile requirements, it separately evaluates the low-memory profile. If neither profile is allowed, 9B is not started.
 
-```bash
-KOSCHEI_KAGGLE_PROFILE=normal bash scripts/run_cyber_sft_qwen35_9b_kaggle.sh .
-KOSCHEI_KAGGLE_PROFILE=lowmem bash scripts/run_cyber_sft_qwen35_9b_kaggle.sh .
-```
-
-The launcher performs:
-
-1. Text-only training dependency installation.
-2. Defense Reflex v3 seed generation when missing.
-3. GPU visibility preflight.
-4. Exact Hugging Face revision/access/CausalLM mapping preflight for the profile that is about to train.
-5. Runtime/CUDA readiness and tokenizer context-length checks.
-6. Text-only `AutoModelForCausalLM` loading and strict Qwen3.5 runtime validation.
-7. Real QLoRA execution on the pinned Qwen3.5-9B-Base revision.
-8. CUDA-memory-only retry with a separately preflighted low-memory profile when required.
-9. Adapter, training receipt, and text-runtime verification.
-10. Fail-closed run attestation binding config, execution plan, repository commit, exact resolved model revision, verification report, model runtime, resume runtime, receipt, adapter digest, and corpus hashes.
-11. Export of the selected config, selected profile, run, plan, corpus manifest, corpus examples, repository commit, selected model preflight, readiness reports, training logs, verification report, and run attestation.
-12. Offline re-verification of the copied export with `sentinel-cyber-sft-export-verify`.
-13. Creation of `/kaggle/working/koschei-sentinel-qwen35-9b-smoke.zip` only after export verification succeeds.
+If normal 9B passes its scale gate but later encounters a real CUDA allocation failure, automatic fallback is allowed only for CUDA-memory failure signatures. Non-CUDA failures are never hidden by a weaker profile.
 
 ## Resumable checkpoints
 
-The text-only trainer stores a deterministic resume area beside the final run directory and saves a checkpoint every two optimizer steps, retaining the latest two checkpoints.
+The text trainer saves a checkpoint every two optimizer steps and retains the latest two. Resume is bound to:
 
-Resume is fail-closed. `resume-binding.json` binds the checkpoint lineage to:
-
-- `run_id`,
+- run ID,
 - exact base model and revision,
 - corpus examples SHA-256,
 - corpus manifest SHA-256, and
-- SHA-256 of the complete Cyber SFT config.
+- canonical full training-config SHA-256.
 
-If any of those values change, the old checkpoint is refused instead of silently resumed. A completed run writes `resume-runtime.json` recording whether the run resumed and from which checkpoint. After a successful final artifact commit, the temporary resume directory is removed. If execution is interrupted before completion, the bound checkpoints remain available for the next compatible invocation as long as the Kaggle working state itself is still available.
+A checkpoint from a different model, corpus, or config is rejected.
 
-## Run attestation
+## Verification and attestation
 
-After `sentinel-cyber-sft-verify` returns a valid report, `sentinel-cyber-sft-attest` performs a fresh verification and refuses to emit an attestation unless all bindings still match. `run-attestation.json` records and hashes:
+A completed run must pass `sentinel-cyber-sft-verify`. The verifier recomputes the adapter digest, training receipt digest and bindings, validates text-only runtime identity and dtype evidence, and requires `global_step > 0`.
 
-- selected profile and repository commit,
-- exact configured and resolved model revision,
-- canonical training config SHA-256,
-- raw execution-plan SHA-256,
-- raw model-preflight and verification SHA-256 values,
-- model-runtime and resume-runtime SHA-256 values,
-- training receipt SHA-256,
-- adapter digest,
-- corpus examples and manifest SHA-256 values,
-- completed optimizer step count, and
-- resume status/checkpoint.
+`sentinel-cyber-sft-attest` then performs a fresh verification and binds the verified run to the selected profile, repository commit, exact model revision, training config, execution plan, runtime evidence, resume evidence, receipt, adapter, and corpus hashes.
 
-The attestation contains its own deterministic `attestation_sha256`.
+## Canonical portable export
 
-## Portable export verification
+Micro and 9B use the same model-independent export layout:
 
-The final export contains both `defense-reflex-v3.manifest.json` and `defense-reflex-v3.examples.jsonl`, so the corpus hashes can be recomputed without access to the original repository build directory.
+- `training-config.json`
+- `training-plan.json`
+- `model-preflight.json`
+- `verification.json`
+- `run-attestation.json`
+- `export-verification.json`
+- `selected-profile.txt`
+- `repository-commit.txt`
+- `corpus-examples.jsonl`
+- `corpus-manifest.json`
+- `run/adapter-manifest.json`
+- `run/training-receipt.json`
+- `run/model-runtime.json`
+- `run/resume-runtime.json`
 
-`sentinel-cyber-sft-export-verify --export-dir <path>` requires no GPU or network access. It independently checks:
+`sentinel-cyber-sft-export-verify --export-dir <path>` requires no GPU or network access. It recomputes hashes and independently checks semantic bindings, including config-to-runtime dtype integrity. Archive creation is blocked unless portable verification reports `valid=true`.
 
-- the attestation self-hash,
-- canonical selected-config hash,
-- raw execution-plan hash,
-- selected model-preflight hash and semantic model binding,
-- verification-report hash plus a fresh verification of the copied `run/` directory,
-- model-runtime and resume-runtime hashes and semantics,
-- receipt and adapter bindings,
-- corpus examples and manifest hashes,
-- selected-profile binding, and
-- repository-commit binding.
+## Kaggle persistence
 
-The launcher writes the result to `export-verification.json`. If it does not report `valid=true`, archive creation is stopped.
+The preferred micro-first notebook keeps micro evidence and optional 9B execution in the same Kaggle session. The 9B phase is disabled by default to protect free GPU quota.
 
-## Success conditions
+Micro archive:
 
-The run is accepted as a real smoke training only if all of the following are true:
+`/kaggle/working/koschei-sentinel-qwen35-08b-micro.zip`
 
-- `training-receipt.json` exists and reports `global_step > 0`.
-- `model-runtime.json` verifies the text-only Qwen3.5 runtime.
-- `resume-runtime.json` is bound to the same config/model/corpus lineage.
-- Adapter digest recomputation matches the manifest.
-- Training receipt self-digest is valid.
-- Receipt model/corpus/adapter bindings match the run artifacts.
-- `verification.json` reports `valid=true` and `model_runtime_verified=true`.
-- `run-attestation.json` verifies the config/plan/model/runtime/receipt/corpus lineage.
-- `export-verification.json` reports `valid=true` after checking the copied portable bundle.
-- `adapter-manifest.json` reports `corpus_promotion_eligible=false`.
-- `selected-profile.txt` records the profile that actually completed.
+9B archive, when explicitly run:
 
-A successful smoke run proves the tokenizer, text-only quantized model load, LoRA target resolution, optimizer, backward pass, resumable checkpoint path, receipt generation, artifact verification, run attestation, and portable offline-verification path. It does **not** make the adapter production-ready.
+`/kaggle/working/koschei-sentinel-qwen35-9b-smoke.zip`
 
-## Kaggle output persistence
-
-The final ZIP is written under `/kaggle/working`. Save a notebook version with outputs after the run or download the ZIP before ending the session. The Hugging Face cache is not included in the export archive.
+Save a Kaggle notebook version with outputs or preserve/download the generated archive before the working session ends. Neither smoke adapter is production-ready merely because the training pipeline executed successfully.
