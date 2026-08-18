@@ -32,7 +32,7 @@ class CyberDefensePromotionEvidence(StrictModel):
     )
     promotion_id: str = Field(min_length=3, max_length=256)
     candidate_model_ref: str = Field(min_length=3, max_length=512)
-    candidate_model_revision: str = Field(min_length=3, max_length=256)
+    candidate_model_revision: str = Field(pattern=_DIGEST)
     training_bundle_sha256: str = Field(pattern=_DIGEST)
     eval_holdout_sha256: str = Field(pattern=_DIGEST)
     cyber_range_suite_sha256: str = Field(pattern=_DIGEST)
@@ -64,6 +64,7 @@ class CyberDefensePromotionEvidence(StrictModel):
     gold_holdout_mode_accuracy: float = Field(ge=0.0, le=1.0)
     gold_holdout_action_accuracy: float = Field(ge=0.0, le=1.0)
     gold_holdout_target_accuracy: float = Field(ge=0.0, le=1.0)
+    gold_holdout_evidence_selection_accuracy: float = Field(ge=0.0, le=1.0)
     gold_holdout_evidence_grounding_rate: float = Field(ge=0.0, le=1.0)
     gold_holdout_target_grounding_rate: float = Field(ge=0.0, le=1.0)
     gold_holdout_outcome_verification_rate: float = Field(ge=0.0, le=1.0)
@@ -104,6 +105,10 @@ def _gold_passes_policy(
         (report.mode_accuracy, policy.minimum_mode_accuracy),
         (report.action_accuracy, policy.minimum_action_accuracy),
         (report.target_accuracy, policy.minimum_target_accuracy),
+        (
+            report.evidence_selection_accuracy,
+            policy.minimum_evidence_selection_accuracy,
+        ),
         (report.evidence_grounding_rate, policy.minimum_evidence_grounding_rate),
         (report.target_grounding_rate, policy.minimum_target_grounding_rate),
         (report.outcome_verification_rate, policy.minimum_outcome_verification_rate),
@@ -224,6 +229,7 @@ def build_cyber_defense_promotion_evidence(
         gold_holdout_mode_accuracy=report.mode_accuracy,
         gold_holdout_action_accuracy=report.action_accuracy,
         gold_holdout_target_accuracy=report.target_accuracy,
+        gold_holdout_evidence_selection_accuracy=report.evidence_selection_accuracy,
         gold_holdout_evidence_grounding_rate=report.evidence_grounding_rate,
         gold_holdout_target_grounding_rate=report.target_grounding_rate,
         gold_holdout_outcome_verification_rate=report.outcome_verification_rate,
