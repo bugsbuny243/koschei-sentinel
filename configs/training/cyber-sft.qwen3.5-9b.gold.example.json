@@ -1,0 +1,49 @@
+{
+  "schema_version": "sentinel.cyber-sft-config.v1",
+  "run_id": "qwen35-9b-gold-defense-v1",
+  "stage": "DEFENSE_REFLEX",
+  "execution_profile": "DENSE_SINGLE_GPU_QLORA",
+  "base_model": "Qwen/Qwen3.5-9B-Base",
+  "base_revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+  "corpus_dir": "build/gold-defense-release/train",
+  "validation_corpus_dir": "build/gold-defense-release/validation",
+  "output_dir": "build/cyber-training/runs/qwen35-9b-gold-defense-v1",
+  "input_adapter_dir": null,
+  "max_sequence_length": 2048,
+  "epochs": 1.0,
+  "learning_rate": 0.0001,
+  "per_device_batch_size": 1,
+  "gradient_accumulation_steps": 4,
+  "validation_ratio": 0.0,
+  "warmup_ratio": 0.03,
+  "logging_steps": 1,
+  "seed": 1701,
+  "minimum_cuda_memory_gb": 14.0,
+  "gradient_checkpointing": true,
+  "enable_router_aux_loss": false,
+  "quantization": {
+    "bits": 4,
+    "quant_type": "nf4",
+    "double_quant": true,
+    "compute_dtype": "float16"
+  },
+  "lora": {
+    "rank": 16,
+    "alpha": 32,
+    "dropout": 0.05,
+    "target_suffixes": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj",
+      "in_proj_qkv",
+      "in_proj_z",
+      "in_proj_b",
+      "in_proj_a",
+      "out_proj"
+    ]
+  }
+}
