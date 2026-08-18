@@ -15,7 +15,11 @@ from koschei_sentinel.cyber_sft_text_trainer import (
     _cuda_preflight,
 )
 from koschei_sentinel.cyber_sft_trainer import CyberSFTAdapterManifest
-from koschei_sentinel.cyber_sft_training import SYSTEM_PROMPT, CyberSFTConfig, load_cyber_sft_config
+from koschei_sentinel.cyber_sft_training import (
+    SYSTEM_PROMPT,
+    CyberSFTConfig,
+    load_cyber_sft_config,
+)
 from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutInferenceCase,
     GoldHoldoutInferenceManifest,
@@ -143,7 +147,9 @@ def _load_inference_pack(
         try:
             case = GoldHoldoutInferenceCase.model_validate_json(line)
         except ValueError as exc:
-            raise ValueError(f"invalid Gold HOLDOUT inference case at line {line_number}") from exc
+            raise ValueError(
+                f"invalid Gold HOLDOUT inference case at line {line_number}"
+            ) from exc
         if case.case_id in seen_case_ids:
             raise ValueError(f"duplicate Gold HOLDOUT inference case: {case.case_id}")
         seen_case_ids.add(case.case_id)
@@ -188,7 +194,9 @@ def _load_candidate_identity(
         if observed != expected:
             raise ValueError(f"Gold HOLDOUT candidate config/run mismatch: {label}")
     if manifest.corpus_promotion_eligible is not True:
-        raise ValueError("Gold HOLDOUT promotion evaluation requires a promotion-eligible adapter")
+        raise ValueError(
+            "Gold HOLDOUT promotion evaluation requires a promotion-eligible adapter"
+        )
     adapter_path = run_path / "adapter"
     if not adapter_path.is_dir():
         raise ValueError("verified Cyber SFT run is missing its adapter directory")
@@ -267,7 +275,9 @@ def _prediction_from_generated_text(
     try:
         steps = [GoldHoldoutPredictedStep.model_validate(row) for row in sequence_payload]
     except ValueError as exc:
-        raise ValueError("model output defense_sequence does not match the prediction schema") from exc
+        raise ValueError(
+            "model output defense_sequence does not match the prediction schema"
+        ) from exc
     return build_gold_holdout_prediction(
         inference_case=case,
         model_ref=model_ref,
@@ -337,13 +347,23 @@ def execute_gold_holdout_inference(
     try:
         import torch
         from peft import PeftModel
-        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            BitsAndBytesConfig,
+        )
     except ImportError as exc:
-        raise RuntimeError("Gold HOLDOUT inference requires project training dependencies") from exc
+        raise RuntimeError(
+            "Gold HOLDOUT inference requires project training dependencies"
+        ) from exc
 
     device_index = _cuda_preflight(config, torch)
     device = torch.device(f"cuda:{device_index}")
-    dtype = torch.bfloat16 if config.quantization.compute_dtype == "bfloat16" else torch.float16
+    dtype = (
+        torch.bfloat16
+        if config.quantization.compute_dtype == "bfloat16"
+        else torch.float16
+    )
     tokenizer = AutoTokenizer.from_pretrained(
         config.base_model,
         revision=config.base_revision,
@@ -369,7 +389,11 @@ def execute_gold_holdout_inference(
     )
     _assert_text_only_model(base_model)
     _assert_requested_model_dtype(base_model, dtype, torch)
-    model = PeftModel.from_pretrained(base_model, str(adapter_path), is_trainable=False)
+    model = PeftModel.from_pretrained(
+        base_model,
+        str(adapter_path),
+        is_trainable=False,
+    )
     model.eval()
 
     predictions: list[GoldHoldoutPrediction] = []
@@ -408,7 +432,10 @@ def execute_gold_holdout_inference(
                 eos_token_id=tokenizer.eos_token_id,
             )
         generated_ids = output_ids[0, prompt_tokens:]
-        generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+        generated_text = tokenizer.decode(
+            generated_ids,
+            skip_special_tokens=True,
+        ).strip()
         try:
             prediction = _prediction_from_generated_text(
                 case=case,
@@ -432,10 +459,20 @@ def execute_gold_holdout_inference(
     prediction_payload = _serialize_predictions(predictions)
     failure_payload = _serialize_failures(failures)
     destination.mkdir(parents=True, exist_ok=False)
-    (destination / "predictions.jsonl").write_text(prediction_payload, encoding="utf-8")
-    (destination / "failures.jsonl").write_text(failure_payload, encoding="utf-8")
+    (destination / "predictions.jsonl").write_text(
+        prediction_payload,
+        encoding="utf-8",
+    )
+    (destination / "failures.jsonl").write_text(
+        failure_payload,
+        encoding="utf-8",
+    )
     (destination / "plan.json").write_text(
         json.dumps(plan.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (destination / "generation-policy.json").write_text(
+        json.dumps(policy.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     device_name = str(torch.cuda.get_device_properties(device_index).name)
@@ -457,7 +494,10 @@ def execute_gold_holdout_inference(
         "cuda_device_name": device_name,
         "runtime_versions": _runtime_versions(),
     }
-    receipt_payload["receipt_sha256"] = _digest_without(receipt_payload, "receipt_sha256")
+    receipt_payload["receipt_sha256"] = _digest_without(
+        receipt_payload,
+        "receipt_sha256",
+    )
     receipt = GoldHoldoutInferenceRunReceipt.model_validate(receipt_payload)
     (destination / "receipt.json").write_text(
         json.dumps(receipt.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
