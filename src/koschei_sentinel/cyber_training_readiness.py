@@ -87,10 +87,23 @@ def _release_version_tuple(value: str) -> tuple[int, int, int] | None:
     )
 
 
+def _is_prerelease_version(value: str) -> bool:
+    normalized = value.strip().lower()
+    return re.search(r"(?:^|[.\-+])(dev|a|b|rc)\d*", normalized) is not None or re.search(
+        r"\d(?:dev|a|b|rc)\d*",
+        normalized,
+    ) is not None
+
+
 def _transformers_version_blocker(version: str) -> str | None:
     parsed = _release_version_tuple(version)
     if parsed is None:
         return f"cannot parse installed transformers version: {version!r}"
+    if _is_prerelease_version(version):
+        return (
+            "prerelease/nightly transformers builds are not accepted for Cyber SFT; "
+            f"install a final transformers>=5.12,<6 release instead of {version}"
+        )
     if parsed < _MIN_TRANSFORMERS_VERSION:
         return (
             "transformers>=5.12 is required for the fixed Qwen3.5 composite-to-text "
