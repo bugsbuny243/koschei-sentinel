@@ -66,6 +66,7 @@ class GoldDefenseReleaseManifest(StrictModel):
     schema_version: Literal["sentinel.gold-defense-release-manifest.v1"] = (
         "sentinel.gold-defense-release-manifest.v1"
     )
+    split_policy_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     train_examples: int = Field(gt=0)
     validation_examples: int = Field(gt=0)
     holdout_cases: int = Field(gt=0)
@@ -224,6 +225,11 @@ def write_gold_defense_release(
     if len(scenario_ids) != len(set(scenario_ids)):
         raise ValueError("Gold defense release scenario IDs must be unique")
 
+    split_policy_sha256s = {packet.split_policy_sha256 for _scenario, packet, _reviewed in rows}
+    if len(split_policy_sha256s) != 1:
+        raise ValueError("Gold defense release cannot mix pre-review split policies")
+    split_policy_sha256 = next(iter(split_policy_sha256s))
+
     train_examples: list[DefenseReflexTrainingExampleV3] = []
     validation_examples: list[DefenseReflexTrainingExampleV3] = []
     holdout_cases: list[GoldHoldoutEvaluationCase] = []
@@ -270,6 +276,7 @@ def write_gold_defense_release(
     (holdout_dir / "manifest.json").write_bytes(holdout_manifest_raw)
 
     release_payload = {
+        "split_policy_sha256": split_policy_sha256,
         "train_manifest_sha256": _sha256_bytes(train_manifest_raw),
         "validation_manifest_sha256": _sha256_bytes(validation_manifest_raw),
         "holdout_manifest_sha256": _sha256_bytes(holdout_manifest_raw),
