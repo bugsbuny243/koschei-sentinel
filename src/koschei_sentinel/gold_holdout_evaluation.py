@@ -80,6 +80,7 @@ class GoldHoldoutEvaluationPolicy(StrictModel):
     minimum_mode_accuracy: float = Field(default=0.95, ge=0.0, le=1.0)
     minimum_action_accuracy: float = Field(default=0.95, ge=0.0, le=1.0)
     minimum_target_accuracy: float = Field(default=0.95, ge=0.0, le=1.0)
+    minimum_evidence_selection_accuracy: float = Field(default=0.95, ge=0.0, le=1.0)
     minimum_evidence_grounding_rate: float = Field(default=1.0, ge=0.0, le=1.0)
     minimum_target_grounding_rate: float = Field(default=1.0, ge=0.0, le=1.0)
     minimum_outcome_verification_rate: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -94,6 +95,7 @@ class GoldHoldoutCaseResult(StrictModel):
     mode_matches: int = Field(ge=0)
     action_matches: int = Field(ge=0)
     target_matches: int = Field(ge=0)
+    evidence_selection_matches: int = Field(ge=0)
     grounded_evidence_steps: int = Field(ge=0)
     grounded_target_steps: int = Field(ge=0)
     outcome_verification_steps: int = Field(ge=0)
@@ -101,8 +103,8 @@ class GoldHoldoutCaseResult(StrictModel):
 
 
 class GoldHoldoutEvaluationReport(StrictModel):
-    schema_version: Literal["sentinel.gold-holdout-evaluation-report.v1"] = (
-        "sentinel.gold-holdout-evaluation-report.v1"
+    schema_version: Literal["sentinel.gold-holdout-evaluation-report.v2"] = (
+        "sentinel.gold-holdout-evaluation-report.v2"
     )
     model_ref: str
     model_revision: str
@@ -118,6 +120,7 @@ class GoldHoldoutEvaluationReport(StrictModel):
     mode_accuracy: float = Field(ge=0.0, le=1.0)
     action_accuracy: float = Field(ge=0.0, le=1.0)
     target_accuracy: float = Field(ge=0.0, le=1.0)
+    evidence_selection_accuracy: float = Field(ge=0.0, le=1.0)
     evidence_grounding_rate: float = Field(ge=0.0, le=1.0)
     target_grounding_rate: float = Field(ge=0.0, le=1.0)
     outcome_verification_rate: float = Field(ge=0.0, le=1.0)
@@ -265,6 +268,7 @@ def _case_result(
     mode_matches = 0
     action_matches = 0
     target_matches = 0
+    evidence_selection_matches = 0
     grounded_evidence = 0
     grounded_targets = 0
     outcome_verification = 0
@@ -288,6 +292,10 @@ def _case_result(
             action_matches += 1
         if predicted_step.target_entity_id == gold_step.get("target_entity_id"):
             target_matches += 1
+        expected_evidence = set(gold_step.get("supporting_evidence_ids", []))
+        predicted_evidence = set(predicted_step.supporting_evidence_ids)
+        if predicted_evidence == expected_evidence:
+            evidence_selection_matches += 1
         if predicted_step.target_entity_id in visible_entities:
             grounded_targets += 1
         else:
@@ -309,6 +317,7 @@ def _case_result(
         and mode_matches == compared
         and action_matches == compared
         and target_matches == compared
+        and evidence_selection_matches == compared
         and grounded_evidence == compared
         and grounded_targets == compared
         and outcome_verification == compared
@@ -323,6 +332,7 @@ def _case_result(
         mode_matches=mode_matches,
         action_matches=action_matches,
         target_matches=target_matches,
+        evidence_selection_matches=evidence_selection_matches,
         grounded_evidence_steps=grounded_evidence,
         grounded_target_steps=grounded_targets,
         outcome_verification_steps=outcome_verification,
@@ -371,6 +381,7 @@ def evaluate_gold_holdout_predictions(
     mode_matches = sum(row.mode_matches for row in results)
     action_matches = sum(row.action_matches for row in results)
     target_matches = sum(row.target_matches for row in results)
+    evidence_selection_matches = sum(row.evidence_selection_matches for row in results)
     grounded_evidence = sum(row.grounded_evidence_steps for row in results)
     grounded_targets = sum(row.grounded_target_steps for row in results)
     verified_outcomes = sum(row.outcome_verification_steps for row in results)
@@ -382,6 +393,7 @@ def evaluate_gold_holdout_predictions(
     mode_accuracy = ratio(mode_matches, compared_steps)
     action_accuracy = ratio(action_matches, compared_steps)
     target_accuracy = ratio(target_matches, compared_steps)
+    evidence_selection_accuracy = ratio(evidence_selection_matches, compared_steps)
     evidence_grounding_rate = ratio(grounded_evidence, predicted_steps)
     target_grounding_rate = ratio(grounded_targets, predicted_steps)
     outcome_verification_rate = ratio(verified_outcomes, predicted_steps)
@@ -396,6 +408,11 @@ def evaluate_gold_holdout_predictions(
         ("mode accuracy", mode_accuracy, selected_policy.minimum_mode_accuracy),
         ("action accuracy", action_accuracy, selected_policy.minimum_action_accuracy),
         ("target accuracy", target_accuracy, selected_policy.minimum_target_accuracy),
+        (
+            "evidence selection accuracy",
+            evidence_selection_accuracy,
+            selected_policy.minimum_evidence_selection_accuracy,
+        ),
         (
             "evidence grounding rate",
             evidence_grounding_rate,
@@ -420,7 +437,7 @@ def evaluate_gold_holdout_predictions(
 
     passed = not violations and len(predictions) == len(cases)
     payload: dict[str, object] = {
-        "schema_version": "sentinel.gold-holdout-evaluation-report.v1",
+        "schema_version": "sentinel.gold-holdout-evaluation-report.v2",
         "model_ref": model_ref,
         "model_revision": model_revision,
         "adapter_digest": adapter_digest,
@@ -435,6 +452,7 @@ def evaluate_gold_holdout_predictions(
         "mode_accuracy": mode_accuracy,
         "action_accuracy": action_accuracy,
         "target_accuracy": target_accuracy,
+        "evidence_selection_accuracy": evidence_selection_accuracy,
         "evidence_grounding_rate": evidence_grounding_rate,
         "target_grounding_rate": target_grounding_rate,
         "outcome_verification_rate": outcome_verification_rate,
