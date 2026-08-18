@@ -1,18 +1,21 @@
 import hashlib
 import json
+from types import SimpleNamespace
 
 import pytest
 
+import koschei_sentinel.gold_holdout_inference_runner as runner_module
+from koschei_sentinel.defense_reflex_gold_release import write_gold_defense_release
 from koschei_sentinel.gold_holdout_evaluation import export_gold_holdout_inference_pack
 from koschei_sentinel.gold_holdout_inference_runner import (
     GoldHoldoutGenerationPolicy,
+    _load_candidate_identity,
     _load_inference_pack,
     _prediction_from_generated_text,
     _prompt_messages,
 )
 from koschei_sentinel.training import canonical_json
 from tests.test_defense_reflex_gold_release import _release_rows
-from koschei_sentinel.defense_reflex_gold_release import write_gold_defense_release
 
 
 def _pack(tmp_path):
@@ -22,6 +25,73 @@ def _pack(tmp_path):
     pack = tmp_path / "holdout-pack"
     export_gold_holdout_inference_pack(release, pack)
     return pack
+
+
+def _candidate_fixture(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_payload = {
+        "schema_version": "sentinel.cyber-sft-config.v1",
+        "run_id": "gold-inference-run",
+        "stage": "DEFENSE_REFLEX",
+        "execution_profile": "DENSE_SINGLE_GPU_QLORA",
+        "base_model": "Qwen/Qwen3.5-9B-Base",
+        "base_revision": "a" * 40,
+        "corpus_dir": "build/gold/train",
+        "validation_corpus_dir": "build/gold/validation",
+        "output_dir": "build/run",
+        "input_adapter_dir": None,
+        "max_sequence_length": 2048,
+        "epochs": 1.0,
+        "learning_rate": 0.0001,
+        "per_device_batch_size": 1,
+        "gradient_accumulation_steps": 4,
+        "validation_ratio": 0.0,
+        "warmup_ratio": 0.03,
+        "logging_steps": 1,
+        "seed": 1701,
+        "minimum_cuda_memory_gb": 0.0,
+        "gradient_checkpointing": True,
+        "enable_router_aux_loss": False,
+        "quantization": {
+            "bits": 4,
+            "quant_type": "nf4",
+            "double_quant": True,
+            "compute_dtype": "float16",
+        },
+        "lora": {
+            "rank": 16,
+            "alpha": 32,
+            "dropout": 0.05,
+            "target_suffixes": ["q_proj"],
+        },
+    }
+    config_path.write_text(json.dumps(config_payload), encoding="utf-8")
+    run = tmp_path / "build" / "run"
+    adapter = run / "adapter"
+    adapter.mkdir(parents=True)
+    manifest = {
+        "schema_version": "sentinel.cyber-sft-adapter-manifest.v1",
+        "run_id": "gold-inference-run",
+        "stage": "DEFENSE_REFLEX",
+        "execution_profile": "DENSE_SINGLE_GPU_QLORA",
+        "base_model": "Qwen/Qwen3.5-9B-Base",
+        "base_revision": "a" * 40,
+        "corpus_examples_sha256": "b" * 64,
+        "corpus_manifest_sha256": "c" * 64,
+        "corpus_promotion_eligible": True,
+        "input_adapter_dir": None,
+        "adapter_digest": "d" * 64,
+        "adapter_files": ["adapter/adapter_model.safetensors"],
+        "trainable_target_module_count": 1,
+        "trainable_target_modules_sha256": "e" * 64,
+        "training_examples": 1,
+        "validation_examples": 1,
+        "gradient_checkpointing": True,
+        "optimizer": "paged_adamw_8bit",
+        "output_dir": "build/run",
+    }
+    (run / "adapter-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return config_path, run, adapter
 
 
 def test_inference_pack_contains_only_answer_key_isolated_input_contract(tmp_path) -> None:
@@ -63,6 +133,41 @@ def test_inference_pack_rejects_answer_key_field_even_if_hashes_are_recomputed(t
 
     with pytest.raises(ValueError, match="outside the answer-key-isolated contract"):
         _load_inference_pack(pack)
+
+
+def test_candidate_identity_resolves_verified_adapter_subdirectory(monkeypatch, tmp_path) -> None:
+    config_path, _run, adapter = _candidate_fixture(tmp_path)
+    monkeypatch.setattr(
+        runner_module,
+        "verify_cyber_sft_run",
+        lambda *_args, **_kwargs: SimpleNamespace(valid=True),
+    )
+
+    _config, manifest, resolved = _load_candidate_identity(
+        run_dir="build/run",
+        training_config_path=config_path,
+        root=tmp_path,
+    )
+
+    assert resolved == adapter
+    assert manifest.adapter_digest == "d" * 64
+
+
+def test_candidate_identity_rejects_missing_adapter_subdirectory(monkeypatch, tmp_path) -> None:
+    config_path, _run, adapter = _candidate_fixture(tmp_path)
+    adapter.rmdir()
+    monkeypatch.setattr(
+        runner_module,
+        "verify_cyber_sft_run",
+        lambda *_args, **_kwargs: SimpleNamespace(valid=True),
+    )
+
+    with pytest.raises(ValueError, match="missing its adapter directory"):
+        _load_candidate_identity(
+            run_dir="build/run",
+            training_config_path=config_path,
+            root=tmp_path,
+        )
 
 
 def test_generated_prediction_is_strict_json_and_revision_is_adapter_digest(tmp_path) -> None:
