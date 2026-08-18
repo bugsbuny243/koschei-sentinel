@@ -90,6 +90,7 @@ class CyberSFTConfig(StrictModel):
     base_model: str = Field(min_length=3, max_length=256)
     base_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
     corpus_dir: str = Field(min_length=1, max_length=1024)
+    validation_corpus_dir: str | None = Field(default=None, min_length=1, max_length=1024)
     output_dir: str = Field(min_length=1, max_length=1024)
     input_adapter_dir: str | None = Field(default=None, min_length=1, max_length=1024)
     max_sequence_length: int = Field(default=4096, ge=512, le=32768)
@@ -111,6 +112,7 @@ class CyberSFTConfig(StrictModel):
     def config_is_safe(self) -> "CyberSFTConfig":
         for field_name, value in (
             ("corpus_dir", self.corpus_dir),
+            ("validation_corpus_dir", self.validation_corpus_dir),
             ("output_dir", self.output_dir),
             ("input_adapter_dir", self.input_adapter_dir),
         ):
@@ -119,6 +121,14 @@ class CyberSFTConfig(StrictModel):
             path = PurePosixPath(value)
             if path.is_absolute() or ".." in path.parts or value.startswith("~"):
                 raise ValueError(f"{field_name} must stay inside the repository root")
+        if self.validation_corpus_dir is not None:
+            if self.validation_corpus_dir == self.corpus_dir:
+                raise ValueError("validation_corpus_dir must differ from corpus_dir")
+            if self.validation_ratio != 0.0:
+                raise ValueError(
+                    "explicit validation_corpus_dir requires validation_ratio=0.0; "
+                    "preassigned validation must never be re-split"
+                )
         if self.base_model.startswith(("http://", "https://")):
             raise ValueError("base_model must be a registry identifier, not a URL")
         if self.base_model.count("/") != 1:
@@ -156,6 +166,15 @@ class CyberSFTPlan(StrictModel):
     base_revision: str
     corpus_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     corpus_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_corpus_examples_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    validation_corpus_manifest_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    explicit_validation: bool = False
     example_count: int = Field(gt=0)
     training_examples: int = Field(gt=0)
     validation_examples: int = Field(ge=0)
@@ -164,6 +183,13 @@ class CyberSFTPlan(StrictModel):
     input_adapter_dir: str | None
     output_dir: str
     warnings: list[str] = Field(default_factory=list)
+
+
+class _LoadedCorpus(StrictModel):
+    rows: list[StrictModel]
+    examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    promotion_eligible: bool | None
 
 
 def load_cyber_sft_config(path: str | Path) -> CyberSFTConfig:
@@ -186,13 +212,14 @@ def _example_type(stage: CyberSFTStage):
     return CausalDefenseTrainingExample
 
 
-def load_cyber_sft_examples(
+def _load_cyber_sft_corpus(
     config: CyberSFTConfig,
+    corpus_dir: str,
     *,
     root: str | Path = ".",
-) -> tuple[list[StrictModel], str, str, bool | None]:
+) -> _LoadedCorpus:
     root_path = Path(root).resolve()
-    corpus = resolve_under_root(root_path, config.corpus_dir)
+    corpus = resolve_under_root(root_path, corpus_dir)
     examples_path = corpus / "examples.jsonl"
     manifest_path = corpus / "manifest.json"
     if not examples_path.is_file() or not manifest_path.is_file():
@@ -227,8 +254,42 @@ def load_cyber_sft_examples(
         raise ValueError("Cyber SFT example count differs from corpus manifest")
     if not rows:
         raise ValueError("Cyber SFT corpus is empty")
-    promotion_eligible = getattr(manifest, "promotion_eligible", None)
-    return rows, examples_sha, manifest_sha, promotion_eligible
+    return _LoadedCorpus(
+        rows=rows,
+        examples_sha256=examples_sha,
+        manifest_sha256=manifest_sha,
+        promotion_eligible=getattr(manifest, "promotion_eligible", None),
+    )
+
+
+def load_cyber_sft_examples(
+    config: CyberSFTConfig,
+    *,
+    root: str | Path = ".",
+) -> tuple[list[StrictModel], str, str, bool | None]:
+    loaded = _load_cyber_sft_corpus(config, config.corpus_dir, root=root)
+    return (
+        loaded.rows,
+        loaded.examples_sha256,
+        loaded.manifest_sha256,
+        loaded.promotion_eligible,
+    )
+
+
+def load_cyber_sft_validation_examples(
+    config: CyberSFTConfig,
+    *,
+    root: str | Path = ".",
+) -> tuple[list[StrictModel], str, str, bool | None] | None:
+    if config.validation_corpus_dir is None:
+        return None
+    loaded = _load_cyber_sft_corpus(config, config.validation_corpus_dir, root=root)
+    return (
+        loaded.rows,
+        loaded.examples_sha256,
+        loaded.manifest_sha256,
+        loaded.promotion_eligible,
+    )
 
 
 def _bucket(example_id: str, seed: int) -> int:
@@ -252,6 +313,48 @@ def split_cyber_sft_examples(
     return training, validation
 
 
+def _combined_promotion_eligibility(
+    training: bool | None,
+    validation: bool | None,
+) -> bool | None:
+    if training is False or validation is False:
+        return False
+    if training is True and validation is True:
+        return True
+    return None
+
+
+def _assert_explicit_split_disjoint(
+    training_rows: list[StrictModel],
+    validation_rows: list[StrictModel],
+) -> None:
+    training_example_ids = {str(row.example_id) for row in training_rows}
+    validation_example_ids = {str(row.example_id) for row in validation_rows}
+    overlap = sorted(training_example_ids & validation_example_ids)
+    if overlap:
+        raise ValueError(
+            "explicit Cyber SFT TRAIN/VALIDATION example IDs overlap: "
+            + ", ".join(overlap[:8])
+        )
+
+    training_scenario_ids = {
+        str(row.scenario_id)
+        for row in training_rows
+        if hasattr(row, "scenario_id")
+    }
+    validation_scenario_ids = {
+        str(row.scenario_id)
+        for row in validation_rows
+        if hasattr(row, "scenario_id")
+    }
+    scenario_overlap = sorted(training_scenario_ids & validation_scenario_ids)
+    if scenario_overlap:
+        raise ValueError(
+            "explicit Cyber SFT TRAIN/VALIDATION scenario IDs overlap: "
+            + ", ".join(scenario_overlap[:8])
+        )
+
+
 def plan_cyber_sft(
     config: CyberSFTConfig,
     *,
@@ -262,11 +365,31 @@ def plan_cyber_sft(
         config,
         root=root_path,
     )
-    training, validation = split_cyber_sft_examples(
-        rows,
-        validation_ratio=config.validation_ratio,
-        seed=config.seed,
-    )
+
+    explicit_validation = config.validation_corpus_dir is not None
+    validation_examples_sha: str | None = None
+    validation_manifest_sha: str | None = None
+    if explicit_validation:
+        validation_loaded = load_cyber_sft_validation_examples(config, root=root_path)
+        if validation_loaded is None:
+            raise RuntimeError("explicit validation was requested but no validation corpus loaded")
+        validation_rows, validation_examples_sha, validation_manifest_sha, validation_promotion = (
+            validation_loaded
+        )
+        _assert_explicit_split_disjoint(rows, validation_rows)
+        training = rows
+        validation = validation_rows
+        promotion_eligible = _combined_promotion_eligibility(
+            promotion_eligible,
+            validation_promotion,
+        )
+    else:
+        training, validation = split_cyber_sft_examples(
+            rows,
+            validation_ratio=config.validation_ratio,
+            seed=config.seed,
+        )
+
     if not training:
         raise ValueError("Cyber SFT split produced no training examples")
     output = resolve_under_root(root_path, config.output_dir)
@@ -286,7 +409,9 @@ def plan_cyber_sft(
     warnings: list[str] = []
     if not validation:
         warnings.append("Cyber SFT run has no validation split")
-    if len(rows) < 100:
+    if explicit_validation:
+        warnings.append("Cyber SFT uses a preassigned explicit validation corpus")
+    if len(training) + len(validation) < 100:
         warnings.append("Cyber SFT corpus has fewer than 100 examples; treat as smoke training")
     if promotion_eligible is False:
         warnings.append(
@@ -308,7 +433,10 @@ def plan_cyber_sft(
         base_revision=config.base_revision,
         corpus_examples_sha256=examples_sha,
         corpus_manifest_sha256=manifest_sha,
-        example_count=len(rows),
+        validation_corpus_examples_sha256=validation_examples_sha,
+        validation_corpus_manifest_sha256=validation_manifest_sha,
+        explicit_validation=explicit_validation,
+        example_count=len(training) + len(validation),
         training_examples=len(training),
         validation_examples=len(validation),
         effective_batch_size=config.effective_batch_size,
