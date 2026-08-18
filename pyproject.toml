@@ -81,6 +81,7 @@ sentinel-multi-cyber-range = "koschei_sentinel.multi_incident_cyber_range_cli:ma
 sentinel-world-model-episode = "koschei_sentinel.cyber_world_model_episode_cli:main"
 sentinel-defense-reflex-mine = "koschei_sentinel.defense_reflex_candidates_cli:main"
 sentinel-defense-reflex-review = "koschei_sentinel.defense_reflex_review_cli:main"
+sentinel-defense-reflex-gold-queue = "koschei_sentinel.defense_reflex_gold_queue_cli:main"
 sentinel-defense-reflex-build = "koschei_sentinel.defense_reflex_corpus_cli:main"
 sentinel-defense-reflex-v2-build = "koschei_sentinel.defense_reflex_corpus_v2_cli:main"
 sentinel-causal-defense-build = "koschei_sentinel.causal_defense_corpus_cli:main"
