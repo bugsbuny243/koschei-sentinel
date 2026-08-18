@@ -1,5 +1,6 @@
 {
   "schema_version": "sentinel.gold-holdout-evaluation-policy.v1",
+  "minimum_case_count": 50,
   "minimum_structural_exact_rate": 0.9,
   "minimum_mode_accuracy": 0.95,
   "minimum_action_accuracy": 0.95,
