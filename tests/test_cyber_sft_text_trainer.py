@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from koschei_sentinel.cyber_sft_text_trainer import (
+    _assert_lora_target_module_types,
     _assert_requested_model_dtype,
     _assert_text_only_model,
     _last_checkpoint,
@@ -45,6 +46,56 @@ def test_text_lora_targets_reject_matching_vision_module() -> None:
 
     with pytest.raises(RuntimeError, match="vision module"):
         _text_lora_targets(FakeModel(), ["q_proj"])
+
+
+def test_lora_target_module_types_accept_torch_and_bnb_linear_classes() -> None:
+    TorchLinear = type("Linear", (), {"__module__": "torch.nn.modules.linear"})
+    Linear4bit = type("Linear4bit", (), {"__module__": "bitsandbytes.nn.modules"})
+    Linear8bitLt = type("Linear8bitLt", (), {"__module__": "bitsandbytes.nn.modules"})
+
+    class FakeModel:
+        def named_modules(self):
+            return [
+                ("model.layers.0.self_attn.q_proj", TorchLinear()),
+                ("model.layers.1.linear_attn.in_proj_qkv", Linear4bit()),
+                ("model.layers.2.mlp.up_proj", Linear8bitLt()),
+            ]
+
+    targets = [
+        "model.layers.0.self_attn.q_proj",
+        "model.layers.1.linear_attn.in_proj_qkv",
+        "model.layers.2.mlp.up_proj",
+    ]
+    counts = _assert_lora_target_module_types(FakeModel(), targets)
+
+    assert counts == {
+        "bitsandbytes.nn.modules.Linear4bit": 1,
+        "bitsandbytes.nn.modules.Linear8bitLt": 1,
+        "torch.nn.modules.linear.Linear": 1,
+    }
+
+
+def test_lora_target_module_types_reject_custom_projection() -> None:
+    CustomProjection = type("CustomProjection", (), {"__module__": "vendor.custom"})
+
+    class FakeModel:
+        def named_modules(self):
+            return [("model.layers.0.linear_attn.in_proj_qkv", CustomProjection())]
+
+    with pytest.raises(RuntimeError, match="unsupported projection module type"):
+        _assert_lora_target_module_types(
+            FakeModel(),
+            ["model.layers.0.linear_attn.in_proj_qkv"],
+        )
+
+
+def test_lora_target_module_types_reject_missing_target() -> None:
+    class FakeModel:
+        def named_modules(self):
+            return []
+
+    with pytest.raises(RuntimeError, match="disappeared before PEFT wrapping"):
+        _assert_lora_target_module_types(FakeModel(), ["model.layers.0.mlp.up_proj"])
 
 
 def test_text_executor_requires_official_qwen35_causal_lm_class() -> None:
