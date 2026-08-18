@@ -90,6 +90,11 @@ def _fixture(tmp_path: Path, monkeypatch) -> dict[str, object]:
             "loader": "AutoModelForCausalLM",
             "model_class": "Qwen3_5ForCausalLM",
             "text_only": True,
+            "requested_compute_dtype": "float16",
+            "observed_floating_dtypes_before_kbit_prepare": [
+                "float16",
+                "float32",
+            ],
         },
     )
     _write_json(
@@ -254,4 +259,15 @@ def test_attestation_rejects_plan_drift(monkeypatch, tmp_path: Path) -> None:
     _write_json(path, payload)
 
     with pytest.raises(ValueError, match="plan binding mismatch: base_revision"):
+        build_cyber_sft_run_attestation(**_build_kwargs(fixture, tmp_path))
+
+
+def test_attestation_rejects_dtype_leak(monkeypatch, tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+    path = fixture["run"] / "model-runtime.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["observed_floating_dtypes_before_kbit_prepare"].append("bfloat16")
+    _write_json(path, payload)
+
+    with pytest.raises(ValueError, match="competing low-precision dtype"):
         build_cyber_sft_run_attestation(**_build_kwargs(fixture, tmp_path))
