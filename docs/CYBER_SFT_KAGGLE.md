@@ -2,6 +2,15 @@
 
 This is the Kaggle execution path for the first real Qwen3.5-9B Cyber SFT smoke adapter when Google Colab GPU quota is unavailable.
 
+## Runtime model path
+
+Cyber SFT is text-only. The executor uses `AutoTokenizer` and `AutoModelForCausalLM` against the pinned `Qwen/Qwen3.5-9B-Base` checkpoint. Transformers maps the Qwen3.5 VLM-compatible config to `Qwen3_5ForCausalLM`; that class uses the Qwen3.5 text model and ignores `model.visual.*` checkpoint keys. The executor therefore refuses to train unless:
+
+- the loaded class is exactly `Qwen3_5ForCausalLM`, and
+- no module name contains `visual` or `vision`.
+
+The completed run writes `model-runtime.json`, and `sentinel-cyber-sft-verify` requires that file to confirm `AutoModelForCausalLM`, `Qwen3_5ForCausalLM`, and `text_only=true` before a run is considered valid.
+
 ## Platform assumptions
 
 - Kaggle Notebook accelerator is set to GPU.
@@ -34,30 +43,32 @@ KOSCHEI_KAGGLE_PROFILE=lowmem bash scripts/run_cyber_sft_qwen35_9b_kaggle.sh .
 The launcher performs:
 
 1. GPU preflight via `nvidia-smi` and saves the output.
-2. Training dependency installation.
+2. Text-only training dependency installation.
 3. Defense Reflex v3 seed generation when missing.
 4. Runtime/CUDA readiness check.
-5. Tokenizer-only context-length preflight before model weights are loaded.
-6. Real QLoRA execution on the pinned Qwen3.5-9B-Base revision.
-7. CUDA-memory-only retry with the low-memory profile when required.
-8. Adapter and training-receipt verification.
-9. Export of the selected config, selected profile, run, plan, corpus manifest, repository commit, readiness reports, training logs, and verification report.
-10. Creation of `/kaggle/working/koschei-sentinel-qwen35-9b-smoke.zip`.
+5. `AutoTokenizer` context-length preflight before model weights are loaded.
+6. Text-only `AutoModelForCausalLM` loading and strict Qwen3.5 runtime validation.
+7. Real QLoRA execution on the pinned Qwen3.5-9B-Base revision.
+8. CUDA-memory-only retry with the low-memory profile when required.
+9. Adapter, training receipt, and text-runtime verification.
+10. Export of the selected config, selected profile, run, plan, corpus manifest, repository commit, readiness reports, training logs, and verification report.
+11. Creation of `/kaggle/working/koschei-sentinel-qwen35-9b-smoke.zip`.
 
 ## Success conditions
 
 The run is accepted as a real smoke training only if all of the following are true:
 
 - `training-receipt.json` exists.
+- `model-runtime.json` exists and verifies the text-only Qwen3.5 runtime.
 - `global_step > 0`.
 - Adapter digest recomputation matches the manifest.
 - Training receipt self-digest is valid.
 - Receipt model/corpus/adapter bindings match the run artifacts.
-- `verification.json` reports `valid=true`.
+- `verification.json` reports `valid=true` and `model_runtime_verified=true`.
 - `adapter-manifest.json` reports `corpus_promotion_eligible=false`.
 - `selected-profile.txt` records the profile that actually completed.
 
-A successful smoke run proves the tokenizer, quantized model load, LoRA target resolution, optimizer, backward pass, checkpoint save, receipt generation, and artifact-verification path. It does **not** make the adapter production-ready.
+A successful smoke run proves the tokenizer, text-only quantized model load, LoRA target resolution, optimizer, backward pass, checkpoint save, receipt generation, and artifact-verification path. It does **not** make the adapter production-ready.
 
 ## Kaggle output persistence
 
