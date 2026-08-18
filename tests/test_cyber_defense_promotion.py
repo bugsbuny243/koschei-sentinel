@@ -127,7 +127,7 @@ def _gold_report(
 ) -> GoldHoldoutEvaluationReport:
     metric = score if score is not None else (1.0 if passed else 0.5)
     payload = {
-        "schema_version": "sentinel.gold-holdout-evaluation-report.v1",
+        "schema_version": "sentinel.gold-holdout-evaluation-report.v2",
         "model_ref": "sentinel:candidate",
         "model_revision": revision,
         "adapter_digest": revision,
@@ -142,6 +142,7 @@ def _gold_report(
         "mode_accuracy": metric,
         "action_accuracy": metric,
         "target_accuracy": metric,
+        "evidence_selection_accuracy": metric,
         "evidence_grounding_rate": 1.0,
         "target_grounding_rate": 1.0,
         "outcome_verification_rate": 1.0,
@@ -258,6 +259,7 @@ def test_promotion_requires_same_policy_used_to_build_gold_evidence() -> None:
         minimum_mode_accuracy=0.99,
         minimum_action_accuracy=0.99,
         minimum_target_accuracy=0.99,
+        minimum_evidence_selection_accuracy=0.99,
     )
 
     with pytest.raises(ValueError, match="different policy"):
@@ -316,6 +318,7 @@ def test_promotion_evidence_is_deterministic() -> None:
     assert first.world_line_containment_rate == 1.0
     assert first.scheduler_service_coverage == 1.0
     assert first.gold_holdout_structural_exact_rate == 1.0
+    assert first.gold_holdout_evidence_selection_accuracy == 1.0
     assert first.gold_holdout_policy_sha256
     assert first.gold_holdout_inference_verification_sha256 == "5" * 64
     assert first.schema_version == "sentinel.cyber-defense-promotion-evidence.v4"
