@@ -12,6 +12,7 @@ from koschei_sentinel.cyber_sft_run_attestation import (
     _config_sha256,
 )
 from koschei_sentinel.cyber_sft_training import CyberSFTConfig
+from koschei_sentinel.cyber_sft_training_source import build_training_source_binding
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> bytes:
@@ -39,10 +40,8 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         minimum_cuda_memory_gb=0.0,
         quantization={"bits": 4, "compute_dtype": "float16"},
     )
-    _write_json(
-        root / "training-config.json",
-        config.model_dump(mode="json"),
-    )
+    config_path = root / "training-config.json"
+    _write_json(config_path, config.model_dump(mode="json"))
     config_sha = _config_sha256(config)
 
     examples_raw = b'{"example_id":"portable"}\n'
@@ -57,8 +56,9 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
     )
     corpus_manifest_sha = _sha(corpus_manifest_raw)
 
+    plan_path = root / "training-plan.json"
     plan_raw = _write_json(
-        root / "training-plan.json",
+        plan_path,
         {
             "schema_version": "sentinel.cyber-sft-plan.v1",
             "run_id": config.run_id,
@@ -79,6 +79,16 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
             "output_dir": config.output_dir,
             "warnings": [],
         },
+    )
+
+    training_source = build_training_source_binding(
+        config_path=config_path,
+        plan_path=plan_path,
+        repository_commit="f" * 40,
+    )
+    training_source_raw = _write_json(
+        root / "training-source.json",
+        training_source.model_dump(mode="json"),
     )
 
     preflight_raw = _write_json(
@@ -221,6 +231,7 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         "resolved_model_revision": config.base_revision,
         "config_sha256": config_sha,
         "plan_sha256": _sha(plan_raw),
+        "training_source_sha256": _sha(training_source_raw),
         "model_preflight_sha256": _sha(preflight_raw),
         "verification_sha256": _sha(verification_raw),
         "model_runtime_sha256": _sha(model_runtime_raw),
@@ -253,6 +264,7 @@ def test_portable_export_verifies_when_all_bindings_match(
     assert report.valid is True
     assert report.attestation_sha256_verified is True
     assert report.plan_sha256_verified is True
+    assert report.training_source_sha256_verified is True
     assert report.corpus_examples_sha256_verified is True
     assert report.corpus_manifest_sha256_verified is True
     assert report.violations == []
@@ -288,6 +300,29 @@ def test_portable_export_rejects_plan_tampering(
     assert report.valid is False
     assert report.plan_sha256_verified is False
     assert any("execution plan SHA-256" in row for row in report.violations)
+
+
+def test_portable_export_rejects_training_source_semantic_tampering(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = _build_export(tmp_path, monkeypatch)
+    source_path = root / "training-source.json"
+    source = json.loads(source_path.read_text(encoding="utf-8"))
+    source["repository_commit"] = "0" * 40
+    source_raw = _write_json(source_path, source)
+
+    attestation_path = root / "run-attestation.json"
+    attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+    attestation["training_source_sha256"] = _sha(source_raw)
+    attestation["attestation_sha256"] = _attestation_digest(attestation)
+    _write_json(attestation_path, attestation)
+
+    report = verify_cyber_sft_export(root)
+
+    assert report.valid is False
+    assert report.training_source_sha256_verified is True
+    assert any("training source semantic bindings" in row for row in report.violations)
 
 
 def test_portable_export_rejects_dtype_semantic_leak(
