@@ -64,6 +64,9 @@ def _write_run(tmp_path, *, global_step=8):
                     "float16",
                     "float32",
                 ],
+                "lora_target_module_types_before_peft": {
+                    "bitsandbytes.nn.modules.Linear4bit": 4,
+                },
             },
             sort_keys=True,
         ),
@@ -170,6 +173,32 @@ def test_bfloat16_leak_is_detected_for_float16_run(tmp_path) -> None:
     assert report.valid is False
     assert report.model_runtime_verified is False
     assert any("competing low-precision dtype" in row for row in report.violations)
+
+
+def test_missing_lora_target_type_evidence_is_detected(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    runtime_path = run / "model-runtime.json"
+    payload = json.loads(runtime_path.read_text(encoding="utf-8"))
+    payload.pop("lora_target_module_types_before_peft")
+    runtime_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+    assert report.valid is False
+    assert report.model_runtime_verified is False
+    assert any("LoRA target module type evidence" in row for row in report.violations)
+
+
+def test_unsupported_lora_target_type_is_detected(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    runtime_path = run / "model-runtime.json"
+    payload = json.loads(runtime_path.read_text(encoding="utf-8"))
+    payload["lora_target_module_types_before_peft"] = {"vendor.CustomProjection": 4}
+    runtime_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+    assert report.valid is False
+    assert report.model_runtime_verified is False
+    assert any("unsupported LoRA target module type" in row for row in report.violations)
 
 
 def test_zero_step_run_is_not_real_training(tmp_path) -> None:
