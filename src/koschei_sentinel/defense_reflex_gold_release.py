@@ -7,9 +7,10 @@ from typing import Literal
 
 from pydantic import Field
 
-from koschei_sentinel.cyber_range import CyberRangeScenario
+from koschei_sentinel.cyber_range import CyberRangeScenario, run_cyber_range_scenario
 from koschei_sentinel.defense_reflex_corpus_v3 import (
     DefenseLessonKind,
+    DefenseReflexTrainingExampleV3,
     DefenseReviewMethod,
     build_defense_reflex_v3_example,
     build_defense_reflex_v3_manifest,
@@ -100,6 +101,11 @@ def _expected_sequence(reviewed: GoldReviewedPacket) -> list[dict[str, object]]:
     ]
 
 
+def _scenario_report_sha256(scenario: CyberRangeScenario) -> str:
+    report = run_cyber_range_scenario(scenario)
+    return hashlib.sha256(report.model_dump_json().encode("utf-8")).hexdigest()
+
+
 def _verify_review_binding(
     scenario: CyberRangeScenario,
     packet: GoldDefenseReviewPacket,
@@ -111,12 +117,16 @@ def _verify_review_binding(
         raise ValueError("Gold release human review self-hash does not verify")
     if reviewed.decision is not CorrectionReviewDecision.APPROVE:
         raise ValueError("Gold release accepts only approved human reviews")
+    current_report_sha = _scenario_report_sha256(scenario)
+    if current_report_sha != packet.source_report_sha256:
+        raise ValueError("Gold release scenario drifted after pre-review split assignment")
     bindings = (
         ("packet_id", reviewed.packet_id, packet.packet_id),
         ("packet_sha256", reviewed.packet_sha256, packet.packet_sha256),
         ("scenario_id", reviewed.scenario_id, scenario.scenario_id),
         ("packet scenario_id", packet.scenario_id, scenario.scenario_id),
         ("source_report_sha256", reviewed.source_report_sha256, packet.source_report_sha256),
+        ("reviewed report", reviewed.source_report_sha256, current_report_sha),
         ("split", reviewed.split, packet.split),
     )
     for label, observed, expected in bindings:
@@ -138,7 +148,7 @@ def _training_example(
     scenario: CyberRangeScenario,
     packet: GoldDefenseReviewPacket,
     reviewed: GoldReviewedPacket,
-):
+) -> DefenseReflexTrainingExampleV3:
     lesson = create_reviewed_defense_lesson(
         lesson_kind=(
             DefenseLessonKind.CORRECTION
@@ -187,7 +197,10 @@ def _serialize_holdout(cases: list[GoldHoldoutEvaluationCase]) -> str:
     )
 
 
-def _write_training_split(examples: list[object], destination: Path) -> bytes:
+def _write_training_split(
+    examples: list[DefenseReflexTrainingExampleV3],
+    destination: Path,
+) -> bytes:
     payload = serialize_defense_reflex_v3(examples)
     manifest = build_defense_reflex_v3_manifest(examples)
     if not manifest.promotion_eligible:
@@ -211,8 +224,8 @@ def write_gold_defense_release(
     if len(scenario_ids) != len(set(scenario_ids)):
         raise ValueError("Gold defense release scenario IDs must be unique")
 
-    train_examples = []
-    validation_examples = []
+    train_examples: list[DefenseReflexTrainingExampleV3] = []
+    validation_examples: list[DefenseReflexTrainingExampleV3] = []
     holdout_cases: list[GoldHoldoutEvaluationCase] = []
     for scenario, packet, reviewed in rows:
         _verify_review_binding(scenario, packet, reviewed)
