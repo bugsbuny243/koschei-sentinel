@@ -12,6 +12,7 @@ from koschei_sentinel.cyber_sft_run_attestation import (
     build_cyber_sft_run_attestation,
 )
 from koschei_sentinel.cyber_sft_training import CyberSFTConfig
+from koschei_sentinel.cyber_sft_training_source import build_training_source_binding
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -142,6 +143,14 @@ def _fixture(tmp_path: Path, monkeypatch) -> dict[str, object]:
         },
     )
 
+    training_source_path = tmp_path / "training-source.json"
+    training_source = build_training_source_binding(
+        config_path=config_path,
+        plan_path=plan_path,
+        repository_commit="f" * 40,
+    )
+    _write_json(training_source_path, training_source.model_dump(mode="json"))
+
     preflight_path = tmp_path / "model-preflight.json"
     _write_json(
         preflight_path,
@@ -186,6 +195,7 @@ def _fixture(tmp_path: Path, monkeypatch) -> dict[str, object]:
         "config": config,
         "config_path": config_path,
         "plan_path": plan_path,
+        "training_source_path": training_source_path,
         "run": run,
         "preflight_path": preflight_path,
         "verification_path": verification_path,
@@ -196,6 +206,7 @@ def _build_kwargs(fixture: dict[str, object], tmp_path: Path) -> dict[str, objec
     return {
         "config_path": fixture["config_path"],
         "plan_path": fixture["plan_path"],
+        "training_source_path": fixture["training_source_path"],
         "run_dir": "build/run",
         "model_preflight_path": fixture["preflight_path"],
         "verification_path": fixture["verification_path"],
@@ -217,6 +228,7 @@ def test_attestation_is_deterministic_and_binds_resume(
 
     assert first.attestation_sha256 == second.attestation_sha256
     assert first.plan_sha256
+    assert first.training_source_sha256
     assert first.resumed is True
     assert first.resume_checkpoint == "checkpoint-2"
     assert first.global_step == 3
@@ -258,8 +270,20 @@ def test_attestation_rejects_plan_drift(monkeypatch, tmp_path: Path) -> None:
     payload["base_revision"] = "9" * 40
     _write_json(path, payload)
 
-    with pytest.raises(ValueError, match="plan binding mismatch: base_revision"):
+    with pytest.raises(ValueError, match="training source binding"):
         build_cyber_sft_run_attestation(**_build_kwargs(fixture, tmp_path))
+
+
+def test_attestation_rejects_training_source_repository_drift(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+
+    kwargs = _build_kwargs(fixture, tmp_path)
+    kwargs["repository_commit"] = "0" * 40
+    with pytest.raises(ValueError, match="training source binding"):
+        build_cyber_sft_run_attestation(**kwargs)
 
 
 def test_attestation_rejects_dtype_leak(monkeypatch, tmp_path: Path) -> None:
