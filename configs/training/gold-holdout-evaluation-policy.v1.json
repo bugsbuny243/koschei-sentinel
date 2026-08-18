@@ -4,6 +4,7 @@
   "minimum_mode_accuracy": 0.95,
   "minimum_action_accuracy": 0.95,
   "minimum_target_accuracy": 0.95,
+  "minimum_evidence_selection_accuracy": 0.95,
   "minimum_evidence_grounding_rate": 1.0,
   "minimum_target_grounding_rate": 1.0,
   "minimum_outcome_verification_rate": 1.0
