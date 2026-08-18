@@ -23,6 +23,8 @@ from koschei_sentinel.cyber_sft_training import (
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import resolve_under_root
 
+_DENSE_QLORA_OPTIMIZER = "paged_adamw_8bit"
+
 
 class CyberSFTAdapterManifest(StrictModel):
     schema_version: Literal["sentinel.cyber-sft-adapter-manifest.v1"] = (
@@ -44,6 +46,7 @@ class CyberSFTAdapterManifest(StrictModel):
     training_examples: int = Field(gt=0)
     validation_examples: int = Field(ge=0)
     gradient_checkpointing: bool
+    optimizer: str
     output_dir: str
 
 
@@ -348,6 +351,7 @@ def _train(
         "fp16": config.quantization.compute_dtype == "float16",
         "remove_unused_columns": False,
         "gradient_checkpointing": config.gradient_checkpointing,
+        "optim": _DENSE_QLORA_OPTIMIZER,
     }
     strategy_key = (
         "eval_strategy"
@@ -394,6 +398,7 @@ def _train(
         training_examples=len(training_rows),
         validation_examples=len(validation_rows),
         gradient_checkpointing=config.gradient_checkpointing,
+        optimizer=_DENSE_QLORA_OPTIMIZER,
         output_dir=config.output_dir,
     )
     (staging / "adapter-manifest.json").write_text(
