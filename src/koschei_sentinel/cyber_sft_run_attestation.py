@@ -89,7 +89,10 @@ def build_cyber_sft_run_attestation(
     repository_commit: str,
     root: str | Path = ".",
 ) -> CyberSFTRunAttestation:
-    if len(repository_commit) != 40 or any(ch not in "0123456789abcdef" for ch in repository_commit):
+    commit_is_valid = len(repository_commit) == 40 and all(
+        ch in "0123456789abcdef" for ch in repository_commit
+    )
+    if not commit_is_valid:
         raise ValueError("repository_commit must be a lowercase 40-character Git commit SHA")
 
     root_path = Path(root).resolve()
@@ -99,7 +102,9 @@ def build_cyber_sft_run_attestation(
     run_path = resolve_under_root(root_path, run_dir)
     configured_run_path = resolve_under_root(root_path, config.output_dir)
     if run_path != configured_run_path:
-        raise ValueError("attestation run_dir differs from the selected training config output_dir")
+        raise ValueError(
+            "attestation run_dir differs from the selected training config output_dir"
+        )
 
     manifest = CyberSFTAdapterManifest.model_validate_json(
         (run_path / "adapter-manifest.json").read_bytes()
@@ -116,8 +121,16 @@ def build_cyber_sft_run_attestation(
         ("base_revision", plan.base_revision, config.base_revision),
         ("output_dir", plan.output_dir, config.output_dir),
         ("input_adapter_dir", plan.input_adapter_dir, config.input_adapter_dir),
-        ("corpus examples", plan.corpus_examples_sha256, manifest.corpus_examples_sha256),
-        ("corpus manifest", plan.corpus_manifest_sha256, manifest.corpus_manifest_sha256),
+        (
+            "corpus examples",
+            plan.corpus_examples_sha256,
+            manifest.corpus_examples_sha256,
+        ),
+        (
+            "corpus manifest",
+            plan.corpus_manifest_sha256,
+            manifest.corpus_manifest_sha256,
+        ),
     )
     for label, observed, expected in plan_checks:
         if observed != expected:
@@ -134,12 +147,16 @@ def build_cyber_sft_run_attestation(
         or model_preflight.requested_revision != config.base_revision
         or model_preflight.resolved_revision != config.base_revision
     ):
-        raise ValueError("model preflight does not bind the selected config to its exact revision")
+        raise ValueError(
+            "model preflight does not bind the selected config to its exact revision"
+        )
     if (
         model_preflight.model_type != "qwen3_5"
         or model_preflight.causal_lm_class != "Qwen3_5ForCausalLM"
     ):
-        raise ValueError("model preflight does not prove the expected Qwen3.5 text CausalLM mapping")
+        raise ValueError(
+            "model preflight does not prove the expected Qwen3.5 text CausalLM mapping"
+        )
 
     supplied_verification_raw = Path(verification_path).read_bytes()
     supplied_verification = CyberSFTArtifactVerification.model_validate_json(
@@ -148,7 +165,9 @@ def build_cyber_sft_run_attestation(
     fresh_verification = verify_cyber_sft_run(run_dir, root=root_path)
     if not fresh_verification.valid:
         raise ValueError("fresh Cyber SFT artifact verification is invalid")
-    if supplied_verification.model_dump(mode="json") != fresh_verification.model_dump(mode="json"):
+    supplied_payload = supplied_verification.model_dump(mode="json")
+    fresh_payload = fresh_verification.model_dump(mode="json")
+    if supplied_payload != fresh_payload:
         raise ValueError("supplied verification report differs from a fresh run verification")
 
     model_runtime, model_runtime_raw = _load_json_object(
@@ -177,7 +196,9 @@ def build_cyber_sft_run_attestation(
         "config_sha256": _config_sha256(config),
     }
     if resume_runtime.get("resume_binding") != expected_binding:
-        raise ValueError("resume-runtime.json is not bound to the selected model/corpus/config")
+        raise ValueError(
+            "resume-runtime.json is not bound to the selected model/corpus/config"
+        )
     resumed = resume_runtime.get("resumed")
     resume_checkpoint = resume_runtime.get("resume_checkpoint")
     if not isinstance(resumed, bool):
