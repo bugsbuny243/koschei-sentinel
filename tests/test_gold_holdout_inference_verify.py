@@ -129,6 +129,7 @@ def test_offline_inference_verifier_accepts_complete_bound_output(tmp_path) -> N
 
     report = verify_gold_holdout_inference_output(output, pack)
 
+    assert report.schema_version == "sentinel.gold-holdout-inference-verification.v2"
     assert report.valid is True
     assert report.case_count == len(cases)
     assert report.prediction_count == len(cases)
