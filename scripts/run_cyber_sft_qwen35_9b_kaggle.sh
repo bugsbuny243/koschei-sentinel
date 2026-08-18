@@ -112,6 +112,7 @@ verify_attest_and_export() {
   cp "$plan" "$EXPORT_ROOT/qwen35-9b-smoke.plan.json"
   cp "$config" "$EXPORT_ROOT/selected-training-config.json"
   cp "$CORPUS/manifest.json" "$EXPORT_ROOT/defense-reflex-v3.manifest.json"
+  cp "$CORPUS/examples.jsonl" "$EXPORT_ROOT/defense-reflex-v3.examples.jsonl"
   printf '%s\n' "$profile" > "$EXPORT_ROOT/selected-profile.txt"
   printf '%s\n' "$repository_commit" > "$EXPORT_ROOT/repository-commit.txt"
 }
@@ -172,6 +173,11 @@ case "$PROFILE_MODE" in
 esac
 
 verify_attest_and_export "$SELECTED_PROFILE" "$SELECTED_CONFIG" "$SELECTED_PLAN" "$SELECTED_RUN_DIR"
+
+printf '\n[Koschei] Offline-verifying portable export bundle\n'
+sentinel-cyber-sft-export-verify \
+  --export-dir "$EXPORT_ROOT" \
+  | tee "$EXPORT_ROOT/export-verification.json"
 
 python - "$EXPORT_ROOT" <<'PY'
 from pathlib import Path
