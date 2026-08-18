@@ -60,6 +60,33 @@ def _json_object(path: Path, *, label: str) -> dict[str, object]:
     return payload
 
 
+def _runtime_semantics_match(
+    model_runtime: dict[str, object],
+    resume_runtime: dict[str, object],
+    *,
+    requested_dtype: str,
+    resumed: bool,
+    resume_checkpoint: str | None,
+) -> bool:
+    observed = model_runtime.get("observed_floating_dtypes_before_kbit_prepare")
+    if not isinstance(observed, list) or not observed:
+        return False
+    if any(not isinstance(row, str) for row in observed):
+        return False
+    competing = "bfloat16" if requested_dtype == "float16" else "float16"
+    return (
+        model_runtime.get("loader") == "AutoModelForCausalLM"
+        and model_runtime.get("model_class") == "Qwen3_5ForCausalLM"
+        and model_runtime.get("expected_model_class") == "Qwen3_5ForCausalLM"
+        and model_runtime.get("text_only") is True
+        and model_runtime.get("requested_compute_dtype") == requested_dtype
+        and requested_dtype in observed
+        and competing not in observed
+        and resume_runtime.get("resumed") == resumed
+        and resume_runtime.get("resume_checkpoint") == resume_checkpoint
+    )
+
+
 def _invalid(
     *,
     violations: list[str],
@@ -273,16 +300,15 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
     if not preflight_bindings:
         violations.append("model preflight semantic bindings differ from attestation")
 
-    runtime_bindings = (
-        model_runtime.get("loader") == "AutoModelForCausalLM"
-        and model_runtime.get("model_class") == "Qwen3_5ForCausalLM"
-        and model_runtime.get("expected_model_class") == "Qwen3_5ForCausalLM"
-        and model_runtime.get("text_only") is True
-        and resume_runtime.get("resumed") == attestation.resumed
-        and resume_runtime.get("resume_checkpoint") == attestation.resume_checkpoint
+    runtime_bindings = _runtime_semantics_match(
+        model_runtime,
+        resume_runtime,
+        requested_dtype=config.quantization.compute_dtype,
+        resumed=attestation.resumed,
+        resume_checkpoint=attestation.resume_checkpoint,
     )
     if not runtime_bindings:
-        violations.append("runtime semantic bindings differ from attestation")
+        violations.append("runtime semantic bindings differ from attestation/config")
 
     config_bindings = (
         config.run_id == attestation.run_id
