@@ -77,11 +77,13 @@ def test_structurally_correct_grounded_holdout_prediction_passes(tmp_path) -> No
 
     report = evaluate_gold_holdout_predictions(release, [prediction])
 
+    assert report.schema_version == "sentinel.gold-holdout-evaluation-report.v2"
     assert report.passed is True
     assert report.structural_exact_rate == 1.0
     assert report.mode_accuracy == 1.0
     assert report.action_accuracy == 1.0
     assert report.target_accuracy == 1.0
+    assert report.evidence_selection_accuracy == 1.0
     assert report.evidence_grounding_rate == 1.0
     assert report.target_grounding_rate == 1.0
     assert report.outcome_verification_rate == 1.0
@@ -106,3 +108,28 @@ def test_holdout_prediction_cannot_invent_evidence(tmp_path) -> None:
     assert report.passed is False
     assert report.evidence_grounding_rate < 1.0
     assert any("evidence absent from visible input" in row for row in report.violations)
+
+
+def test_visible_but_incomplete_evidence_selection_fails_gold_exactness(tmp_path) -> None:
+    release, _inference, inference_case, gold_case = _fixture(tmp_path)
+    steps = [GoldHoldoutPredictedStep.model_validate(row) for row in gold_case.expected_sequence]
+    assert len(steps[0].supporting_evidence_ids) >= 2
+    first = steps[0].model_copy(
+        update={"supporting_evidence_ids": [steps[0].supporting_evidence_ids[0]]}
+    )
+    prediction = build_gold_holdout_prediction(
+        inference_case=inference_case,
+        model_ref="Qwen/Qwen3.5-9B-Base",
+        model_revision="candidate:test",
+        adapter_digest="d" * 64,
+        interpretation="Uses a visible but incomplete evidence set.",
+        defense_sequence=[first, *steps[1:]],
+    )
+
+    report = evaluate_gold_holdout_predictions(release, [prediction])
+
+    assert report.passed is False
+    assert report.evidence_grounding_rate == 1.0
+    assert report.evidence_selection_accuracy < 1.0
+    assert report.structural_exact_rate < 1.0
+    assert any("evidence selection accuracy below policy" in row for row in report.violations)
