@@ -133,13 +133,14 @@ def test_requested_float16_dtype_rejects_bfloat16_leak() -> None:
         )
 
 
-def test_requested_dtype_rejects_config_dtype_mismatch() -> None:
-    with pytest.raises(RuntimeError, match="text config dtype differs"):
-        _assert_requested_model_dtype(
-            _FakeDtypeModel("bfloat16", ["float16", "float32"]),
-            "float16",
-            _fake_torch(),
-        )
+def test_requested_dtype_accepts_stale_config_metadata_when_weights_match() -> None:
+    observed = _assert_requested_model_dtype(
+        _FakeDtypeModel("bfloat16", ["float16", "float32"]),
+        "float16",
+        _fake_torch(),
+    )
+
+    assert observed == ["float16", "float32"]
 
 
 def _resume_config(*, learning_rate: float = 0.0001) -> CyberSFTConfig:
