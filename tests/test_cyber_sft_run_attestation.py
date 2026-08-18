@@ -109,6 +109,31 @@ def _fixture(tmp_path: Path, monkeypatch) -> dict[str, object]:
         },
     )
 
+    plan_path = tmp_path / "plan.json"
+    _write_json(
+        plan_path,
+        {
+            "schema_version": "sentinel.cyber-sft-plan.v1",
+            "run_id": config.run_id,
+            "stage": "DEFENSE_REFLEX",
+            "execution_profile": "DENSE_SINGLE_GPU_QLORA",
+            "executable_with_current_trainer": True,
+            "corpus_promotion_eligible": False,
+            "base_model": config.base_model,
+            "base_revision": config.base_revision,
+            "corpus_examples_sha256": "b" * 64,
+            "corpus_manifest_sha256": "c" * 64,
+            "example_count": 10,
+            "training_examples": 9,
+            "validation_examples": 1,
+            "effective_batch_size": config.effective_batch_size,
+            "estimated_optimizer_steps": 1,
+            "input_adapter_dir": None,
+            "output_dir": config.output_dir,
+            "warnings": [],
+        },
+    )
+
     preflight_path = tmp_path / "model-preflight.json"
     _write_json(
         preflight_path,
@@ -148,16 +173,17 @@ def _fixture(tmp_path: Path, monkeypatch) -> dict[str, object]:
     return {
         "config": config,
         "config_path": config_path,
+        "plan_path": plan_path,
         "run": run,
         "preflight_path": preflight_path,
         "verification_path": verification_path,
     }
 
 
-def test_attestation_is_deterministic_and_binds_resume(monkeypatch, tmp_path: Path) -> None:
-    fixture = _fixture(tmp_path, monkeypatch)
-    kwargs = {
+def _build_kwargs(fixture: dict[str, object], tmp_path: Path) -> dict[str, object]:
+    return {
         "config_path": fixture["config_path"],
+        "plan_path": fixture["plan_path"],
         "run_dir": "build/run",
         "model_preflight_path": fixture["preflight_path"],
         "verification_path": fixture["verification_path"],
@@ -166,10 +192,16 @@ def test_attestation_is_deterministic_and_binds_resume(monkeypatch, tmp_path: Pa
         "root": tmp_path,
     }
 
+
+def test_attestation_is_deterministic_and_binds_resume(monkeypatch, tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+    kwargs = _build_kwargs(fixture, tmp_path)
+
     first = build_cyber_sft_run_attestation(**kwargs)
     second = build_cyber_sft_run_attestation(**kwargs)
 
     assert first.attestation_sha256 == second.attestation_sha256
+    assert first.plan_sha256
     assert first.resumed is True
     assert first.resume_checkpoint == "checkpoint-2"
     assert first.global_step == 3
@@ -184,15 +216,7 @@ def test_attestation_rejects_resolved_revision_drift(monkeypatch, tmp_path: Path
     _write_json(path, payload)
 
     with pytest.raises(ValueError, match="exact revision"):
-        build_cyber_sft_run_attestation(
-            config_path=fixture["config_path"],
-            run_dir="build/run",
-            model_preflight_path=path,
-            verification_path=fixture["verification_path"],
-            selected_profile="normal",
-            repository_commit="f" * 40,
-            root=tmp_path,
-        )
+        build_cyber_sft_run_attestation(**_build_kwargs(fixture, tmp_path))
 
 
 def test_attestation_rejects_resume_binding_drift(monkeypatch, tmp_path: Path) -> None:
@@ -203,12 +227,15 @@ def test_attestation_rejects_resume_binding_drift(monkeypatch, tmp_path: Path) -
     _write_json(path, payload)
 
     with pytest.raises(ValueError, match="resume-runtime.json is not bound"):
-        build_cyber_sft_run_attestation(
-            config_path=fixture["config_path"],
-            run_dir="build/run",
-            model_preflight_path=fixture["preflight_path"],
-            verification_path=fixture["verification_path"],
-            selected_profile="normal",
-            repository_commit="f" * 40,
-            root=tmp_path,
-        )
+        build_cyber_sft_run_attestation(**_build_kwargs(fixture, tmp_path))
+
+
+def test_attestation_rejects_plan_drift(monkeypatch, tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, monkeypatch)
+    path = fixture["plan_path"]
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["base_revision"] = "9" * 40
+    _write_json(path, payload)
+
+    with pytest.raises(ValueError, match="plan binding mismatch: base_revision"):
+        build_cyber_sft_run_attestation(**_build_kwargs(fixture, tmp_path))
