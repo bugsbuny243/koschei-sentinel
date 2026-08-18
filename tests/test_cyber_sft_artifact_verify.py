@@ -59,6 +59,11 @@ def _write_run(tmp_path, *, global_step=8):
                 "model_class": "Qwen3_5ForCausalLM",
                 "expected_model_class": "Qwen3_5ForCausalLM",
                 "text_only": True,
+                "requested_compute_dtype": "float16",
+                "observed_floating_dtypes_before_kbit_prepare": [
+                    "float16",
+                    "float32",
+                ],
             },
             sort_keys=True,
         ),
@@ -148,6 +153,23 @@ def test_wrong_model_runtime_is_detected(tmp_path) -> None:
     assert report.valid is False
     assert report.model_runtime_verified is False
     assert any("model runtime mismatch" in row for row in report.violations)
+
+
+def test_bfloat16_leak_is_detected_for_float16_run(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    runtime_path = run / "model-runtime.json"
+    payload = json.loads(runtime_path.read_text(encoding="utf-8"))
+    payload["observed_floating_dtypes_before_kbit_prepare"] = [
+        "float16",
+        "bfloat16",
+        "float32",
+    ]
+    runtime_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+    assert report.valid is False
+    assert report.model_runtime_verified is False
+    assert any("competing low-precision dtype" in row for row in report.violations)
 
 
 def test_zero_step_run_is_not_real_training(tmp_path) -> None:
