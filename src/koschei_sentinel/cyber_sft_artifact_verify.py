@@ -20,6 +20,11 @@ _EXPECTED_TEXT_RUNTIME = {
     "expected_model_class": "Qwen3_5ForCausalLM",
     "text_only": True,
 }
+_SUPPORTED_LORA_TARGET_TYPES = {
+    "torch.nn.modules.linear.Linear",
+    "bitsandbytes.nn.modules.Linear4bit",
+    "bitsandbytes.nn.modules.Linear8bitLt",
+}
 
 
 class CyberSFTArtifactVerification(StrictModel):
@@ -58,7 +63,11 @@ def _receipt_digest(receipt: CyberSFTTrainingReceipt) -> str:
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
-def _verify_model_runtime(path: Path) -> tuple[bool, str | None]:
+def _verify_model_runtime(
+    path: Path,
+    *,
+    require_lora_target_types: bool,
+) -> tuple[bool, str | None]:
     if not path.is_file():
         return False, "model-runtime.json is missing"
     try:
@@ -84,6 +93,24 @@ def _verify_model_runtime(path: Path) -> tuple[bool, str | None]:
     competing = "bfloat16" if requested == "float16" else "float16"
     if competing in observed:
         return False, "competing low-precision dtype leaked into loaded model weights"
+
+    target_types = payload.get("lora_target_module_types_before_peft")
+    if require_lora_target_types:
+        if not isinstance(target_types, dict) or not target_types:
+            return False, "model runtime lacks pre-PEFT LoRA target module type evidence"
+        for module_type, count in target_types.items():
+            if not isinstance(module_type, str) or not isinstance(count, int) or count <= 0:
+                return False, "model runtime LoRA target module type evidence is malformed"
+            if module_type not in _SUPPORTED_LORA_TARGET_TYPES:
+                return False, f"unsupported LoRA target module type in runtime proof: {module_type}"
+    elif target_types is not None:
+        if not isinstance(target_types, dict):
+            return False, "model runtime LoRA target module type evidence must be an object"
+        for module_type, count in target_types.items():
+            if not isinstance(module_type, str) or not isinstance(count, int) or count <= 0:
+                return False, "model runtime LoRA target module type evidence is malformed"
+            if module_type not in _SUPPORTED_LORA_TARGET_TYPES:
+                return False, f"unsupported LoRA target module type in runtime proof: {module_type}"
     return True, None
 
 
@@ -181,7 +208,10 @@ def verify_cyber_sft_run(
             bindings_verified = False
             violations.append(f"training receipt binding mismatch: {field}")
 
-    runtime_verified, runtime_violation = _verify_model_runtime(runtime_path)
+    runtime_verified, runtime_violation = _verify_model_runtime(
+        runtime_path,
+        require_lora_target_types=manifest.input_adapter_dir is None,
+    )
     if runtime_violation is not None:
         violations.append(runtime_violation)
 
