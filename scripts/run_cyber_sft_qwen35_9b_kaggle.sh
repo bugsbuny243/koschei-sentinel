@@ -22,18 +22,24 @@ export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
 
 mkdir -p "$EXPORT_ROOT"
 
+printf '\n[Koschei] Installing text-only Cyber SFT runtime\n'
+python -m pip install -e '.[training]'
+
+if [[ ! -d "$CORPUS" ]]; then
+  sentinel-cyber-seed-curriculum --output-root "$TRAINING_ROOT"
+fi
+
+printf '\n[Koschei] Pinned model access + CausalLM mapping preflight\n'
+sentinel-cyber-model-preflight \
+  --config "$NORMAL_CONFIG" \
+  | tee "$EXPORT_ROOT/model-preflight.json"
+
 printf '\n[Koschei] Kaggle GPU preflight\n'
 if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi | tee "$EXPORT_ROOT/nvidia-smi.txt"
 else
   echo "nvidia-smi is unavailable; Kaggle GPU accelerator may not be enabled" >&2
   exit 2
-fi
-
-python -m pip install -e '.[training]'
-
-if [[ ! -d "$CORPUS" ]]; then
-  sentinel-cyber-seed-curriculum --output-root "$TRAINING_ROOT"
 fi
 
 run_readiness() {
@@ -53,7 +59,7 @@ run_training() {
   local plan="$3"
   local log="$EXPORT_ROOT/training-${profile}.log"
 
-  printf '\n[Koschei] Executing real QLoRA smoke run (%s)\n' "$profile"
+  printf '\n[Koschei] Executing real text-only QLoRA smoke run (%s)\n' "$profile"
   set +e
   sentinel-cyber-sft \
     --config "$config" \
@@ -71,7 +77,7 @@ verify_and_export() {
   local plan="$3"
   local run_dir="$4"
 
-  printf '\n[Koschei] Verifying adapter + training receipt (%s)\n' "$profile"
+  printf '\n[Koschei] Verifying adapter + training receipt + text-only runtime (%s)\n' "$profile"
   sentinel-cyber-sft-verify \
     --run-dir "$run_dir" \
     | tee "$EXPORT_ROOT/verification.json"
