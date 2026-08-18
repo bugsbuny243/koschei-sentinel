@@ -59,8 +59,6 @@ def _use_class(plan: CyberSFTPlan) -> CyberTrainingUseClass:
 def _runtime_dependency_names() -> list[str]:
     return [
         "torch",
-        "torchvision",
-        "PIL",
         "datasets",
         "peft",
         "transformers",
@@ -75,7 +73,7 @@ def _tokenization_preflight(
     root: str | Path,
 ) -> tuple[bool, int, list[str]]:
     try:
-        from transformers import AutoProcessor
+        from transformers import AutoTokenizer
     except ImportError as exc:
         raise RuntimeError("transformers is required for tokenization preflight") from exc
 
@@ -83,12 +81,11 @@ def _tokenization_preflight(
         config,
         root=root,
     )
-    processor = AutoProcessor.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(
         config.base_model,
         revision=config.base_revision,
         trust_remote_code=False,
     )
-    tokenizer = processor.tokenizer
     maximum = 0
     overlength: list[str] = []
     for row in rows:
