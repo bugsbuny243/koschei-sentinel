@@ -32,7 +32,7 @@ training = [
   "huggingface-hub",
   "peft",
   "torch",
-  "transformers>=5.8,<6",
+  "transformers>=5.12,<6",
 ]
 
 [project.scripts]
