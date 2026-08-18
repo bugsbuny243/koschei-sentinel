@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -23,6 +24,45 @@ class CyberSFTRunReuseReport(StrictModel):
     run_source_identity_valid: bool
     reusable: bool
     violations: list[str]
+
+
+def _expected_resume_binding(source: CyberSFTTrainingSourceBinding) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": "sentinel.cyber-sft-resume-binding.v1",
+        "run_id": source.run_id,
+        "base_model": source.base_model,
+        "base_revision": source.base_revision,
+        "corpus_examples_sha256": source.corpus_examples_sha256,
+        "corpus_manifest_sha256": source.corpus_manifest_sha256,
+        "config_sha256": source.config_sha256,
+    }
+    if source.explicit_validation:
+        payload.update(
+            {
+                "explicit_validation": True,
+                "validation_corpus_examples_sha256": source.validation_corpus_examples_sha256,
+                "validation_corpus_manifest_sha256": source.validation_corpus_manifest_sha256,
+            }
+        )
+    return payload
+
+
+def _resume_binding_matches_source(
+    run_path: Path,
+    source: CyberSFTTrainingSourceBinding,
+) -> tuple[bool, str | None]:
+    path = run_path / "resume-runtime.json"
+    if not path.is_file():
+        return False, "completed run resume-runtime.json is missing"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, f"completed run resume-runtime.json is invalid: {exc}"
+    if not isinstance(payload, dict):
+        return False, "completed run resume-runtime.json must contain a JSON object"
+    if payload.get("resume_binding") != _expected_resume_binding(source):
+        return False, "completed run resume binding differs from training source"
+    return True, None
 
 
 def evaluate_completed_run_reuse(
@@ -107,12 +147,18 @@ def evaluate_completed_run_reuse(
             mismatches = [
                 label for label, observed, expected in checks if observed != expected
             ]
+            resume_matches, resume_violation = _resume_binding_matches_source(
+                run_path,
+                source,
+            )
             if mismatches:
                 violations.append(
                     "completed run identity differs from training source: "
                     + ", ".join(mismatches)
                 )
-            else:
+            if resume_violation is not None:
+                violations.append(resume_violation)
+            if not mismatches and resume_matches:
                 run_source_valid = True
     elif not manifest_path.is_file():
         violations.append("completed run adapter manifest is missing")
