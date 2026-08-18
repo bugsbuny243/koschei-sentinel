@@ -40,16 +40,16 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         quantization={"bits": 4, "compute_dtype": "float16"},
     )
     _write_json(
-        root / "selected-training-config.json",
+        root / "training-config.json",
         config.model_dump(mode="json"),
     )
     config_sha = _config_sha256(config)
 
     examples_raw = b'{"example_id":"portable"}\n'
-    (root / "defense-reflex-v3.examples.jsonl").write_bytes(examples_raw)
+    (root / "corpus-examples.jsonl").write_bytes(examples_raw)
     examples_sha = _sha(examples_raw)
     corpus_manifest_raw = _write_json(
-        root / "defense-reflex-v3.manifest.json",
+        root / "corpus-manifest.json",
         {
             "schema_version": "sentinel.defense-reflex-corpus-manifest.v3",
             "examples_sha256": examples_sha,
@@ -58,7 +58,7 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
     corpus_manifest_sha = _sha(corpus_manifest_raw)
 
     plan_raw = _write_json(
-        root / "qwen35-9b-smoke.plan.json",
+        root / "training-plan.json",
         {
             "schema_version": "sentinel.cyber-sft-plan.v1",
             "run_id": config.run_id,
@@ -258,7 +258,7 @@ def test_portable_export_rejects_corpus_example_tampering(
     tmp_path: Path,
 ) -> None:
     root = _build_export(tmp_path, monkeypatch)
-    with (root / "defense-reflex-v3.examples.jsonl").open("ab") as handle:
+    with (root / "corpus-examples.jsonl").open("ab") as handle:
         handle.write(b'{"tampered":true}\n')
 
     report = verify_cyber_sft_export(root)
@@ -273,7 +273,7 @@ def test_portable_export_rejects_plan_tampering(
     tmp_path: Path,
 ) -> None:
     root = _build_export(tmp_path, monkeypatch)
-    path = root / "qwen35-9b-smoke.plan.json"
+    path = root / "training-plan.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     payload["warnings"] = ["tampered"]
     _write_json(path, payload)
