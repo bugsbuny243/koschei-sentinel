@@ -10,7 +10,7 @@ from pydantic import Field
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
 from koschei_sentinel.cyber_sft_run_attestation import CyberSFTRunAttestation
 from koschei_sentinel.cyber_sft_trainer import CyberSFTTrainingReceipt
-from koschei_sentinel.cyber_sft_training import load_cyber_sft_config
+from koschei_sentinel.cyber_sft_training import CyberSFTConfig, load_cyber_sft_config
 from koschei_sentinel.models import StrictModel
 
 _MICRO_MODEL = "Qwen/Qwen3.5-0.8B-Base"
@@ -36,6 +36,12 @@ class CyberSFTScaleGate(StrictModel):
     micro_gpu_total_memory_gb: float | None = Field(default=None, ge=0.0)
     micro_peak_allocated_gb: float | None = Field(default=None, ge=0.0)
     micro_peak_reserved_gb: float | None = Field(default=None, ge=0.0)
+    micro_max_sequence_length: int | None = Field(default=None, ge=1)
+    target_max_sequence_length: int = Field(ge=1)
+    quantization_bits_match: bool
+    compute_dtype_match: bool
+    lora_target_coverage: bool
+    missing_target_suffixes: list[str]
     target_model: str
     target_revision: str
     target_minimum_cuda_memory_gb: float = Field(ge=0.0)
@@ -62,6 +68,48 @@ def _runtime_warnings(run_dir: Path) -> list[str]:
     return warnings
 
 
+def _recipe_checks(
+    micro: CyberSFTConfig | None,
+    target: CyberSFTConfig,
+    *,
+    blockers: list[str],
+    warnings: list[str],
+) -> tuple[bool, bool, bool, list[str]]:
+    if micro is None:
+        blockers.append("micro training-config.json is missing or invalid")
+        return False, False, False, sorted(set(target.lora.target_suffixes))
+
+    bits_match = micro.quantization.bits == target.quantization.bits
+    dtype_match = (
+        micro.quantization.compute_dtype == target.quantization.compute_dtype
+    )
+    target_suffixes = set(target.lora.target_suffixes)
+    micro_suffixes = set(micro.lora.target_suffixes)
+    missing_suffixes = sorted(target_suffixes - micro_suffixes)
+    target_coverage = not missing_suffixes
+
+    if not bits_match:
+        blockers.append(
+            "micro quantization bits differ from the 9B training recipe"
+        )
+    if not dtype_match:
+        blockers.append(
+            "micro compute dtype differs from the 9B training recipe"
+        )
+    if not target_coverage:
+        blockers.append(
+            "micro LoRA target coverage does not exercise all 9B target classes: "
+            + ", ".join(missing_suffixes)
+        )
+    if micro.max_sequence_length < target.max_sequence_length:
+        warnings.append(
+            "micro context length is shorter than the 9B target context; "
+            "the full target sequence length was not proven by micro-smoke"
+        )
+
+    return bits_match, dtype_match, target_coverage, missing_suffixes
+
+
 def evaluate_9b_scale_gate(
     *,
     micro_export_dir: str | Path,
@@ -78,6 +126,34 @@ def evaluate_9b_scale_gate(
     target = load_cyber_sft_config(target_config_path)
     if target.base_model != _TARGET_MODEL or target.base_revision != _TARGET_REVISION:
         blockers.append("target config is not the pinned Qwen3.5-9B-Base smoke target")
+
+    micro_config: CyberSFTConfig | None = None
+    micro_config_path = root / "training-config.json"
+    try:
+        if micro_config_path.is_file():
+            micro_config = load_cyber_sft_config(micro_config_path)
+    except (OSError, TypeError, ValueError) as exc:
+        blockers.append(f"micro training config cannot be parsed: {exc}")
+
+    bits_match, dtype_match, target_coverage, missing_suffixes = _recipe_checks(
+        micro_config,
+        target,
+        blockers=blockers,
+        warnings=warnings,
+    )
+
+    if micro_config is not None:
+        if (
+            micro_config.base_model != _MICRO_MODEL
+            or micro_config.base_revision != _MICRO_REVISION
+        ):
+            blockers.append(
+                "micro training config does not bind the pinned Qwen3.5-0.8B-Base"
+            )
+        if micro_config.stage != target.stage:
+            blockers.append("micro and 9B training stages differ")
+        if micro_config.execution_profile != target.execution_profile:
+            blockers.append("micro and 9B execution profiles differ")
 
     attestation: CyberSFTRunAttestation | None = None
     receipt: CyberSFTTrainingReceipt | None = None
@@ -147,6 +223,14 @@ def evaluate_9b_scale_gate(
         micro_peak_reserved_gb=(
             receipt.max_cuda_memory_reserved_gb if receipt is not None else None
         ),
+        micro_max_sequence_length=(
+            micro_config.max_sequence_length if micro_config is not None else None
+        ),
+        target_max_sequence_length=target.max_sequence_length,
+        quantization_bits_match=bits_match,
+        compute_dtype_match=dtype_match,
+        lora_target_coverage=target_coverage,
+        missing_target_suffixes=missing_suffixes,
         target_model=target.base_model,
         target_revision=target.base_revision,
         target_minimum_cuda_memory_gb=target.minimum_cuda_memory_gb,
