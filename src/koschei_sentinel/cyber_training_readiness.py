@@ -17,6 +17,9 @@ from koschei_sentinel.cyber_sft_training import (
     load_cyber_sft_validation_examples,
     plan_cyber_sft,
 )
+from koschei_sentinel.defense_reflex_gold_release_audit import (
+    audit_gold_defense_release,
+)
 from koschei_sentinel.models import StrictModel
 
 _MIN_TRANSFORMERS_VERSION = (5, 12, 0)
@@ -37,6 +40,10 @@ class CyberTrainingReadinessReport(StrictModel):
     execution_profile: str
     use_class: CyberTrainingUseClass
     static_plan_ready: bool
+    gold_release_audit_checked: bool = False
+    gold_release_audit_valid: bool | None = None
+    gold_release_audit_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    gold_release_dir: str | None = None
     runtime_checked: bool
     runtime_dependencies_ready: bool | None
     transformers_version: str | None = None
@@ -197,6 +204,23 @@ def _tokenization_preflight(
     return not overlength, maximum, sorted(overlength)
 
 
+def _promotion_gold_release_dir(
+    config: CyberSFTConfig,
+    *,
+    root: str | Path,
+) -> Path | None:
+    if config.stage.value != "DEFENSE_REFLEX" or config.validation_corpus_dir is None:
+        return None
+    root_path = Path(root).resolve()
+    train_dir = (root_path / config.corpus_dir).resolve()
+    validation_dir = (root_path / config.validation_corpus_dir).resolve()
+    if train_dir.name != "train" or validation_dir.name != "validation":
+        return None
+    if train_dir.parent != validation_dir.parent:
+        return None
+    return train_dir.parent
+
+
 def audit_cyber_training_readiness(
     config: CyberSFTConfig,
     *,
@@ -218,6 +242,33 @@ def audit_cyber_training_readiness(
             blockers.append(
                 "configured execution profile is not supported by the current Cyber SFT trainer"
             )
+
+    gold_checked = False
+    gold_valid: bool | None = None
+    gold_audit_sha: str | None = None
+    gold_release_dir: str | None = None
+    if (
+        plan is not None
+        and config.stage.value == "DEFENSE_REFLEX"
+        and plan.corpus_promotion_eligible is True
+    ):
+        release_root = _promotion_gold_release_dir(config, root=root)
+        if not plan.explicit_validation or release_root is None:
+            blockers.append(
+                "promotion-eligible Defense Reflex training requires explicit TRAIN/VALIDATION "
+                "directories from the same audited Gold release"
+            )
+            gold_valid = False
+        else:
+            gold_checked = True
+            gold_release_dir = str(release_root)
+            audit = audit_gold_defense_release(release_root)
+            gold_valid = audit.valid
+            gold_audit_sha = audit.audit_sha256
+            if not audit.valid:
+                blockers.append(
+                    "Gold Defense release audit failed: " + "; ".join(audit.violations[:8])
+                )
 
     dependencies_ready: bool | None = None
     transformers_version: str | None = None
@@ -285,7 +336,10 @@ def audit_cyber_training_readiness(
     maximum_tokens: int | None = None
     overlength: list[str] = []
     if check_tokenization:
-        if importlib.util.find_spec("transformers") is None:
+        if gold_checked and gold_valid is False:
+            tokenization_ready = False
+            blockers.append("tokenization preflight skipped because Gold release audit is invalid")
+        elif importlib.util.find_spec("transformers") is None:
             tokenization_ready = False
             blockers.append("transformers is missing; tokenization preflight cannot run")
         elif plan is not None:
@@ -310,6 +364,7 @@ def audit_cyber_training_readiness(
     static_ready = plan is not None
     ready = (
         static_ready
+        and (gold_valid is not False)
         and check_runtime
         and dependencies_ready is True
         and cuda_available is True
@@ -327,6 +382,10 @@ def audit_cyber_training_readiness(
             else CyberTrainingUseClass.NOT_APPLICABLE
         ),
         static_plan_ready=static_ready,
+        gold_release_audit_checked=gold_checked,
+        gold_release_audit_valid=gold_valid,
+        gold_release_audit_sha256=gold_audit_sha,
+        gold_release_dir=gold_release_dir,
         runtime_checked=check_runtime,
         runtime_dependencies_ready=dependencies_ready,
         transformers_version=transformers_version,
