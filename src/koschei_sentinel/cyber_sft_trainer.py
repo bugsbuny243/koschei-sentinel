@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+from importlib import metadata
 from pathlib import Path
 from typing import Any, Literal
 
@@ -21,9 +22,10 @@ from koschei_sentinel.cyber_sft_training import (
     split_cyber_sft_examples,
 )
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.training import resolve_under_root
+from koschei_sentinel.training import canonical_json, resolve_under_root
 
 _DENSE_QLORA_OPTIMIZER = "paged_adamw_8bit"
+MetricValue = str | int | float | bool | None
 
 
 class CyberSFTAdapterManifest(StrictModel):
@@ -48,6 +50,31 @@ class CyberSFTAdapterManifest(StrictModel):
     gradient_checkpointing: bool
     optimizer: str
     output_dir: str
+
+
+class CyberSFTTrainingReceipt(StrictModel):
+    schema_version: Literal["sentinel.cyber-sft-training-receipt.v1"] = (
+        "sentinel.cyber-sft-training-receipt.v1"
+    )
+    run_id: str
+    stage: str
+    base_model: str
+    base_revision: str
+    corpus_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    corpus_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    corpus_promotion_eligible: bool | None
+    adapter_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    optimizer: str
+    global_step: int = Field(ge=0)
+    train_metrics: dict[str, MetricValue]
+    eval_metrics: dict[str, MetricValue]
+    cuda_device_index: int = Field(ge=0)
+    cuda_device_name: str
+    cuda_total_memory_gb: float = Field(gt=0.0)
+    max_cuda_memory_allocated_gb: float = Field(ge=0.0)
+    max_cuda_memory_reserved_gb: float = Field(ge=0.0)
+    runtime_versions: dict[str, str]
+    receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 def _load_dependencies() -> dict[str, Any]:
@@ -183,6 +210,71 @@ def _fast_kernel_warnings() -> list[str]:
     return warnings
 
 
+def _runtime_versions() -> dict[str, str]:
+    versions: dict[str, str] = {}
+    for package in (
+        "torch",
+        "transformers",
+        "peft",
+        "bitsandbytes",
+        "accelerate",
+        "datasets",
+    ):
+        try:
+            versions[package] = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            versions[package] = "UNKNOWN"
+    return versions
+
+
+def _metrics_payload(metrics: dict[str, Any]) -> dict[str, MetricValue]:
+    output: dict[str, MetricValue] = {}
+    for key, value in metrics.items():
+        if value is None or isinstance(value, (str, bool, int, float)):
+            output[key] = value
+        elif hasattr(value, "item"):
+            scalar = value.item()
+            output[key] = scalar if isinstance(scalar, (str, bool, int, float)) else str(scalar)
+        else:
+            output[key] = str(value)
+    return output
+
+
+def _build_training_receipt(
+    *,
+    manifest: CyberSFTAdapterManifest,
+    trainer: Any,
+    train_metrics: dict[str, MetricValue],
+    eval_metrics: dict[str, MetricValue],
+    torch: Any,
+    device_index: int,
+) -> CyberSFTTrainingReceipt:
+    properties = torch.cuda.get_device_properties(device_index)
+    payload = {
+        "schema_version": "sentinel.cyber-sft-training-receipt.v1",
+        "run_id": manifest.run_id,
+        "stage": manifest.stage,
+        "base_model": manifest.base_model,
+        "base_revision": manifest.base_revision,
+        "corpus_examples_sha256": manifest.corpus_examples_sha256,
+        "corpus_manifest_sha256": manifest.corpus_manifest_sha256,
+        "corpus_promotion_eligible": manifest.corpus_promotion_eligible,
+        "adapter_digest": manifest.adapter_digest,
+        "optimizer": manifest.optimizer,
+        "global_step": int(trainer.state.global_step),
+        "train_metrics": train_metrics,
+        "eval_metrics": eval_metrics,
+        "cuda_device_index": device_index,
+        "cuda_device_name": str(properties.name),
+        "cuda_total_memory_gb": properties.total_memory / (1024**3),
+        "max_cuda_memory_allocated_gb": torch.cuda.max_memory_allocated(device_index) / (1024**3),
+        "max_cuda_memory_reserved_gb": torch.cuda.max_memory_reserved(device_index) / (1024**3),
+        "runtime_versions": _runtime_versions(),
+    }
+    receipt_sha = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return CyberSFTTrainingReceipt(**payload, receipt_sha256=receipt_sha)
+
+
 def execute_cyber_sft(
     config: CyberSFTConfig,
     plan: CyberSFTPlan,
@@ -275,6 +367,7 @@ def _train(
     train_dataset = dataset_type.from_list(train_features)
     eval_dataset = dataset_type.from_list(eval_features) if eval_features else None
 
+    torch.cuda.reset_peak_memory_stats(device_index)
     dtype = (
         torch.bfloat16
         if config.quantization.compute_dtype == "bfloat16"
@@ -371,7 +464,13 @@ def _train(
             return_tensors="pt",
         ),
     )
-    trainer.train()
+    train_result = trainer.train()
+    train_metrics = _metrics_payload(dict(train_result.metrics))
+    eval_metrics = (
+        _metrics_payload(dict(trainer.evaluate()))
+        if eval_dataset is not None
+        else {}
+    )
 
     adapter_dir = staging / "adapter"
     model.save_pretrained(adapter_dir, safe_serialization=True)
@@ -403,6 +502,18 @@ def _train(
     )
     (staging / "adapter-manifest.json").write_text(
         json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    receipt = _build_training_receipt(
+        manifest=manifest,
+        trainer=trainer,
+        train_metrics=train_metrics,
+        eval_metrics=eval_metrics,
+        torch=torch,
+        device_index=device_index,
+    )
+    (staging / "training-receipt.json").write_text(
+        json.dumps(receipt.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     warnings = _fast_kernel_warnings()
