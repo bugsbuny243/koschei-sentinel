@@ -37,6 +37,7 @@ def test_gold_review_queue_is_deterministic_before_human_review() -> None:
     assert [row.split_basis_sha256 for row in first] == [
         row.split_basis_sha256 for row in second
     ]
+    assert len({row.split_policy_sha256 for row in first}) == 1
 
 
 def test_model_visible_review_context_excludes_answer_key_fields() -> None:
@@ -51,9 +52,21 @@ def test_model_visible_review_context_excludes_answer_key_fields() -> None:
         "succeeded_actions",
         "contained",
         "reroute_expected",
+        "defense_mode",
+        "authorized_actions",
+        "reassessment_disposition",
+        "reroute_detected",
+        "attack_confidence",
+        "current_stage",
+        "observed_ticks",
     }
 
     for packet in packets:
+        assert set(packet.model_visible_context) == {
+            "scenario_id",
+            "critical_entity_ids",
+            "graph_snapshots",
+        }
         visible_keys = set(_all_keys(packet.model_visible_context))
         assert forbidden_keys.isdisjoint(visible_keys)
         assert "scenario_truth" in packet.review_only_context
