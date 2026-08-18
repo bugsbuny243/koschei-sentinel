@@ -16,7 +16,11 @@ from koschei_sentinel.cyber_sft_trainer import (
     CyberSFTAdapterManifest,
     CyberSFTTrainingReceipt,
 )
-from koschei_sentinel.cyber_sft_training import CyberSFTConfig, load_cyber_sft_config
+from koschei_sentinel.cyber_sft_training import (
+    CyberSFTConfig,
+    CyberSFTPlan,
+    load_cyber_sft_config,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json, resolve_under_root
 
@@ -32,6 +36,7 @@ class CyberSFTRunAttestation(StrictModel):
     base_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
     resolved_model_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
     config_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     model_preflight_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     verification_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     model_runtime_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -76,6 +81,7 @@ def _load_json_object(path: Path, *, label: str) -> tuple[dict[str, object], byt
 def build_cyber_sft_run_attestation(
     *,
     config_path: str | Path,
+    plan_path: str | Path,
     run_dir: str,
     model_preflight_path: str | Path,
     verification_path: str | Path,
@@ -88,6 +94,8 @@ def build_cyber_sft_run_attestation(
 
     root_path = Path(root).resolve()
     config = load_cyber_sft_config(config_path)
+    plan_raw = Path(plan_path).read_bytes()
+    plan = CyberSFTPlan.model_validate_json(plan_raw)
     run_path = resolve_under_root(root_path, run_dir)
     configured_run_path = resolve_under_root(root_path, config.output_dir)
     if run_path != configured_run_path:
@@ -99,6 +107,23 @@ def build_cyber_sft_run_attestation(
     receipt = CyberSFTTrainingReceipt.model_validate_json(
         (run_path / "training-receipt.json").read_bytes()
     )
+
+    plan_checks = (
+        ("run_id", plan.run_id, config.run_id),
+        ("stage", plan.stage, config.stage),
+        ("execution_profile", plan.execution_profile, config.execution_profile),
+        ("base_model", plan.base_model, config.base_model),
+        ("base_revision", plan.base_revision, config.base_revision),
+        ("output_dir", plan.output_dir, config.output_dir),
+        ("input_adapter_dir", plan.input_adapter_dir, config.input_adapter_dir),
+        ("corpus examples", plan.corpus_examples_sha256, manifest.corpus_examples_sha256),
+        ("corpus manifest", plan.corpus_manifest_sha256, manifest.corpus_manifest_sha256),
+    )
+    for label, observed, expected in plan_checks:
+        if observed != expected:
+            raise ValueError(f"Cyber SFT plan binding mismatch: {label}")
+    if not plan.executable_with_current_trainer:
+        raise ValueError("Cyber SFT plan is not executable with the current trainer")
 
     model_preflight_raw = Path(model_preflight_path).read_bytes()
     model_preflight = CyberModelAccessPreflight.model_validate_json(model_preflight_raw)
@@ -185,6 +210,7 @@ def build_cyber_sft_run_attestation(
         "base_revision": config.base_revision,
         "resolved_model_revision": model_preflight.resolved_revision,
         "config_sha256": _config_sha256(config),
+        "plan_sha256": _sha256_bytes(plan_raw),
         "model_preflight_sha256": _sha256_bytes(model_preflight_raw),
         "verification_sha256": _sha256_bytes(supplied_verification_raw),
         "model_runtime_sha256": _sha256_bytes(model_runtime_raw),
