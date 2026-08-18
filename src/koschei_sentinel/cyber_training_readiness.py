@@ -62,6 +62,7 @@ def _runtime_dependency_names() -> list[str]:
         "datasets",
         "peft",
         "transformers",
+        "huggingface_hub",
         "bitsandbytes",
         "accelerate",
     ]
@@ -85,6 +86,7 @@ def _tokenization_preflight(
         config.base_model,
         revision=config.base_revision,
         trust_remote_code=False,
+        use_fast=True,
     )
     maximum = 0
     overlength: list[str] = []
