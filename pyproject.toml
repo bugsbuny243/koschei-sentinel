@@ -85,6 +85,7 @@ sentinel-defense-reflex-gold-queue = "koschei_sentinel.defense_reflex_gold_queue
 sentinel-defense-reflex-gold-review = "koschei_sentinel.defense_reflex_gold_review_cli:main"
 sentinel-defense-reflex-gold-release = "koschei_sentinel.defense_reflex_gold_release_cli:main"
 sentinel-defense-reflex-gold-audit = "koschei_sentinel.defense_reflex_gold_release_audit_cli:main"
+sentinel-gold-holdout-eval = "koschei_sentinel.gold_holdout_evaluation_cli:main"
 sentinel-defense-reflex-build = "koschei_sentinel.defense_reflex_corpus_cli:main"
 sentinel-defense-reflex-v2-build = "koschei_sentinel.defense_reflex_corpus_v2_cli:main"
 sentinel-causal-defense-build = "koschei_sentinel.causal_defense_corpus_cli:main"
