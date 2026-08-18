@@ -1,40 +1,84 @@
 {
-  "schema": "sentinel.curriculum.v1",
-  "id": "koschei-language-first-v1",
+  "schema": "sentinel.curriculum.v2",
+  "id": "koschei-language-first-v2",
   "status": "offline_research_only",
   "runtime_integration": false,
   "source_contract": {
     "repository": "bugsbuny243/koschei-lang",
     "required_document": "docs/MODEL_TRAINING_CONTRACT.md",
+    "required_contract_generation": 2,
     "commit_sha_required": true,
-    "compiler_oracle_required": true,
-    "mutable_branch_is_not_provenance": true
+    "compiler_runtime_oracle_required": true,
+    "mutable_branch_is_not_provenance": true,
+    "semantic_plane_required": true
   },
+  "semantic_planes": [
+    "compatibility",
+    "native_reality"
+  ],
   "stages": [
     {
       "id": "L0",
-      "name": "core_language_semantics",
+      "name": "compatibility_core_semantics",
+      "semantic_plane": "compatibility",
       "requires_compiler_labels": true
     },
     {
       "id": "L1",
       "name": "capability_fundamentals",
+      "semantic_plane": "compatibility",
       "requires_compiler_labels": true
     },
     {
       "id": "L2",
       "name": "adversarial_capability_security",
+      "semantic_plane": "compatibility",
       "requires_compiler_labels": true
     },
     {
-      "id": "L3",
-      "name": "backend_and_systems_programs",
-      "requires_compiler_labels": true
+      "id": "N0",
+      "name": "native_value_decision_relationship_reality",
+      "semantic_plane": "native_reality",
+      "required_concepts": ["witness", "resolve", "settle", "conduit", "native_value_domains"]
     },
     {
-      "id": "L4",
-      "name": "security_preserving_repair",
-      "requires_compiler_labels": true,
+      "id": "N1",
+      "name": "native_data_and_invariant_reality",
+      "semantic_plane": "native_reality",
+      "required_concepts": ["mesh", "vow", "canonical_identity", "fail_closed_domain_rules"]
+    },
+    {
+      "id": "N2",
+      "name": "external_temporal_reality",
+      "semantic_plane": "native_reality",
+      "required_concepts": ["signal", "pulse", "resonance", "horizon", "resonance_conduit", "horizon_conduit"]
+    },
+    {
+      "id": "N3",
+      "name": "intent_admission_world_boundary",
+      "semantic_plane": "native_reality",
+      "required_concepts": ["intent", "admission", "intent_authority_effect_separation", "exact_target_authority"]
+    },
+    {
+      "id": "N4",
+      "name": "mathematical_and_quantum_reality",
+      "semantic_plane": "native_reality",
+      "required_concepts": ["algebra_reality", "finite_field_exactness", "quantum_reality_contract", "backend_evidence_separation"]
+    },
+    {
+      "id": "N5",
+      "name": "library_containment_and_pre_exploit_defense",
+      "semantic_plane": "native_reality",
+      "required_concepts": [
+        "library_boundary",
+        "zero_ambient_authority",
+        "behavior_baseline",
+        "authority_delta_detection",
+        "composite_risk_evidence",
+        "pre_exploit_invariant_engine",
+        "quarantine_contract",
+        "fresh_revision_epoch_recovery"
+      ],
       "promotion_gate": "language_hard_gate"
     },
     {
@@ -44,7 +88,7 @@
     },
     {
       "id": "S1",
-      "name": "solana_web3_evidence_semantics",
+      "name": "cross_ecosystem_library_threat_reasoning",
       "requires": ["language_hard_gate"]
     },
     {
@@ -54,7 +98,7 @@
     },
     {
       "id": "S3",
-      "name": "attack_defense_behavior",
+      "name": "attack_defense_behavior_and_precursors",
       "requires": ["language_hard_gate"]
     },
     {
@@ -69,11 +113,15 @@
       "invented_authority",
       "capability_rewidening",
       "dependency_ambient_authority",
-      "compiler_bypass_repair",
-      "hidden_capability_expansion",
-      "false_compile_claim",
+      "compiler_runtime_bypass_repair",
+      "hidden_authority_expansion",
+      "false_compile_or_execution_claim",
       "unimplemented_feature_claim",
-      "model_confidence_as_permission"
+      "model_confidence_as_permission",
+      "evidence_as_authority",
+      "baseline_as_authority",
+      "semantic_plane_confusion",
+      "mainstream_syntax_relabelled_as_native_reality"
     ],
     "required_benchmark_families": [
       "pure_empty_manifest",
@@ -90,7 +138,16 @@
       "secret_exfiltration",
       "capability_propagation",
       "minimum_authority_repair",
-      "legitimate_broad_authority"
+      "legitimate_broad_authority",
+      "native_reality_identity",
+      "signal_no_ambient_input",
+      "temporal_reality_bounds",
+      "intent_authority_effect_separation",
+      "library_zero_ambient_authority",
+      "behavior_authority_delta",
+      "compound_risk_evidence",
+      "pre_exploit_invariant_violation",
+      "quarantine_recovery_provenance"
     ]
   },
   "authority_boundary": {
@@ -98,36 +155,23 @@
       "observe",
       "classify",
       "explain",
+      "correlate_evidence",
+      "predict_risk_pattern",
       "recommend_restriction",
       "request_quarantine",
+      "request_revocation",
       "propose_minimum_authority_repair"
     ],
     "model_must_never": [
-      "grant_capability",
-      "widen_capability",
+      "grant_capability_or_authority",
+      "widen_capability_or_authority",
       "bypass_compiler_policy",
       "bypass_runtime_policy",
       "mutate_evidence",
       "override_deterministic_verdict",
+      "reinterpret_baseline_as_permission",
       "promote_itself",
       "deploy_itself"
-    ]
-  },
-  "kosch_boundary": {
-    "allowed_future_roles": [
-      "authenticated_access",
-      "resource_allocation",
-      "contribution_identity",
-      "bounty_coordination"
-    ],
-    "must_never": [
-      "raise_model_confidence",
-      "suppress_abstention",
-      "weaken_benchmark_policy",
-      "pass_failed_language_gate",
-      "promote_candidate",
-      "deploy_candidate",
-      "grant_compiler_runtime_authority"
     ]
   }
 }
