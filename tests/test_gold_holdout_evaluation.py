@@ -14,6 +14,7 @@ from koschei_sentinel.defense_reflex_gold_release import (
     write_gold_defense_release,
 )
 from koschei_sentinel.gold_holdout_evaluation import (
+    GoldHoldoutEvaluationPolicy,
     GoldHoldoutInferenceCase,
     GoldHoldoutPredictedStep,
     build_gold_holdout_prediction,
@@ -77,7 +78,10 @@ def _fixture_with_alternative_visible_evidence(tmp_path):
             elif split is GoldReviewSplit.VALIDATION and validation_row is None:
                 validation_row = (scenario, lesson)
             elif split is GoldReviewSplit.HOLDOUT and holdout_row is None:
-                graph_payload = [graph.model_dump(mode="json") for graph in scenario.graph_snapshots]
+                graph_payload = [
+                    graph.model_dump(mode="json")
+                    for graph in scenario.graph_snapshots
+                ]
                 visible = _visible_evidence_ids(graph_payload)
                 for index, expected_step in enumerate(lesson.expected_steps):
                     expected = set(expected_step.supporting_evidence_ids)
@@ -184,10 +188,29 @@ def test_structurally_correct_grounded_holdout_prediction_passes(tmp_path) -> No
     assert report.violations == []
 
 
+def test_perfect_single_case_still_fails_when_policy_requires_more_cases(tmp_path) -> None:
+    release, _inference, inference_case, gold_case = _fixture(tmp_path)
+    prediction = _perfect_prediction(inference_case, gold_case)
+    policy = GoldHoldoutEvaluationPolicy(minimum_case_count=2)
+
+    report = evaluate_gold_holdout_predictions(
+        release,
+        [prediction],
+        policy=policy,
+    )
+
+    assert report.structural_exact_rate == 1.0
+    assert report.evidence_selection_accuracy == 1.0
+    assert report.passed is False
+    assert "Gold HOLDOUT case count below policy: 1 < 2" in report.violations
+
+
 def test_holdout_prediction_cannot_invent_evidence(tmp_path) -> None:
     release, _inference, inference_case, gold_case = _fixture(tmp_path)
     steps = [GoldHoldoutPredictedStep.model_validate(row) for row in gold_case.expected_sequence]
-    first = steps[0].model_copy(update={"supporting_evidence_ids": ["evidence:not-visible"]})
+    first = steps[0].model_copy(
+        update={"supporting_evidence_ids": ["evidence:not-visible"]}
+    )
     prediction = build_gold_holdout_prediction(
         inference_case=inference_case,
         model_ref="Qwen/Qwen3.5-9B-Base",
@@ -209,7 +232,9 @@ def test_visible_but_wrong_evidence_selection_fails_gold_exactness(tmp_path) -> 
         _fixture_with_alternative_visible_evidence(tmp_path)
     )
     steps = [GoldHoldoutPredictedStep.model_validate(row) for row in gold_case.expected_sequence]
-    changed = steps[step_index].model_copy(update={"supporting_evidence_ids": [alternative]})
+    changed = steps[step_index].model_copy(
+        update={"supporting_evidence_ids": [alternative]}
+    )
     modified_steps = list(steps)
     modified_steps[step_index] = changed
     prediction = build_gold_holdout_prediction(
