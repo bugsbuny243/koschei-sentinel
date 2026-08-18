@@ -10,7 +10,10 @@ from koschei_sentinel.cyber_defense_promotion import (
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
 from koschei_sentinel.cyber_training_bundle import CyberTrainingBundle
 from koschei_sentinel.defense_load_range import DefenseLoadRangeReport
-from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationReport
+from koschei_sentinel.gold_holdout_evaluation import (
+    GoldHoldoutEvaluationPolicy,
+    GoldHoldoutEvaluationReport,
+)
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
@@ -28,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--multi-incident-range-report", required=True)
     parser.add_argument("--defense-load-range-report", required=True)
     parser.add_argument("--gold-holdout-report", required=True)
+    parser.add_argument("--gold-holdout-policy", required=True)
     parser.add_argument("--output", required=True)
     return parser
 
@@ -50,6 +54,9 @@ def main(argv: list[str] | None = None) -> int:
         gold = GoldHoldoutEvaluationReport.model_validate_json(
             Path(args.gold_holdout_report).read_text(encoding="utf-8")
         )
+        gold_policy = GoldHoldoutEvaluationPolicy.model_validate_json(
+            Path(args.gold_holdout_policy).read_text(encoding="utf-8")
+        )
         evidence = build_cyber_defense_promotion_evidence(
             promotion_id=args.promotion_id,
             candidate_model_ref=args.candidate_model,
@@ -59,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             multi_incident_range_report=multi,
             defense_load_range_report=load,
             gold_holdout_report=gold,
+            gold_holdout_policy=gold_policy,
         )
         payload = json.dumps(
             evidence.model_dump(mode="json"),
