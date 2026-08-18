@@ -7,6 +7,7 @@ cd "$ROOT"
 TRAINING_ROOT="build/cyber-training"
 CORPUS="$TRAINING_ROOT/defense-reflex-v3"
 CONFIG="configs/training/cyber-sft.qwen3.5-0.8b.micro.json"
+TARGET_9B_CONFIG="configs/training/cyber-sft.qwen3.5-9b.smoke.json"
 PLAN="$TRAINING_ROOT/qwen35-08b-micro.plan.json"
 RUN_DIR="$TRAINING_ROOT/runs/qwen35-08b-micro-001"
 EXPORT_ROOT="${KOSCHEI_KAGGLE_OUTPUT_ROOT:-/kaggle/working/koschei-sentinel-micro-output}"
@@ -105,6 +106,19 @@ sentinel-cyber-sft-export-verify \
   --export-dir "$EXPORT_ROOT" \
   | tee "$EXPORT_ROOT/export-verification.json"
 
+printf '\n[Koschei] Evaluating micro-to-9B scale gate\n'
+set +e
+sentinel-cyber-sft-scale-gate \
+  --micro-export "$EXPORT_ROOT" \
+  --target-config "$TARGET_9B_CONFIG" \
+  | tee "$EXPORT_ROOT/scale-gate.json"
+SCALE_STATUS=${PIPESTATUS[0]}
+set -e
+if [[ "$SCALE_STATUS" -eq 2 ]]; then
+  echo "[Koschei] Scale gate execution failed; refusing to package ambiguous evidence." >&2
+  exit 2
+fi
+
 python - "$EXPORT_ROOT" <<'PY'
 from pathlib import Path
 import shutil
@@ -117,4 +131,9 @@ print(f"\n[Koschei] Export archive: {zip_path}")
 PY
 
 printf '\n[Koschei] REAL QLoRA MICRO-SMOKE COMPLETE\n'
+if [[ "$SCALE_STATUS" -eq 0 ]]; then
+  printf '[Koschei] Micro evidence permits a 9B attempt; inspect scale-gate.json for cautions.\n'
+else
+  printf '[Koschei] Micro run is valid, but scale-gate.json blocks a 9B attempt on this runtime.\n'
+fi
 printf '[Koschei] Pipeline proof only: promotion_eligible=false by design.\n'
