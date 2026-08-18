@@ -32,10 +32,76 @@ def test_static_readiness_does_not_claim_gpu_execution_ready(tmp_path) -> None:
 
     assert report.static_plan_ready is True
     assert report.runtime_checked is False
+    assert report.tokenization_checked is False
     assert report.ready_to_execute is False
     assert report.use_class is CyberTrainingUseClass.SMOKE_ONLY
     assert report.plan is not None
     assert report.plan.example_count == 32
+
+
+def test_tokenization_preflight_can_pass_without_claiming_cuda_ready(tmp_path, monkeypatch) -> None:
+    write_seed_curriculum(tmp_path / "build" / "cyber-training")
+
+    import koschei_sentinel.cyber_training_readiness as readiness
+
+    original_find_spec = readiness.importlib.util.find_spec
+
+    def fake_find_spec(name):
+        if name == "transformers":
+            return object()
+        return original_find_spec(name)
+
+    monkeypatch.setattr(readiness.importlib.util, "find_spec", fake_find_spec)
+    monkeypatch.setattr(
+        readiness,
+        "_tokenization_preflight",
+        lambda config, root: (True, 1337, []),
+    )
+
+    report = audit_cyber_training_readiness(
+        _dense_config(),
+        root=tmp_path,
+        check_runtime=False,
+        check_tokenization=True,
+    )
+
+    assert report.tokenization_checked is True
+    assert report.tokenization_ready is True
+    assert report.max_observed_sequence_tokens == 1337
+    assert report.overlength_example_ids == []
+    assert report.ready_to_execute is False
+
+
+def test_tokenization_preflight_blocks_overlength_examples(tmp_path, monkeypatch) -> None:
+    write_seed_curriculum(tmp_path / "build" / "cyber-training")
+
+    import koschei_sentinel.cyber_training_readiness as readiness
+
+    original_find_spec = readiness.importlib.util.find_spec
+
+    def fake_find_spec(name):
+        if name == "transformers":
+            return object()
+        return original_find_spec(name)
+
+    monkeypatch.setattr(readiness.importlib.util, "find_spec", fake_find_spec)
+    monkeypatch.setattr(
+        readiness,
+        "_tokenization_preflight",
+        lambda config, root: (False, 2300, ["defense-reflex-v3:test:oversize"]),
+    )
+
+    report = audit_cyber_training_readiness(
+        _dense_config(),
+        root=tmp_path,
+        check_runtime=False,
+        check_tokenization=True,
+    )
+
+    assert report.tokenization_ready is False
+    assert report.max_observed_sequence_tokens == 2300
+    assert report.overlength_example_ids == ["defense-reflex-v3:test:oversize"]
+    assert any("exceed max_sequence_length" in blocker for blocker in report.blockers)
 
 
 def test_moe_plan_is_statically_blocked_by_current_executor(tmp_path) -> None:
