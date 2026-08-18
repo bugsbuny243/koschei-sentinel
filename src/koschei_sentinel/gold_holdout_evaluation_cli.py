@@ -16,6 +16,9 @@ from koschei_sentinel.gold_holdout_inference_runner import GoldHoldoutInferenceR
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
+from koschei_sentinel.gold_holdout_zero_prediction import (
+    build_zero_prediction_gold_report,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,7 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_predictions(path: str) -> list[GoldHoldoutPrediction]:
+def _load_predictions(
+    path: str,
+    *,
+    allow_empty: bool = False,
+) -> list[GoldHoldoutPrediction]:
     rows: list[GoldHoldoutPrediction] = []
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
@@ -58,7 +65,7 @@ def _load_predictions(path: str) -> list[GoldHoldoutPrediction]:
             raise ValueError(
                 f"invalid Gold HOLDOUT prediction at line {line_number}"
             ) from exc
-    if not rows:
+    if not rows and not allow_empty:
         raise ValueError("Gold HOLDOUT predictions file is empty")
     return rows
 
@@ -99,14 +106,26 @@ def _evaluate_verified_output(args):
     receipt = GoldHoldoutInferenceRunReceipt.model_validate_json(
         (Path(args.inference_output) / "receipt.json").read_bytes()
     )
+    selected_policy = _load_policy(args.policy)
     predictions = _load_predictions(
-        str(Path(args.inference_output) / "predictions.jsonl")
+        str(Path(args.inference_output) / "predictions.jsonl"),
+        allow_empty=True,
     )
-    report = evaluate_gold_holdout_predictions(
-        args.release_dir,
-        predictions,
-        policy=_load_policy(args.policy),
-    )
+    if predictions:
+        report = evaluate_gold_holdout_predictions(
+            args.release_dir,
+            predictions,
+            policy=selected_policy,
+        )
+    else:
+        report = build_zero_prediction_gold_report(
+            args.release_dir,
+            model_ref=receipt.model_ref,
+            model_revision=receipt.model_revision,
+            adapter_digest=receipt.adapter_digest,
+            policy=selected_policy,
+        )
+
     identity = (report.model_ref, report.model_revision, report.adapter_digest)
     expected_identity = (receipt.model_ref, receipt.model_revision, receipt.adapter_digest)
     if identity != expected_identity:
