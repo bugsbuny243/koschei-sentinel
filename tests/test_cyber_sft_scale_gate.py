@@ -114,6 +114,7 @@ def _micro_export(
             "resolved_model_revision": _MICRO_REVISION,
             "config_sha256": "1" * 64,
             "plan_sha256": "2" * 64,
+            "training_source_sha256": "c" * 64,
             "model_preflight_sha256": "3" * 64,
             "verification_sha256": "4" * 64,
             "model_runtime_sha256": "5" * 64,
