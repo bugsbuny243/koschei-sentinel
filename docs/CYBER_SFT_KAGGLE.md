@@ -4,16 +4,13 @@ This is the Kaggle execution path for the first real Qwen3.5-9B Cyber SFT smoke 
 
 ## Runtime model path
 
-Cyber SFT is text-only. The executor uses `AutoTokenizer` and `AutoModelForCausalLM` against the pinned `Qwen/Qwen3.5-9B-Base` checkpoint. Transformers maps the Qwen3.5 VLM-compatible config to `Qwen3_5ForCausalLM`; that class uses the Qwen3.5 text model and ignores `model.visual.*` checkpoint keys. The executor therefore refuses to train unless:
-
-- the loaded class is exactly `Qwen3_5ForCausalLM`, and
-- no module name contains `visual` or `vision`.
+Cyber SFT is text-only. The executor uses `AutoTokenizer` and `AutoModelForCausalLM` against the pinned `Qwen/Qwen3.5-9B-Base` checkpoint. The executor refuses to train unless the loaded class is exactly `Qwen3_5ForCausalLM` and no module name contains `visual` or `vision`.
 
 The completed run writes `model-runtime.json`, and `sentinel-cyber-sft-verify` requires that file to confirm `AutoModelForCausalLM`, `Qwen3_5ForCausalLM`, and `text_only=true` before a run is considered valid.
 
 ## Exact model-access gate
 
-Before CUDA training starts, `sentinel-cyber-model-preflight` checks the configured Hugging Face model and exact 40-character revision. The gate requires:
+Before each profile trains, `sentinel-cyber-model-preflight` checks that profile's configured Hugging Face model and exact 40-character revision. The gate requires:
 
 - the pinned revision to resolve to the exact configured commit SHA,
 - the repository to be public and ungated for anonymous Kaggle execution,
@@ -21,7 +18,7 @@ Before CUDA training starts, `sentinel-cyber-model-preflight` checks the configu
 - `AutoConfig.model_type` to be `qwen3_5`, and
 - `AutoModelForCausalLM` to resolve the config to `Qwen3_5ForCausalLM`.
 
-The report is exported as `model-preflight.json`. Any mismatch stops the launcher before training.
+Profile-specific reports are kept as `model-preflight-normal.json` and, when needed, `model-preflight-lowmem.json`. The report for the profile that actually completed is copied to `model-preflight.json`. A low-memory fallback is therefore never trained against an unverified model pin.
 
 ## Platform assumptions
 
@@ -37,7 +34,7 @@ Use:
 
 `notebooks/koschei_sentinel_cyber_sft_9b_kaggle.ipynb`
 
-The notebook clones or updates the repository, checks the GPU, runs the Kaggle launcher, verifies the completed run, and leaves the export archive in `/kaggle/working`.
+The notebook clones or updates the repository, checks the GPU, runs the Kaggle launcher, verifies the completed run, verifies the portable export, and leaves the final archive in `/kaggle/working`.
 
 ## Launcher
 
@@ -56,17 +53,17 @@ The launcher performs:
 
 1. Text-only training dependency installation.
 2. Defense Reflex v3 seed generation when missing.
-3. Exact Hugging Face revision/access/CausalLM mapping preflight.
-4. GPU preflight via `nvidia-smi` and saves the output.
-5. Runtime/CUDA readiness check.
-6. `AutoTokenizer` context-length preflight before model weights are loaded.
-7. Text-only `AutoModelForCausalLM` loading and strict Qwen3.5 runtime validation.
-8. Real QLoRA execution on the pinned Qwen3.5-9B-Base revision.
-9. CUDA-memory-only retry with the low-memory profile when required.
-10. Adapter, training receipt, and text-runtime verification.
-11. Fail-closed run attestation that binds the selected config, repository commit, exact resolved model revision, verification report, model runtime, resume runtime, receipt, adapter digest, and corpus hashes.
-12. Export of the selected config, selected profile, run, plan, corpus manifest, repository commit, model preflight, readiness reports, training logs, verification report, and run attestation.
-13. Creation of `/kaggle/working/koschei-sentinel-qwen35-9b-smoke.zip`.
+3. GPU visibility preflight.
+4. Exact Hugging Face revision/access/CausalLM mapping preflight for the profile that is about to train.
+5. Runtime/CUDA readiness and tokenizer context-length checks.
+6. Text-only `AutoModelForCausalLM` loading and strict Qwen3.5 runtime validation.
+7. Real QLoRA execution on the pinned Qwen3.5-9B-Base revision.
+8. CUDA-memory-only retry with a separately preflighted low-memory profile when required.
+9. Adapter, training receipt, and text-runtime verification.
+10. Fail-closed run attestation binding config, execution plan, repository commit, exact resolved model revision, verification report, model runtime, resume runtime, receipt, adapter digest, and corpus hashes.
+11. Export of the selected config, selected profile, run, plan, corpus manifest, corpus examples, repository commit, selected model preflight, readiness reports, training logs, verification report, and run attestation.
+12. Offline re-verification of the copied export with `sentinel-cyber-sft-export-verify`.
+13. Creation of `/kaggle/working/koschei-sentinel-qwen35-9b-smoke.zip` only after export verification succeeds.
 
 ## Resumable checkpoints
 
@@ -89,6 +86,7 @@ After `sentinel-cyber-sft-verify` returns a valid report, `sentinel-cyber-sft-at
 - selected profile and repository commit,
 - exact configured and resolved model revision,
 - canonical training config SHA-256,
+- raw execution-plan SHA-256,
 - raw model-preflight and verification SHA-256 values,
 - model-runtime and resume-runtime SHA-256 values,
 - training receipt SHA-256,
@@ -97,25 +95,44 @@ After `sentinel-cyber-sft-verify` returns a valid report, `sentinel-cyber-sft-at
 - completed optimizer step count, and
 - resume status/checkpoint.
 
-The attestation contains its own deterministic `attestation_sha256`. The ZIP is not produced if attestation creation fails.
+The attestation contains its own deterministic `attestation_sha256`.
+
+## Portable export verification
+
+The final export contains both `defense-reflex-v3.manifest.json` and `defense-reflex-v3.examples.jsonl`, so the corpus hashes can be recomputed without access to the original repository build directory.
+
+`sentinel-cyber-sft-export-verify --export-dir <path>` requires no GPU or network access. It independently checks:
+
+- the attestation self-hash,
+- canonical selected-config hash,
+- raw execution-plan hash,
+- selected model-preflight hash and semantic model binding,
+- verification-report hash plus a fresh verification of the copied `run/` directory,
+- model-runtime and resume-runtime hashes and semantics,
+- receipt and adapter bindings,
+- corpus examples and manifest hashes,
+- selected-profile binding, and
+- repository-commit binding.
+
+The launcher writes the result to `export-verification.json`. If it does not report `valid=true`, archive creation is stopped.
 
 ## Success conditions
 
 The run is accepted as a real smoke training only if all of the following are true:
 
-- `training-receipt.json` exists.
-- `model-runtime.json` exists and verifies the text-only Qwen3.5 runtime.
+- `training-receipt.json` exists and reports `global_step > 0`.
+- `model-runtime.json` verifies the text-only Qwen3.5 runtime.
 - `resume-runtime.json` is bound to the same config/model/corpus lineage.
-- `global_step > 0`.
 - Adapter digest recomputation matches the manifest.
 - Training receipt self-digest is valid.
 - Receipt model/corpus/adapter bindings match the run artifacts.
 - `verification.json` reports `valid=true` and `model_runtime_verified=true`.
-- `run-attestation.json` is produced only after a fresh valid verification and exact model/config/runtime binding checks.
+- `run-attestation.json` verifies the config/plan/model/runtime/receipt/corpus lineage.
+- `export-verification.json` reports `valid=true` after checking the copied portable bundle.
 - `adapter-manifest.json` reports `corpus_promotion_eligible=false`.
 - `selected-profile.txt` records the profile that actually completed.
 
-A successful smoke run proves the tokenizer, text-only quantized model load, LoRA target resolution, optimizer, backward pass, resumable checkpoint path, checkpoint save, receipt generation, artifact-verification path, and cross-artifact run attestation path. It does **not** make the adapter production-ready.
+A successful smoke run proves the tokenizer, text-only quantized model load, LoRA target resolution, optimizer, backward pass, resumable checkpoint path, receipt generation, artifact verification, run attestation, and portable offline-verification path. It does **not** make the adapter production-ready.
 
 ## Kaggle output persistence
 
