@@ -90,14 +90,14 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
     root = Path(export_dir).resolve()
     required_files = {
         "attestation": root / "run-attestation.json",
-        "config": root / "selected-training-config.json",
-        "plan": root / "qwen35-9b-smoke.plan.json",
+        "config": root / "training-config.json",
+        "plan": root / "training-plan.json",
         "model_preflight": root / "model-preflight.json",
         "verification": root / "verification.json",
         "profile": root / "selected-profile.txt",
         "repository_commit": root / "repository-commit.txt",
-        "corpus_examples": root / "defense-reflex-v3.examples.jsonl",
-        "corpus_manifest": root / "defense-reflex-v3.manifest.json",
+        "corpus_examples": root / "corpus-examples.jsonl",
+        "corpus_manifest": root / "corpus-manifest.json",
         "adapter_manifest": root / "run" / "adapter-manifest.json",
         "receipt": root / "run" / "training-receipt.json",
         "model_runtime": root / "run" / "model-runtime.json",
@@ -149,7 +149,7 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
         )
         corpus_manifest = _json_object(
             required_files["corpus_manifest"],
-            label="defense-reflex-v3.manifest.json",
+            label="corpus-manifest.json",
         )
     except (OSError, TypeError, ValueError) as exc:
         return _invalid(
