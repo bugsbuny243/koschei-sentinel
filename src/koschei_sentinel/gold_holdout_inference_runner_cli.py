@@ -42,16 +42,24 @@ def _load_policy(path: str | None) -> GoldHoldoutGenerationPolicy | None:
         raise ValueError(f"invalid Gold HOLDOUT generation policy: {path}") from exc
 
 
+def _write_policy(output_dir: str, policy: GoldHoldoutGenerationPolicy) -> None:
+    destination = Path(output_dir) / "generation-policy.json"
+    destination.write_text(
+        json.dumps(policy.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        policy = _load_policy(args.generation_policy)
+        selected_policy = _load_policy(args.generation_policy) or GoldHoldoutGenerationPolicy()
         plan = build_gold_holdout_inference_plan(
             inference_pack_dir=args.inference_pack,
             run_dir=args.run_dir,
             training_config_path=args.training_config,
             model_ref=args.model_ref,
-            generation_policy=policy,
+            generation_policy=selected_policy,
         )
         if args.plan_output:
             destination = Path(args.plan_output)
@@ -71,8 +79,9 @@ def main(argv: list[str] | None = None) -> int:
             training_config_path=args.training_config,
             model_ref=args.model_ref,
             output_dir=args.output_dir,
-            generation_policy=policy,
+            generation_policy=selected_policy,
         )
+        _write_policy(args.output_dir, selected_policy)
         print(json.dumps(receipt.model_dump(mode="json"), indent=2, sort_keys=True))
         return 0
     except (FileExistsError, OSError, RuntimeError, TypeError, ValueError) as exc:
