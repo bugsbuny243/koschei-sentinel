@@ -175,7 +175,7 @@ case "$PROFILE_MODE" in
       SELECTED_RUN_DIR="$NORMAL_RUN_DIR"
     else
       NORMAL_LOG="$EXPORT_ROOT/training-normal.log"
-      if grep -Eqi 'CUDA.*out of memory|out of memory|CUBLAS_STATUS_ALLOC_FAILED|CUDA error:.*memory' "$NORMAL_LOG"; then
+      if grep -Eqi 'CUDA.*out of memory|torch\.OutOfMemoryError|CUBLAS_STATUS_ALLOC_FAILED|CUDA error:.*memory' "$NORMAL_LOG"; then
         printf '\n[Koschei] Normal profile hit a CUDA-memory failure; validating low-memory profile before retry.\n'
         run_model_preflight lowmem "$LOWMEM_CONFIG"
         run_readiness lowmem "$LOWMEM_CONFIG"
@@ -185,7 +185,7 @@ case "$PROFILE_MODE" in
         SELECTED_PLAN="$LOWMEM_PLAN"
         SELECTED_RUN_DIR="$LOWMEM_RUN_DIR"
       else
-        echo "[Koschei] Normal profile failed for a non-memory reason; refusing automatic fallback." >&2
+        echo "[Koschei] Normal profile failed for a non-CUDA-memory reason; refusing automatic fallback." >&2
         exit 2
       fi
     fi
