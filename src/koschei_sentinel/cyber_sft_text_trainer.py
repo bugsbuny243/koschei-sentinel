@@ -76,12 +76,16 @@ def _text_lora_targets(model: Any, suffixes: list[str]) -> list[str]:
             continue
         lowered = name.lower()
         if "visual" in lowered or "vision" in lowered:
-            raise RuntimeError("Cyber SFT text executor resolved a vision module as a LoRA target")
+            raise RuntimeError(
+                "Cyber SFT text executor resolved a vision module as a LoRA target"
+            )
         if name.startswith("model.layers.") or ".language_model.layers." in name:
             targets.append(name)
     targets = sorted(set(targets))
     if not targets:
-        raise RuntimeError("no Qwen3.5 text-backbone LoRA targets matched the configured suffixes")
+        raise RuntimeError(
+            "no Qwen3.5 text-backbone LoRA targets matched the configured suffixes"
+        )
     return targets
 
 
@@ -102,6 +106,45 @@ def _assert_text_only_model(model: Any) -> None:
             "Cyber SFT text executor loaded vision modules unexpectedly: "
             + ", ".join(forbidden[:8])
         )
+
+
+def _assert_requested_model_dtype(
+    model: Any,
+    expected_dtype: Any,
+    torch: Any,
+) -> list[str]:
+    config_dtype = getattr(model.config, "dtype", None)
+    if config_dtype is not None and config_dtype != expected_dtype:
+        raise RuntimeError(
+            "Qwen3.5 text config dtype differs from the explicitly requested training dtype: "
+            f"{config_dtype} != {expected_dtype}"
+        )
+
+    observed = sorted(
+        {
+            str(parameter.dtype).removeprefix("torch.")
+            for parameter in model.parameters()
+            if parameter.is_floating_point()
+        }
+    )
+    if not observed:
+        raise RuntimeError("Qwen3.5 text model exposes no floating parameters after load")
+
+    competing = (
+        torch.bfloat16 if expected_dtype == torch.float16 else torch.float16
+    )
+    mismatched = [
+        name
+        for name, parameter in model.named_parameters()
+        if parameter.is_floating_point() and parameter.dtype == competing
+    ]
+    if mismatched:
+        raise RuntimeError(
+            "Qwen3.5 composite-to-text load leaked the competing low-precision dtype; "
+            "refusing training. First mismatches: "
+            + ", ".join(mismatched[:8])
+        )
+    return observed
 
 
 def _config_digest(config: CyberSFTConfig) -> str:
@@ -139,7 +182,8 @@ def _prepare_resume_directory(
         if not binding_path.is_file():
             if any(resume.iterdir()):
                 raise RuntimeError(
-                    "Cyber SFT resume directory exists without a binding receipt; refusing stale checkpoint reuse"
+                    "Cyber SFT resume directory exists without a binding receipt; "
+                    "refusing stale checkpoint reuse"
                 )
         else:
             try:
@@ -148,7 +192,8 @@ def _prepare_resume_directory(
                 raise RuntimeError("Cyber SFT resume binding is invalid JSON") from exc
             if observed != expected:
                 raise RuntimeError(
-                    "Cyber SFT resume binding differs from current model/corpus/config; refusing checkpoint reuse"
+                    "Cyber SFT resume binding differs from current model/corpus/config; "
+                    "refusing checkpoint reuse"
                 )
     resume.mkdir(parents=True, exist_ok=True)
     binding_path.write_text(
@@ -284,10 +329,12 @@ def _train_text(
         config.base_model,
         revision=config.base_revision,
         trust_remote_code=False,
+        dtype=dtype,
         quantization_config=quantization,
         device_map={"": device_index},
     )
     _assert_text_only_model(model)
+    observed_floating_dtypes = _assert_requested_model_dtype(model, dtype, torch)
     loaded_model_class = model.__class__.__name__
     if hasattr(model.config, "use_cache"):
         model.config.use_cache = False
@@ -368,7 +415,9 @@ def _train_text(
         ),
     )
     train_result = trainer.train(
-        resume_from_checkpoint=str(resume_checkpoint) if resume_checkpoint is not None else None
+        resume_from_checkpoint=(
+            str(resume_checkpoint) if resume_checkpoint is not None else None
+        )
     )
     train_metrics = _metrics_payload(dict(train_result.metrics))
     eval_metrics = (
@@ -428,6 +477,8 @@ def _train_text(
                 "model_class": loaded_model_class,
                 "expected_model_class": _EXPECTED_MODEL_CLASS,
                 "text_only": True,
+                "requested_compute_dtype": config.quantization.compute_dtype,
+                "observed_floating_dtypes_before_kbit_prepare": observed_floating_dtypes,
             },
             indent=2,
             sort_keys=True,
@@ -440,7 +491,9 @@ def _train_text(
             {
                 "schema_version": "sentinel.cyber-sft-resume-runtime.v1",
                 "resumed": resume_checkpoint is not None,
-                "resume_checkpoint": resume_checkpoint.name if resume_checkpoint is not None else None,
+                "resume_checkpoint": (
+                    resume_checkpoint.name if resume_checkpoint is not None else None
+                ),
                 "checkpoint_every_optimizer_steps": _RESUME_CHECKPOINT_STEPS,
                 "checkpoint_retention": _RESUME_CHECKPOINT_LIMIT,
                 "resume_binding": _resume_binding(config, plan),
