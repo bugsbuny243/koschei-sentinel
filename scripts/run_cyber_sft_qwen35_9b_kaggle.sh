@@ -97,6 +97,7 @@ verify_attest_and_export() {
   printf '\n[Koschei] Building fail-closed run attestation (%s)\n' "$profile"
   sentinel-cyber-sft-attest \
     --config "$config" \
+    --plan "$plan" \
     --run-dir "$run_dir" \
     --model-preflight "$profile_preflight" \
     --verification "$EXPORT_ROOT/verification.json" \
