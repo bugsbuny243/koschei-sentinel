@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from typing import Literal
 
@@ -9,11 +8,13 @@ from pydantic import Field
 
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutPrediction
 from koschei_sentinel.gold_holdout_inference_runner import (
+    GoldHoldoutGenerationPolicy,
     GoldHoldoutInferenceFailure,
     GoldHoldoutInferencePlan,
     GoldHoldoutInferenceRunReceipt,
     _digest_without,
     _load_inference_pack,
+    _policy_sha256,
 )
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
@@ -30,6 +31,7 @@ class GoldHoldoutInferenceVerification(StrictModel):
     plan_verified: bool
     receipt_verified: bool
     input_binding_verified: bool
+    generation_policy_verified: bool
     prediction_hashes_verified: bool
     identity_verified: bool
     complete_case_accounting: bool
@@ -88,6 +90,7 @@ def verify_gold_holdout_inference_output(
     plan_verified = False
     receipt_verified = False
     input_binding_verified = False
+    generation_policy_verified = False
     prediction_hashes_verified = False
     identity_verified = False
     complete_case_accounting = False
@@ -99,6 +102,9 @@ def verify_gold_holdout_inference_output(
         plan = GoldHoldoutInferencePlan.model_validate_json((output / "plan.json").read_bytes())
         receipt = GoldHoldoutInferenceRunReceipt.model_validate_json(
             (output / "receipt.json").read_bytes()
+        )
+        generation_policy = GoldHoldoutGenerationPolicy.model_validate_json(
+            (output / "generation-policy.json").read_bytes()
         )
         predictions, prediction_raw = _load_jsonl(
             output / "predictions.jsonl",
@@ -125,6 +131,12 @@ def verify_gold_holdout_inference_output(
         receipt_verified = expected_receipt_sha == receipt.receipt_sha256
         if not receipt_verified:
             violations.append("Gold HOLDOUT inference receipt self-hash does not verify")
+
+        generation_policy_verified = (
+            _policy_sha256(generation_policy) == plan.generation_policy_sha256
+        )
+        if not generation_policy_verified:
+            violations.append("Gold HOLDOUT generation policy SHA differs from inference plan")
 
         input_checks = (
             ("case_count", plan.case_count, case_count),
@@ -247,6 +259,7 @@ def verify_gold_holdout_inference_output(
         and plan_verified
         and receipt_verified
         and input_binding_verified
+        and generation_policy_verified
         and prediction_hashes_verified
         and identity_verified
         and complete_case_accounting
@@ -261,6 +274,7 @@ def verify_gold_holdout_inference_output(
         "plan_verified": plan_verified,
         "receipt_verified": receipt_verified,
         "input_binding_verified": input_binding_verified,
+        "generation_policy_verified": generation_policy_verified,
         "prediction_hashes_verified": prediction_hashes_verified,
         "identity_verified": identity_verified,
         "complete_case_accounting": complete_case_accounting,
