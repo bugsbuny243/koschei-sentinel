@@ -9,11 +9,15 @@ from pydantic import Field, model_validator
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
 from koschei_sentinel.cyber_training_bundle import CyberTrainingBundle
 from koschei_sentinel.defense_load_range import DefenseLoadRangeReport
-from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationReport
+from koschei_sentinel.gold_holdout_evaluation import (
+    GoldHoldoutEvaluationPolicy,
+    GoldHoldoutEvaluationReport,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
+from koschei_sentinel.training import canonical_json
 
 
 _DIGEST = r"^[a-f0-9]{64}$"
@@ -32,6 +36,7 @@ class CyberDefensePromotionEvidence(StrictModel):
     multi_incident_range_suite_sha256: str = Field(pattern=_DIGEST)
     defense_load_range_sha256: str = Field(pattern=_DIGEST)
     gold_holdout_evaluation_sha256: str = Field(pattern=_DIGEST)
+    gold_holdout_policy_sha256: str = Field(pattern=_DIGEST)
     cyber_range_passed: bool
     multi_incident_range_passed: bool
     defense_load_range_passed: bool
@@ -81,6 +86,32 @@ def _stable_sha(value: StrictModel) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _verify_gold_report_self_hash(report: GoldHoldoutEvaluationReport) -> None:
+    payload = report.model_dump(mode="json")
+    observed = payload.pop("report_sha256")
+    expected = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    if observed != expected:
+        raise ValueError("Gold HOLDOUT evaluation report self-hash does not verify")
+
+
+def _gold_passes_policy(
+    report: GoldHoldoutEvaluationReport,
+    policy: GoldHoldoutEvaluationPolicy,
+) -> bool:
+    if report.missing_case_ids or report.extra_case_ids or report.violations:
+        return False
+    checks = (
+        (report.structural_exact_rate, policy.minimum_structural_exact_rate),
+        (report.mode_accuracy, policy.minimum_mode_accuracy),
+        (report.action_accuracy, policy.minimum_action_accuracy),
+        (report.target_accuracy, policy.minimum_target_accuracy),
+        (report.evidence_grounding_rate, policy.minimum_evidence_grounding_rate),
+        (report.target_grounding_rate, policy.minimum_target_grounding_rate),
+        (report.outcome_verification_rate, policy.minimum_outcome_verification_rate),
+    )
+    return all(observed + 1e-12 >= minimum for observed, minimum in checks)
+
+
 def build_cyber_defense_promotion_evidence(
     *,
     promotion_id: str,
@@ -91,6 +122,7 @@ def build_cyber_defense_promotion_evidence(
     multi_incident_range_report: MultiIncidentCyberRangeSuiteReport,
     defense_load_range_report: DefenseLoadRangeReport,
     gold_holdout_report: GoldHoldoutEvaluationReport,
+    gold_holdout_policy: GoldHoldoutEvaluationPolicy,
 ) -> CyberDefensePromotionEvidence:
     if not training_bundle.ready_for_training:
         raise ValueError("cyber training bundle is not ready")
@@ -98,16 +130,19 @@ def build_cyber_defense_promotion_evidence(
         raise ValueError("Gold HOLDOUT report model_ref differs from promotion candidate")
     if gold_holdout_report.model_revision != candidate_model_revision:
         raise ValueError("Gold HOLDOUT report model_revision differs from promotion candidate")
+    _verify_gold_report_self_hash(gold_holdout_report)
 
     single_sha = _stable_sha(cyber_range_report)
     multi_sha = _stable_sha(multi_incident_range_report)
     load_sha = _stable_sha(defense_load_range_report)
     gold_sha = _stable_sha(gold_holdout_report)
+    gold_policy_sha = _stable_sha(gold_holdout_policy)
+    gold_passed = _gold_passes_policy(gold_holdout_report, gold_holdout_policy)
     ready = (
         cyber_range_report.passed
         and multi_incident_range_report.passed
         and defense_load_range_report.passed
-        and gold_holdout_report.passed
+        and gold_passed
     )
     digest_payload = "|".join(
         [
@@ -120,10 +155,11 @@ def build_cyber_defense_promotion_evidence(
             multi_sha,
             load_sha,
             gold_sha,
+            gold_policy_sha,
             str(int(cyber_range_report.passed)),
             str(int(multi_incident_range_report.passed)),
             str(int(defense_load_range_report.passed)),
-            str(int(gold_holdout_report.passed)),
+            str(int(gold_passed)),
         ]
     )
     digest = hashlib.sha256(digest_payload.encode("utf-8")).hexdigest()
@@ -138,10 +174,11 @@ def build_cyber_defense_promotion_evidence(
         multi_incident_range_suite_sha256=multi_sha,
         defense_load_range_sha256=load_sha,
         gold_holdout_evaluation_sha256=gold_sha,
+        gold_holdout_policy_sha256=gold_policy_sha,
         cyber_range_passed=cyber_range_report.passed,
         multi_incident_range_passed=multi_incident_range_report.passed,
         defense_load_range_passed=defense_load_range_report.passed,
-        gold_holdout_passed=gold_holdout_report.passed,
+        gold_holdout_passed=gold_passed,
         malicious_containment_rate=cyber_range_report.malicious_containment_rate,
         reroute_detection_rate=cyber_range_report.reroute_detection_rate,
         benign_high_impact_false_positive_rate=(
