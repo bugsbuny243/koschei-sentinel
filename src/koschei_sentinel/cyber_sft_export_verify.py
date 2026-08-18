@@ -20,6 +20,10 @@ from koschei_sentinel.cyber_sft_trainer import (
     CyberSFTTrainingReceipt,
 )
 from koschei_sentinel.cyber_sft_training import CyberSFTPlan, load_cyber_sft_config
+from koschei_sentinel.cyber_sft_training_source import (
+    CyberSFTTrainingSourceBinding,
+    verify_training_source_binding,
+)
 from koschei_sentinel.models import StrictModel
 
 
@@ -32,6 +36,7 @@ class CyberSFTExportVerification(StrictModel):
     attestation_sha256_verified: bool
     config_sha256_verified: bool
     plan_sha256_verified: bool
+    training_source_sha256_verified: bool
     model_preflight_sha256_verified: bool
     verification_sha256_verified: bool
     model_runtime_sha256_verified: bool
@@ -98,6 +103,7 @@ def _invalid(
         attestation_sha256_verified=False,
         config_sha256_verified=False,
         plan_sha256_verified=False,
+        training_source_sha256_verified=False,
         model_preflight_sha256_verified=False,
         verification_sha256_verified=False,
         model_runtime_sha256_verified=False,
@@ -119,6 +125,7 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
         "attestation": root / "run-attestation.json",
         "config": root / "training-config.json",
         "plan": root / "training-plan.json",
+        "training_source": root / "training-source.json",
         "model_preflight": root / "model-preflight.json",
         "verification": root / "verification.json",
         "profile": root / "selected-profile.txt",
@@ -154,6 +161,9 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
     try:
         config = load_cyber_sft_config(required_files["config"])
         plan = CyberSFTPlan.model_validate_json(required_files["plan"].read_bytes())
+        training_source = CyberSFTTrainingSourceBinding.model_validate_json(
+            required_files["training_source"].read_bytes()
+        )
         model_preflight = CyberModelAccessPreflight.model_validate_json(
             required_files["model_preflight"].read_bytes()
         )
@@ -191,6 +201,12 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
     plan_verified = _sha256(required_files["plan"]) == attestation.plan_sha256
     if not plan_verified:
         violations.append("execution plan SHA-256 differs from attestation")
+
+    training_source_verified = (
+        _sha256(required_files["training_source"]) == attestation.training_source_sha256
+    )
+    if not training_source_verified:
+        violations.append("training source SHA-256 differs from attestation")
 
     model_preflight_verified = (
         _sha256(required_files["model_preflight"])
@@ -277,6 +293,27 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
     if not repository_verified:
         violations.append("repository commit differs from attestation")
 
+    try:
+        verify_training_source_binding(
+            training_source,
+            config_path=required_files["config"],
+            plan_path=required_files["plan"],
+            repository_commit=repository_commit,
+        )
+        source_semantics_valid = (
+            training_source.run_id == attestation.run_id
+            and training_source.base_model == attestation.base_model
+            and training_source.base_revision == attestation.base_revision
+            and training_source.corpus_examples_sha256
+            == attestation.corpus_examples_sha256
+            and training_source.corpus_manifest_sha256
+            == attestation.corpus_manifest_sha256
+        )
+    except (OSError, TypeError, ValueError):
+        source_semantics_valid = False
+    if not source_semantics_valid:
+        violations.append("training source semantic bindings differ from attestation/export")
+
     plan_bindings = (
         plan.run_id == attestation.run_id
         and plan.base_model == attestation.base_model
@@ -322,6 +359,7 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
         attestation_verified
         and config_verified
         and plan_verified
+        and training_source_verified
         and model_preflight_verified
         and verification_verified
         and model_runtime_verified
@@ -333,6 +371,7 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
         and corpus_manifest_verified
         and profile_verified
         and repository_verified
+        and source_semantics_valid
         and plan_bindings
         and preflight_bindings
         and runtime_bindings
@@ -345,6 +384,7 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
         attestation_sha256_verified=attestation_verified,
         config_sha256_verified=config_verified,
         plan_sha256_verified=plan_verified,
+        training_source_sha256_verified=training_source_verified,
         model_preflight_sha256_verified=model_preflight_verified,
         verification_sha256_verified=verification_verified,
         model_runtime_sha256_verified=model_runtime_verified,
