@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import os
@@ -26,9 +27,11 @@ from koschei_sentinel.cyber_sft_training import (
     load_cyber_sft_examples,
     split_cyber_sft_examples,
 )
-from koschei_sentinel.training import resolve_under_root
+from koschei_sentinel.training import canonical_json, resolve_under_root
 
 _EXPECTED_MODEL_CLASS = "Qwen3_5ForCausalLM"
+_RESUME_CHECKPOINT_STEPS = 2
+_RESUME_CHECKPOINT_LIMIT = 2
 
 
 def _load_text_dependencies() -> dict[str, Any]:
@@ -101,6 +104,73 @@ def _assert_text_only_model(model: Any) -> None:
         )
 
 
+def _config_digest(config: CyberSFTConfig) -> str:
+    return hashlib.sha256(
+        canonical_json(config.model_dump(mode="json")).encode("utf-8")
+    ).hexdigest()
+
+
+def _resume_directory(root: Path, config: CyberSFTConfig) -> Path:
+    output = resolve_under_root(root, config.output_dir)
+    return output.parent / ".resume" / output.name
+
+
+def _resume_binding(config: CyberSFTConfig, plan: CyberSFTPlan) -> dict[str, object]:
+    return {
+        "schema_version": "sentinel.cyber-sft-resume-binding.v1",
+        "run_id": config.run_id,
+        "base_model": config.base_model,
+        "base_revision": config.base_revision,
+        "corpus_examples_sha256": plan.corpus_examples_sha256,
+        "corpus_manifest_sha256": plan.corpus_manifest_sha256,
+        "config_sha256": _config_digest(config),
+    }
+
+
+def _prepare_resume_directory(
+    root: Path,
+    config: CyberSFTConfig,
+    plan: CyberSFTPlan,
+) -> Path:
+    resume = _resume_directory(root, config)
+    binding_path = resume / "resume-binding.json"
+    expected = _resume_binding(config, plan)
+    if resume.exists():
+        if not binding_path.is_file():
+            if any(resume.iterdir()):
+                raise RuntimeError(
+                    "Cyber SFT resume directory exists without a binding receipt; refusing stale checkpoint reuse"
+                )
+        else:
+            try:
+                observed = json.loads(binding_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("Cyber SFT resume binding is invalid JSON") from exc
+            if observed != expected:
+                raise RuntimeError(
+                    "Cyber SFT resume binding differs from current model/corpus/config; refusing checkpoint reuse"
+                )
+    resume.mkdir(parents=True, exist_ok=True)
+    binding_path.write_text(
+        json.dumps(expected, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return resume
+
+
+def _last_checkpoint(checkpoints: Path) -> Path | None:
+    if not checkpoints.is_dir():
+        return None
+    candidates: list[tuple[int, Path]] = []
+    for path in checkpoints.iterdir():
+        if not path.is_dir() or not path.name.startswith("checkpoint-"):
+            continue
+        suffix = path.name.removeprefix("checkpoint-")
+        if suffix.isdigit():
+            candidates.append((int(suffix), path))
+    return max(candidates, default=(0, None), key=lambda row: row[0])[1]
+
+
 def execute_cyber_sft_text(
     config: CyberSFTConfig,
     plan: CyberSFTPlan,
@@ -130,6 +200,7 @@ def execute_cyber_sft_text(
     if output.exists():
         raise FileExistsError(f"Cyber SFT output already exists: {config.output_dir}")
     output.parent.mkdir(parents=True, exist_ok=True)
+    resume_dir = _prepare_resume_directory(root_path, config, plan)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
     try:
         manifest = _train_text(
@@ -139,8 +210,10 @@ def execute_cyber_sft_text(
             staging,
             dependencies,
             device_index=device_index,
+            resume_dir=resume_dir,
         )
         os.replace(staging, output)
+        shutil.rmtree(resume_dir, ignore_errors=True)
         return manifest
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
@@ -155,6 +228,7 @@ def _train_text(
     dependencies: dict[str, Any],
     *,
     device_index: int,
+    resume_dir: Path,
 ) -> CyberSFTAdapterManifest:
     torch = dependencies["torch"]
     tokenizer = dependencies["AutoTokenizer"].from_pretrained(
@@ -249,9 +323,13 @@ def _train_text(
             ),
         )
 
+    checkpoint_root = resume_dir / "checkpoints"
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
+    resume_checkpoint = _last_checkpoint(checkpoint_root)
+
     arguments_type = dependencies["TrainingArguments"]
     values: dict[str, Any] = {
-        "output_dir": str(staging / "checkpoints"),
+        "output_dir": str(checkpoint_root),
         "num_train_epochs": config.epochs,
         "per_device_train_batch_size": config.per_device_batch_size,
         "per_device_eval_batch_size": config.per_device_batch_size,
@@ -259,7 +337,9 @@ def _train_text(
         "learning_rate": config.learning_rate,
         "warmup_ratio": config.warmup_ratio,
         "logging_steps": config.logging_steps,
-        "save_strategy": "epoch",
+        "save_strategy": "steps",
+        "save_steps": _RESUME_CHECKPOINT_STEPS,
+        "save_total_limit": _RESUME_CHECKPOINT_LIMIT,
         "report_to": "none",
         "seed": config.seed,
         "data_seed": config.seed,
@@ -287,7 +367,9 @@ def _train_text(
             return_tensors="pt",
         ),
     )
-    train_result = trainer.train()
+    train_result = trainer.train(
+        resume_from_checkpoint=str(resume_checkpoint) if resume_checkpoint is not None else None
+    )
     train_metrics = _metrics_payload(dict(train_result.metrics))
     eval_metrics = (
         _metrics_payload(dict(trainer.evaluate()))
@@ -346,6 +428,22 @@ def _train_text(
                 "model_class": loaded_model_class,
                 "expected_model_class": _EXPECTED_MODEL_CLASS,
                 "text_only": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (staging / "resume-runtime.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "sentinel.cyber-sft-resume-runtime.v1",
+                "resumed": resume_checkpoint is not None,
+                "resume_checkpoint": resume_checkpoint.name if resume_checkpoint is not None else None,
+                "checkpoint_every_optimizer_steps": _RESUME_CHECKPOINT_STEPS,
+                "checkpoint_retention": _RESUME_CHECKPOINT_LIMIT,
+                "resume_binding": _resume_binding(config, plan),
             },
             indent=2,
             sort_keys=True,
