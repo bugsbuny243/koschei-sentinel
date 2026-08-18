@@ -14,6 +14,13 @@ from koschei_sentinel.cyber_sft_trainer import (
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json, resolve_under_root
 
+_EXPECTED_TEXT_RUNTIME = {
+    "loader": "AutoModelForCausalLM",
+    "model_class": "Qwen3_5ForCausalLM",
+    "expected_model_class": "Qwen3_5ForCausalLM",
+    "text_only": True,
+}
+
 
 class CyberSFTArtifactVerification(StrictModel):
     schema_version: Literal["sentinel.cyber-sft-artifact-verification.v1"] = (
@@ -25,6 +32,7 @@ class CyberSFTArtifactVerification(StrictModel):
     adapter_digest_verified: bool
     receipt_digest_verified: bool
     receipt_bindings_verified: bool
+    model_runtime_verified: bool
     global_step: int | None = Field(default=None, ge=0)
     violations: list[str]
 
@@ -50,6 +58,40 @@ def _receipt_digest(receipt: CyberSFTTrainingReceipt) -> str:
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
+def _verify_model_runtime(path: Path) -> tuple[bool, str | None]:
+    if not path.is_file():
+        return False, "model-runtime.json is missing"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, f"model-runtime.json is invalid: {exc}"
+    if not isinstance(payload, dict):
+        return False, "model-runtime.json must contain a JSON object"
+    for key, expected in _EXPECTED_TEXT_RUNTIME.items():
+        if payload.get(key) != expected:
+            return False, f"model runtime mismatch: {key}"
+    return True, None
+
+
+def _invalid_report(
+    *,
+    violations: list[str],
+    run_id: str | None = None,
+    smoke_only: bool | None = None,
+) -> CyberSFTArtifactVerification:
+    return CyberSFTArtifactVerification(
+        run_id=run_id,
+        valid=False,
+        smoke_only=smoke_only,
+        adapter_digest_verified=False,
+        receipt_digest_verified=False,
+        receipt_bindings_verified=False,
+        model_runtime_verified=False,
+        global_step=None,
+        violations=violations,
+    )
+
+
 def verify_cyber_sft_run(
     run_dir: str,
     *,
@@ -60,49 +102,27 @@ def verify_cyber_sft_run(
     violations: list[str] = []
     manifest_path = run_path / "adapter-manifest.json"
     receipt_path = run_path / "training-receipt.json"
+    runtime_path = run_path / "model-runtime.json"
     if not manifest_path.is_file():
         violations.append("adapter-manifest.json is missing")
     if not receipt_path.is_file():
         violations.append("training-receipt.json is missing")
     if violations:
-        return CyberSFTArtifactVerification(
-            run_id=None,
-            valid=False,
-            smoke_only=None,
-            adapter_digest_verified=False,
-            receipt_digest_verified=False,
-            receipt_bindings_verified=False,
-            global_step=None,
-            violations=violations,
-        )
+        return _invalid_report(violations=violations)
 
     try:
         manifest = CyberSFTAdapterManifest.model_validate_json(manifest_path.read_bytes())
     except ValueError as exc:
         violations.append(f"adapter manifest is invalid: {exc}")
-        return CyberSFTArtifactVerification(
-            run_id=None,
-            valid=False,
-            smoke_only=None,
-            adapter_digest_verified=False,
-            receipt_digest_verified=False,
-            receipt_bindings_verified=False,
-            global_step=None,
-            violations=violations,
-        )
+        return _invalid_report(violations=violations)
     try:
         receipt = CyberSFTTrainingReceipt.model_validate_json(receipt_path.read_bytes())
     except ValueError as exc:
         violations.append(f"training receipt is invalid: {exc}")
-        return CyberSFTArtifactVerification(
-            run_id=manifest.run_id,
-            valid=False,
-            smoke_only=(manifest.corpus_promotion_eligible is False),
-            adapter_digest_verified=False,
-            receipt_digest_verified=False,
-            receipt_bindings_verified=False,
-            global_step=None,
+        return _invalid_report(
             violations=violations,
+            run_id=manifest.run_id,
+            smoke_only=(manifest.corpus_promotion_eligible is False),
         )
 
     adapter_verified = False
@@ -147,6 +167,10 @@ def verify_cyber_sft_run(
             bindings_verified = False
             violations.append(f"training receipt binding mismatch: {field}")
 
+    runtime_verified, runtime_violation = _verify_model_runtime(runtime_path)
+    if runtime_violation is not None:
+        violations.append(runtime_violation)
+
     if receipt.global_step <= 0:
         violations.append("training receipt reports zero optimizer steps")
 
@@ -154,6 +178,7 @@ def verify_cyber_sft_run(
         adapter_verified
         and receipt_verified
         and bindings_verified
+        and runtime_verified
         and receipt.global_step > 0
         and not violations
     )
@@ -164,6 +189,7 @@ def verify_cyber_sft_run(
         adapter_digest_verified=adapter_verified,
         receipt_digest_verified=receipt_verified,
         receipt_bindings_verified=bindings_verified,
+        model_runtime_verified=runtime_verified,
         global_step=receipt.global_step,
         violations=violations,
     )
