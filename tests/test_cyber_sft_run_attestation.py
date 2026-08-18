@@ -16,7 +16,10 @@ from koschei_sentinel.cyber_sft_training import CyberSFTConfig
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _fixture(tmp_path: Path, monkeypatch) -> dict[str, object]:
@@ -168,7 +171,11 @@ def _fixture(tmp_path: Path, monkeypatch) -> dict[str, object]:
     verification_path = tmp_path / "verification.json"
     _write_json(verification_path, verification_payload)
     verification = CyberSFTArtifactVerification.model_validate(verification_payload)
-    monkeypatch.setattr(attestation_module, "verify_cyber_sft_run", lambda *_args, **_kwargs: verification)
+    monkeypatch.setattr(
+        attestation_module,
+        "verify_cyber_sft_run",
+        lambda *_args, **_kwargs: verification,
+    )
 
     return {
         "config": config,
@@ -193,7 +200,10 @@ def _build_kwargs(fixture: dict[str, object], tmp_path: Path) -> dict[str, objec
     }
 
 
-def test_attestation_is_deterministic_and_binds_resume(monkeypatch, tmp_path: Path) -> None:
+def test_attestation_is_deterministic_and_binds_resume(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     fixture = _fixture(tmp_path, monkeypatch)
     kwargs = _build_kwargs(fixture, tmp_path)
 
@@ -208,7 +218,10 @@ def test_attestation_is_deterministic_and_binds_resume(monkeypatch, tmp_path: Pa
     assert first.smoke_only is True
 
 
-def test_attestation_rejects_resolved_revision_drift(monkeypatch, tmp_path: Path) -> None:
+def test_attestation_rejects_resolved_revision_drift(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     fixture = _fixture(tmp_path, monkeypatch)
     path = fixture["preflight_path"]
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -219,7 +232,10 @@ def test_attestation_rejects_resolved_revision_drift(monkeypatch, tmp_path: Path
         build_cyber_sft_run_attestation(**_build_kwargs(fixture, tmp_path))
 
 
-def test_attestation_rejects_resume_binding_drift(monkeypatch, tmp_path: Path) -> None:
+def test_attestation_rejects_resume_binding_drift(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     fixture = _fixture(tmp_path, monkeypatch)
     path = fixture["run"] / "resume-runtime.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
