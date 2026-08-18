@@ -1,6 +1,9 @@
+from types import SimpleNamespace
+
 import pytest
 
 from koschei_sentinel.cyber_sft_text_trainer import (
+    _assert_requested_model_dtype,
     _assert_text_only_model,
     _last_checkpoint,
     _prepare_resume_directory,
@@ -82,6 +85,61 @@ def test_text_executor_rejects_expected_class_if_vision_module_is_present() -> N
 
     with pytest.raises(RuntimeError, match="loaded vision modules unexpectedly"):
         _assert_text_only_model(ExpectedModel())
+
+
+class _FakeParameter:
+    def __init__(self, dtype: str) -> None:
+        self.dtype = dtype
+
+    def is_floating_point(self) -> bool:
+        return True
+
+
+class _FakeDtypeModel:
+    def __init__(self, config_dtype: str, parameter_dtypes: list[str]) -> None:
+        self.config = SimpleNamespace(dtype=config_dtype)
+        self._parameters = [
+            (f"parameter-{index}", _FakeParameter(dtype))
+            for index, dtype in enumerate(parameter_dtypes)
+        ]
+
+    def parameters(self):
+        return [parameter for _name, parameter in self._parameters]
+
+    def named_parameters(self):
+        return list(self._parameters)
+
+
+def _fake_torch():
+    return SimpleNamespace(float16="float16", bfloat16="bfloat16")
+
+
+def test_requested_float16_dtype_accepts_float16_and_float32_parameters() -> None:
+    observed = _assert_requested_model_dtype(
+        _FakeDtypeModel("float16", ["float16", "float32"]),
+        "float16",
+        _fake_torch(),
+    )
+
+    assert observed == ["float16", "float32"]
+
+
+def test_requested_float16_dtype_rejects_bfloat16_leak() -> None:
+    with pytest.raises(RuntimeError, match="competing low-precision dtype"):
+        _assert_requested_model_dtype(
+            _FakeDtypeModel("float16", ["float16", "bfloat16", "float32"]),
+            "float16",
+            _fake_torch(),
+        )
+
+
+def test_requested_dtype_rejects_config_dtype_mismatch() -> None:
+    with pytest.raises(RuntimeError, match="text config dtype differs"):
+        _assert_requested_model_dtype(
+            _FakeDtypeModel("bfloat16", ["float16", "float32"]),
+            "float16",
+            _fake_torch(),
+        )
 
 
 def _resume_config(*, learning_rate: float = 0.0001) -> CyberSFTConfig:
