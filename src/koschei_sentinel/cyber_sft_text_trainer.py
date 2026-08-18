@@ -1,0 +1,363 @@
+from __future__ import annotations
+
+import inspect
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from koschei_sentinel.cyber_sft_trainer import (
+    _DENSE_QLORA_OPTIMIZER,
+    CyberSFTAdapterManifest,
+    _build_training_receipt,
+    _cuda_preflight,
+    _directory_digest,
+    _fast_kernel_warnings,
+    _metrics_payload,
+    _render_supervision,
+    _targets_digest,
+)
+from koschei_sentinel.cyber_sft_training import (
+    CyberExecutionProfile,
+    CyberSFTConfig,
+    CyberSFTPlan,
+    load_cyber_sft_examples,
+    split_cyber_sft_examples,
+)
+from koschei_sentinel.training import resolve_under_root
+
+_EXPECTED_MODEL_CLASS = "Qwen3_5ForCausalLM"
+
+
+def _load_text_dependencies() -> dict[str, Any]:
+    try:
+        import torch
+        from datasets import Dataset
+        from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            BitsAndBytesConfig,
+            DataCollatorForSeq2Seq,
+            Trainer,
+            TrainingArguments,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "Cyber SFT text dependencies are missing; install the project with .[training]"
+        ) from exc
+    return {
+        "torch": torch,
+        "Dataset": Dataset,
+        "LoraConfig": LoraConfig,
+        "PeftModel": PeftModel,
+        "get_peft_model": get_peft_model,
+        "prepare_model_for_kbit_training": prepare_model_for_kbit_training,
+        "AutoModelForCausalLM": AutoModelForCausalLM,
+        "AutoTokenizer": AutoTokenizer,
+        "BitsAndBytesConfig": BitsAndBytesConfig,
+        "DataCollatorForSeq2Seq": DataCollatorForSeq2Seq,
+        "Trainer": Trainer,
+        "TrainingArguments": TrainingArguments,
+    }
+
+
+def _text_lora_targets(model: Any, suffixes: list[str]) -> list[str]:
+    suffix_set = set(suffixes)
+    targets: list[str] = []
+    for name, _module in model.named_modules():
+        leaf = name.rsplit(".", 1)[-1]
+        if leaf not in suffix_set:
+            continue
+        lowered = name.lower()
+        if "visual" in lowered or "vision" in lowered:
+            raise RuntimeError("Cyber SFT text executor resolved a vision module as a LoRA target")
+        if name.startswith("model.layers.") or ".language_model.layers." in name:
+            targets.append(name)
+    targets = sorted(set(targets))
+    if not targets:
+        raise RuntimeError("no Qwen3.5 text-backbone LoRA targets matched the configured suffixes")
+    return targets
+
+
+def _assert_text_only_model(model: Any) -> None:
+    class_name = model.__class__.__name__
+    if class_name != _EXPECTED_MODEL_CLASS:
+        raise RuntimeError(
+            "Cyber SFT expected the official Qwen3.5 text-only causal-LM class, "
+            f"got {class_name}"
+        )
+    forbidden = sorted(
+        name
+        for name, _module in model.named_modules()
+        if "visual" in name.lower() or "vision" in name.lower()
+    )
+    if forbidden:
+        raise RuntimeError(
+            "Cyber SFT text executor loaded vision modules unexpectedly: "
+            + ", ".join(forbidden[:8])
+        )
+
+
+def execute_cyber_sft_text(
+    config: CyberSFTConfig,
+    plan: CyberSFTPlan,
+    *,
+    root: str | Path = ".",
+) -> CyberSFTAdapterManifest:
+    if config.run_id != plan.run_id or config.stage is not plan.stage:
+        raise ValueError("Cyber SFT plan does not match the supplied config")
+    if config.execution_profile is not plan.execution_profile:
+        raise ValueError("Cyber SFT plan execution profile differs from config")
+    if config.base_model != plan.base_model or config.base_revision != plan.base_revision:
+        raise ValueError("Cyber SFT plan base model pin differs from config")
+    if (
+        config.execution_profile is not CyberExecutionProfile.DENSE_SINGLE_GPU_QLORA
+        or not plan.executable_with_current_trainer
+    ):
+        raise RuntimeError(
+            "this Cyber SFT plan requires the distributed MoE executor and cannot be "
+            "started by the dense text-only single-GPU QLoRA trainer"
+        )
+
+    dependencies = _load_text_dependencies()
+    torch = dependencies["torch"]
+    device_index = _cuda_preflight(config, torch)
+    root_path = Path(root).resolve()
+    output = resolve_under_root(root_path, config.output_dir)
+    if output.exists():
+        raise FileExistsError(f"Cyber SFT output already exists: {config.output_dir}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
+    try:
+        manifest = _train_text(
+            config,
+            plan,
+            root_path,
+            staging,
+            dependencies,
+            device_index=device_index,
+        )
+        os.replace(staging, output)
+        return manifest
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+def _train_text(
+    config: CyberSFTConfig,
+    plan: CyberSFTPlan,
+    root: Path,
+    staging: Path,
+    dependencies: dict[str, Any],
+    *,
+    device_index: int,
+) -> CyberSFTAdapterManifest:
+    torch = dependencies["torch"]
+    tokenizer = dependencies["AutoTokenizer"].from_pretrained(
+        config.base_model,
+        revision=config.base_revision,
+        trust_remote_code=False,
+    )
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    rows, examples_sha, manifest_sha, promotion_eligible = load_cyber_sft_examples(
+        config,
+        root=root,
+    )
+    if examples_sha != plan.corpus_examples_sha256:
+        raise ValueError("Cyber SFT corpus changed after plan creation")
+    if manifest_sha != plan.corpus_manifest_sha256:
+        raise ValueError("Cyber SFT corpus manifest changed after plan creation")
+    if promotion_eligible != plan.corpus_promotion_eligible:
+        raise ValueError("Cyber SFT corpus promotion eligibility changed after plan creation")
+
+    training_rows, validation_rows = split_cyber_sft_examples(
+        rows,
+        validation_ratio=config.validation_ratio,
+        seed=config.seed,
+    )
+    train_features = [
+        _render_supervision(row, tokenizer, config.max_sequence_length)
+        for row in training_rows
+    ]
+    eval_features = [
+        _render_supervision(row, tokenizer, config.max_sequence_length)
+        for row in validation_rows
+    ]
+    dataset_type = dependencies["Dataset"]
+    train_dataset = dataset_type.from_list(train_features)
+    eval_dataset = dataset_type.from_list(eval_features) if eval_features else None
+
+    torch.cuda.reset_peak_memory_stats(device_index)
+    dtype = (
+        torch.bfloat16
+        if config.quantization.compute_dtype == "bfloat16"
+        else torch.float16
+    )
+    quantization = dependencies["BitsAndBytesConfig"](
+        load_in_4bit=config.quantization.bits == 4,
+        load_in_8bit=config.quantization.bits == 8,
+        bnb_4bit_quant_type=config.quantization.quant_type,
+        bnb_4bit_use_double_quant=config.quantization.double_quant,
+        bnb_4bit_compute_dtype=dtype,
+    )
+    model = dependencies["AutoModelForCausalLM"].from_pretrained(
+        config.base_model,
+        revision=config.base_revision,
+        trust_remote_code=False,
+        quantization_config=quantization,
+        device_map={"": device_index},
+    )
+    _assert_text_only_model(model)
+    if hasattr(model.config, "use_cache"):
+        model.config.use_cache = False
+    model = dependencies["prepare_model_for_kbit_training"](
+        model,
+        use_gradient_checkpointing=config.gradient_checkpointing,
+    )
+
+    if config.input_adapter_dir is not None:
+        adapter_path = resolve_under_root(root, config.input_adapter_dir)
+        model = dependencies["PeftModel"].from_pretrained(
+            model,
+            str(adapter_path),
+            is_trainable=True,
+        )
+        targets = sorted(
+            name
+            for name, parameter in model.named_parameters()
+            if parameter.requires_grad and "lora_" in name
+        )
+        if not targets:
+            raise RuntimeError("input Cyber SFT adapter contains no trainable LoRA parameters")
+    else:
+        targets = _text_lora_targets(model, config.lora.target_suffixes)
+        model = dependencies["get_peft_model"](
+            model,
+            dependencies["LoraConfig"](
+                task_type="CAUSAL_LM",
+                r=config.lora.rank,
+                lora_alpha=config.lora.alpha,
+                lora_dropout=config.lora.dropout,
+                target_modules=targets,
+            ),
+        )
+
+    arguments_type = dependencies["TrainingArguments"]
+    values: dict[str, Any] = {
+        "output_dir": str(staging / "checkpoints"),
+        "num_train_epochs": config.epochs,
+        "per_device_train_batch_size": config.per_device_batch_size,
+        "per_device_eval_batch_size": config.per_device_batch_size,
+        "gradient_accumulation_steps": config.gradient_accumulation_steps,
+        "learning_rate": config.learning_rate,
+        "warmup_ratio": config.warmup_ratio,
+        "logging_steps": config.logging_steps,
+        "save_strategy": "epoch",
+        "report_to": "none",
+        "seed": config.seed,
+        "data_seed": config.seed,
+        "bf16": config.quantization.compute_dtype == "bfloat16",
+        "fp16": config.quantization.compute_dtype == "float16",
+        "remove_unused_columns": False,
+        "gradient_checkpointing": config.gradient_checkpointing,
+        "optim": _DENSE_QLORA_OPTIMIZER,
+    }
+    strategy_key = (
+        "eval_strategy"
+        if "eval_strategy" in inspect.signature(arguments_type.__init__).parameters
+        else "evaluation_strategy"
+    )
+    values[strategy_key] = "epoch" if eval_dataset is not None else "no"
+    trainer = dependencies["Trainer"](
+        model=model,
+        args=arguments_type(**values),
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        data_collator=dependencies["DataCollatorForSeq2Seq"](
+            tokenizer=tokenizer,
+            padding=True,
+            label_pad_token_id=-100,
+            return_tensors="pt",
+        ),
+    )
+    train_result = trainer.train()
+    train_metrics = _metrics_payload(dict(train_result.metrics))
+    eval_metrics = (
+        _metrics_payload(dict(trainer.evaluate()))
+        if eval_dataset is not None
+        else {}
+    )
+
+    adapter_dir = staging / "adapter"
+    model.save_pretrained(adapter_dir, safe_serialization=True)
+    tokenizer.save_pretrained(adapter_dir)
+    files = sorted(
+        str(path.relative_to(staging))
+        for path in adapter_dir.rglob("*")
+        if path.is_file()
+    )
+    manifest = CyberSFTAdapterManifest(
+        run_id=config.run_id,
+        stage=config.stage.value,
+        execution_profile=config.execution_profile,
+        base_model=config.base_model,
+        base_revision=config.base_revision,
+        corpus_examples_sha256=examples_sha,
+        corpus_manifest_sha256=manifest_sha,
+        corpus_promotion_eligible=promotion_eligible,
+        input_adapter_dir=config.input_adapter_dir,
+        adapter_digest=_directory_digest(staging, files),
+        adapter_files=files,
+        trainable_target_module_count=len(targets),
+        trainable_target_modules_sha256=_targets_digest(targets),
+        training_examples=len(training_rows),
+        validation_examples=len(validation_rows),
+        gradient_checkpointing=config.gradient_checkpointing,
+        optimizer=_DENSE_QLORA_OPTIMIZER,
+        output_dir=config.output_dir,
+    )
+    (staging / "adapter-manifest.json").write_text(
+        json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    receipt = _build_training_receipt(
+        manifest=manifest,
+        trainer=trainer,
+        train_metrics=train_metrics,
+        eval_metrics=eval_metrics,
+        torch=torch,
+        device_index=device_index,
+    )
+    (staging / "training-receipt.json").write_text(
+        json.dumps(receipt.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (staging / "model-runtime.json").write_text(
+        json.dumps(
+            {
+                "loader": "AutoModelForCausalLM",
+                "model_class": model.get_base_model().__class__.__name__
+                if hasattr(model, "get_base_model")
+                else model.__class__.__name__,
+                "expected_model_class": _EXPECTED_MODEL_CLASS,
+                "text_only": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    warnings = _fast_kernel_warnings()
+    if warnings:
+        (staging / "runtime-warnings.json").write_text(
+            json.dumps({"warnings": warnings}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    return manifest
