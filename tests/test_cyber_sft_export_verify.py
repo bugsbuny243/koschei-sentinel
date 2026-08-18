@@ -178,6 +178,11 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
             "loader": "AutoModelForCausalLM",
             "model_class": "Qwen3_5ForCausalLM",
             "text_only": True,
+            "requested_compute_dtype": "float16",
+            "observed_floating_dtypes_before_kbit_prepare": [
+                "float16",
+                "float32",
+            ],
         },
     )
     resume_runtime_raw = _write_json(
@@ -283,3 +288,26 @@ def test_portable_export_rejects_plan_tampering(
     assert report.valid is False
     assert report.plan_sha256_verified is False
     assert any("execution plan SHA-256" in row for row in report.violations)
+
+
+def test_portable_export_rejects_dtype_semantic_leak(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = _build_export(tmp_path, monkeypatch)
+    runtime_path = root / "run" / "model-runtime.json"
+    runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+    runtime["observed_floating_dtypes_before_kbit_prepare"].append("bfloat16")
+    runtime_raw = _write_json(runtime_path, runtime)
+
+    attestation_path = root / "run-attestation.json"
+    attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+    attestation["model_runtime_sha256"] = _sha(runtime_raw)
+    attestation["attestation_sha256"] = _attestation_digest(attestation)
+    _write_json(attestation_path, attestation)
+
+    report = verify_cyber_sft_export(root)
+
+    assert report.valid is False
+    assert report.model_runtime_sha256_verified is True
+    assert any("runtime semantic bindings" in row for row in report.violations)
