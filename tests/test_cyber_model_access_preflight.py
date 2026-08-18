@@ -11,8 +11,7 @@ class _FakeConfig:
     model_type = "qwen3_5"
 
 
-class _FakeCausalLM:
-    __name__ = "Qwen3_5ForCausalLM"
+_FakeCausalLM = type("Qwen3_5ForCausalLM", (), {})
 
 
 def _config() -> CyberSFTConfig:
