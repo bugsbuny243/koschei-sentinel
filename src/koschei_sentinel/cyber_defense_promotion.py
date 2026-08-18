@@ -98,6 +98,8 @@ def _gold_passes_policy(
     report: GoldHoldoutEvaluationReport,
     policy: GoldHoldoutEvaluationPolicy,
 ) -> bool:
+    if report.case_count < policy.minimum_case_count:
+        return False
     if report.missing_case_ids or report.extra_case_ids or report.violations:
         return False
     checks = (
