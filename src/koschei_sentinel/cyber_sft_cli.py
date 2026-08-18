@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from koschei_sentinel.cyber_sft_trainer import execute_cyber_sft
+from koschei_sentinel.cyber_sft_text_trainer import execute_cyber_sft_text
 from koschei_sentinel.cyber_sft_training import load_cyber_sft_config, plan_cyber_sft
 
 
@@ -17,7 +17,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--execute",
         action="store_true",
-        help="Run QLoRA after local corpus planning; default is a network-free dry run",
+        help=(
+            "Run the text-only Qwen3.5 causal-LM QLoRA executor after local corpus planning; "
+            "default is a network-free dry run"
+        ),
     )
     return parser
 
@@ -34,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(plan.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-        result = execute_cyber_sft(config, plan) if args.execute else plan
+        result = execute_cyber_sft_text(config, plan) if args.execute else plan
         print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
         return 0
     except (FileExistsError, OSError, RuntimeError, TypeError, ValueError) as exc:
