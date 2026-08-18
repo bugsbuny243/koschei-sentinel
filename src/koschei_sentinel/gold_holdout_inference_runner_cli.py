@@ -42,14 +42,6 @@ def _load_policy(path: str | None) -> GoldHoldoutGenerationPolicy | None:
         raise ValueError(f"invalid Gold HOLDOUT generation policy: {path}") from exc
 
 
-def _write_policy(output_dir: str, policy: GoldHoldoutGenerationPolicy) -> None:
-    destination = Path(output_dir) / "generation-policy.json"
-    destination.write_text(
-        json.dumps(policy.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -81,7 +73,6 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             generation_policy=selected_policy,
         )
-        _write_policy(args.output_dir, selected_policy)
         print(json.dumps(receipt.model_dump(mode="json"), indent=2, sort_keys=True))
         return 0
     except (FileExistsError, OSError, RuntimeError, TypeError, ValueError) as exc:
