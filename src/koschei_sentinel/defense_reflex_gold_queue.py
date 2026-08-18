@@ -118,26 +118,6 @@ def _split_for_basis(
     return GoldReviewSplit.HOLDOUT
 
 
-def _model_visible_ticks(report: object) -> list[dict[str, object]]:
-    return [
-        {
-            "tick": row.tick,
-            "graph_id": row.graph_id,
-            "defense_mode": row.defense_mode.value,
-            "current_stage": row.current_stage,
-            "attack_confidence": row.attack_confidence,
-            "authorized_actions": [action.value for action in row.authorized_actions],
-            "reassessment_disposition": (
-                row.reassessment_disposition.value
-                if row.reassessment_disposition is not None
-                else None
-            ),
-            "reroute_detected": row.reroute_detected,
-        }
-        for row in report.ticks
-    ]
-
-
 def _packet_digest(payload: dict[str, object]) -> str:
     unsigned = dict(payload)
     unsigned.pop("packet_sha256", None)
@@ -165,7 +145,6 @@ def build_gold_review_packet(
         "graph_snapshots": [
             graph.model_dump(mode="json") for graph in scenario.graph_snapshots
         ],
-        "observed_ticks": _model_visible_ticks(report),
     }
     visible_sha = _sha256_text(canonical_json(model_visible_context))
     review_only_context: dict[str, object] = {
