@@ -20,6 +20,7 @@ LOWMEM_RUN_DIR="$TRAINING_ROOT/runs/qwen35-9b-smoke-lowmem-001"
 export HF_HOME="${HF_HOME:-/kaggle/working/hf-cache}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
 
+rm -rf "$EXPORT_ROOT"
 mkdir -p "$EXPORT_ROOT"
 
 printf '\n[Koschei] Installing text-only Cyber SFT runtime\n'
