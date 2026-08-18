@@ -32,6 +32,11 @@ from koschei_sentinel.training import canonical_json, resolve_under_root
 _EXPECTED_MODEL_CLASS = "Qwen3_5ForCausalLM"
 _RESUME_CHECKPOINT_STEPS = 2
 _RESUME_CHECKPOINT_LIMIT = 2
+_SUPPORTED_LORA_TARGET_TYPES = {
+    "torch.nn.modules.linear.Linear",
+    "bitsandbytes.nn.modules.Linear4bit",
+    "bitsandbytes.nn.modules.Linear8bitLt",
+}
 
 
 def _load_text_dependencies() -> dict[str, Any]:
@@ -87,6 +92,42 @@ def _text_lora_targets(model: Any, suffixes: list[str]) -> list[str]:
             "no Qwen3.5 text-backbone LoRA targets matched the configured suffixes"
         )
     return targets
+
+
+def _module_type_name(module: Any) -> str:
+    return f"{module.__class__.__module__}.{module.__class__.__name__}"
+
+
+def _assert_lora_target_module_types(
+    model: Any,
+    targets: list[str],
+) -> dict[str, int]:
+    modules = dict(model.named_modules())
+    counts: dict[str, int] = {}
+    unsupported: list[str] = []
+    missing: list[str] = []
+    for target in targets:
+        module = modules.get(target)
+        if module is None:
+            missing.append(target)
+            continue
+        module_type = _module_type_name(module)
+        counts[module_type] = counts.get(module_type, 0) + 1
+        if module_type not in _SUPPORTED_LORA_TARGET_TYPES:
+            unsupported.append(f"{target}={module_type}")
+    if missing:
+        raise RuntimeError(
+            "resolved LoRA targets disappeared before PEFT wrapping: "
+            + ", ".join(missing[:8])
+        )
+    if unsupported:
+        raise RuntimeError(
+            "Qwen3.5 LoRA target uses an unsupported projection module type; "
+            "expected PyTorch Linear or bitsandbytes Linear4bit/Linear8bitLt. "
+            "First mismatches: "
+            + ", ".join(unsupported[:8])
+        )
+    return dict(sorted(counts.items()))
 
 
 def _assert_text_only_model(model: Any) -> None:
@@ -348,6 +389,7 @@ def _train_text(
         use_gradient_checkpointing=config.gradient_checkpointing,
     )
 
+    lora_target_module_types: dict[str, int] = {}
     if config.input_adapter_dir is not None:
         adapter_path = resolve_under_root(root, config.input_adapter_dir)
         model = dependencies["PeftModel"].from_pretrained(
@@ -364,6 +406,7 @@ def _train_text(
             raise RuntimeError("input Cyber SFT adapter contains no trainable LoRA parameters")
     else:
         targets = _text_lora_targets(model, config.lora.target_suffixes)
+        lora_target_module_types = _assert_lora_target_module_types(model, targets)
         model = dependencies["get_peft_model"](
             model,
             dependencies["LoraConfig"](
@@ -484,6 +527,7 @@ def _train_text(
                 "text_only": True,
                 "requested_compute_dtype": config.quantization.compute_dtype,
                 "observed_floating_dtypes_before_kbit_prepare": observed_floating_dtypes,
+                "lora_target_module_types_before_peft": lora_target_module_types,
             },
             indent=2,
             sort_keys=True,
