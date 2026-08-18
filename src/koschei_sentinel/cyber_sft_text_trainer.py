@@ -24,7 +24,9 @@ from koschei_sentinel.cyber_sft_training import (
     CyberExecutionProfile,
     CyberSFTConfig,
     CyberSFTPlan,
+    _combined_promotion_eligibility,
     load_cyber_sft_examples,
+    load_cyber_sft_validation_examples,
     split_cyber_sft_examples,
 )
 from koschei_sentinel.training import canonical_json, resolve_under_root
@@ -174,15 +176,12 @@ def _assert_requested_model_dtype(
             f"{expected_name}; observed={observed}"
         )
 
-    competing = (
-        torch.bfloat16 if expected_dtype == torch.float16 else torch.float16
-    )
+    competing = torch.bfloat16 if expected_dtype == torch.float16 else torch.float16
     competing_name = _dtype_name(competing)
     mismatched = [
         name
         for name, parameter in model.named_parameters()
-        if parameter.is_floating_point()
-        and _dtype_name(parameter.dtype) == competing_name
+        if parameter.is_floating_point() and _dtype_name(parameter.dtype) == competing_name
     ]
     if mismatched:
         raise RuntimeError(
@@ -205,7 +204,7 @@ def _resume_directory(root: Path, config: CyberSFTConfig) -> Path:
 
 
 def _resume_binding(config: CyberSFTConfig, plan: CyberSFTPlan) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "schema_version": "sentinel.cyber-sft-resume-binding.v1",
         "run_id": config.run_id,
         "base_model": config.base_model,
@@ -214,6 +213,15 @@ def _resume_binding(config: CyberSFTConfig, plan: CyberSFTPlan) -> dict[str, obj
         "corpus_manifest_sha256": plan.corpus_manifest_sha256,
         "config_sha256": _config_digest(config),
     }
+    if plan.explicit_validation:
+        payload.update(
+            {
+                "explicit_validation": True,
+                "validation_corpus_examples_sha256": plan.validation_corpus_examples_sha256,
+                "validation_corpus_manifest_sha256": plan.validation_corpus_manifest_sha256,
+            }
+        )
+    return payload
 
 
 def _prepare_resume_directory(
@@ -260,6 +268,68 @@ def _last_checkpoint(checkpoints: Path) -> Path | None:
         if suffix.isdigit():
             candidates.append((int(suffix), path))
     return max(candidates, default=(0, None), key=lambda row: row[0])[1]
+
+
+def _assigned_training_rows(
+    config: CyberSFTConfig,
+    plan: CyberSFTPlan,
+    rows: list[Any],
+    training_promotion_eligible: bool | None,
+    *,
+    root: Path,
+) -> tuple[list[Any], list[Any]]:
+    explicit_requested = config.validation_corpus_dir is not None
+    if plan.explicit_validation != explicit_requested:
+        raise ValueError("Cyber SFT plan explicit validation mode differs from config")
+
+    if not explicit_requested:
+        if training_promotion_eligible != plan.corpus_promotion_eligible:
+            raise ValueError("Cyber SFT corpus promotion eligibility changed after plan creation")
+        training_rows, validation_rows = split_cyber_sft_examples(
+            rows,
+            validation_ratio=config.validation_ratio,
+            seed=config.seed,
+        )
+    else:
+        loaded = load_cyber_sft_validation_examples(config, root=root)
+        if loaded is None:
+            raise RuntimeError("explicit validation corpus was not loaded")
+        validation_rows, validation_examples_sha, validation_manifest_sha, validation_promotion = (
+            loaded
+        )
+        if validation_examples_sha != plan.validation_corpus_examples_sha256:
+            raise ValueError("Cyber SFT validation examples changed after plan creation")
+        if validation_manifest_sha != plan.validation_corpus_manifest_sha256:
+            raise ValueError("Cyber SFT validation manifest changed after plan creation")
+        combined = _combined_promotion_eligibility(
+            training_promotion_eligible,
+            validation_promotion,
+        )
+        if combined != plan.corpus_promotion_eligible:
+            raise ValueError(
+                "Cyber SFT explicit TRAIN/VALIDATION promotion eligibility changed after planning"
+            )
+        training_ids = {str(row.example_id) for row in rows}
+        validation_ids = {str(row.example_id) for row in validation_rows}
+        if training_ids & validation_ids:
+            raise ValueError("Cyber SFT explicit TRAIN/VALIDATION example IDs overlap at execution")
+        training_scenario_ids = {
+            str(row.scenario_id) for row in rows if hasattr(row, "scenario_id")
+        }
+        validation_scenario_ids = {
+            str(row.scenario_id)
+            for row in validation_rows
+            if hasattr(row, "scenario_id")
+        }
+        if training_scenario_ids & validation_scenario_ids:
+            raise ValueError("Cyber SFT explicit TRAIN/VALIDATION scenario IDs overlap at execution")
+        training_rows = rows
+
+    if len(training_rows) != plan.training_examples:
+        raise ValueError("Cyber SFT training example count changed after plan creation")
+    if len(validation_rows) != plan.validation_examples:
+        raise ValueError("Cyber SFT validation example count changed after plan creation")
+    return training_rows, validation_rows
 
 
 def execute_cyber_sft_text(
@@ -338,13 +408,13 @@ def _train_text(
         raise ValueError("Cyber SFT corpus changed after plan creation")
     if manifest_sha != plan.corpus_manifest_sha256:
         raise ValueError("Cyber SFT corpus manifest changed after plan creation")
-    if promotion_eligible != plan.corpus_promotion_eligible:
-        raise ValueError("Cyber SFT corpus promotion eligibility changed after plan creation")
 
-    training_rows, validation_rows = split_cyber_sft_examples(
+    training_rows, validation_rows = _assigned_training_rows(
+        config,
+        plan,
         rows,
-        validation_ratio=config.validation_ratio,
-        seed=config.seed,
+        promotion_eligible,
+        root=root,
     )
     train_features = [
         _render_supervision(row, tokenizer, config.max_sequence_length)
@@ -490,7 +560,7 @@ def _train_text(
         base_revision=config.base_revision,
         corpus_examples_sha256=examples_sha,
         corpus_manifest_sha256=manifest_sha,
-        corpus_promotion_eligible=promotion_eligible,
+        corpus_promotion_eligible=plan.corpus_promotion_eligible,
         input_adapter_dir=config.input_adapter_dir,
         adapter_digest=_directory_digest(staging, files),
         adapter_files=files,
