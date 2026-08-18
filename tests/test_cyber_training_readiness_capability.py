@@ -1,5 +1,9 @@
 from koschei_sentinel.cyber_sft_training import CyberSFTConfig
-from koschei_sentinel.cyber_training_readiness import _quantization_capability_blocker
+from koschei_sentinel.cyber_training_readiness import (
+    _quantization_capability_blocker,
+    _release_version_tuple,
+    _transformers_version_blocker,
+)
 
 
 def _config(bits: int) -> CyberSFTConfig:
@@ -38,3 +42,24 @@ def test_load_in_8bit_rejects_compute_capability_below_75() -> None:
 
 def test_load_in_8bit_accepts_compute_capability_75() -> None:
     assert _quantization_capability_blocker(_config(8), (7, 5)) is None
+
+
+def test_transformers_511_is_blocked_for_qwen35_dtype_integrity() -> None:
+    blocker = _transformers_version_blocker("5.11.1")
+    assert blocker is not None
+    assert "5.12" in blocker
+
+
+def test_transformers_512_is_accepted() -> None:
+    assert _transformers_version_blocker("5.12.0") is None
+
+
+def test_transformers_release_suffix_parses_release_components() -> None:
+    assert _release_version_tuple("5.12.0.dev0") == (5, 12, 0)
+    assert _release_version_tuple("5.13.1rc1") == (5, 13, 1)
+
+
+def test_unparseable_transformers_version_is_blocked() -> None:
+    blocker = _transformers_version_blocker("nightly")
+    assert blocker is not None
+    assert "cannot parse" in blocker
