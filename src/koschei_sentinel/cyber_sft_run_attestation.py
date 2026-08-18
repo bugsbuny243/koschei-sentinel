@@ -21,6 +21,10 @@ from koschei_sentinel.cyber_sft_training import (
     CyberSFTPlan,
     load_cyber_sft_config,
 )
+from koschei_sentinel.cyber_sft_training_source import (
+    CyberSFTTrainingSourceBinding,
+    verify_training_source_binding,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json, resolve_under_root
 
@@ -39,6 +43,7 @@ class CyberSFTRunAttestation(StrictModel):
     resolved_model_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
     config_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    training_source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     model_preflight_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     verification_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     model_runtime_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -113,6 +118,7 @@ def build_cyber_sft_run_attestation(
     *,
     config_path: str | Path,
     plan_path: str | Path,
+    training_source_path: str | Path,
     run_dir: str,
     model_preflight_path: str | Path,
     verification_path: str | Path,
@@ -130,6 +136,15 @@ def build_cyber_sft_run_attestation(
     config = load_cyber_sft_config(config_path)
     plan_raw = Path(plan_path).read_bytes()
     plan = CyberSFTPlan.model_validate_json(plan_raw)
+    training_source_raw = Path(training_source_path).read_bytes()
+    training_source = CyberSFTTrainingSourceBinding.model_validate_json(training_source_raw)
+    verify_training_source_binding(
+        training_source,
+        config_path=config_path,
+        plan_path=plan_path,
+        repository_commit=repository_commit,
+    )
+
     run_path = resolve_under_root(root_path, run_dir)
     configured_run_path = resolve_under_root(root_path, config.output_dir)
     if run_path != configured_run_path:
@@ -240,6 +255,19 @@ def build_cyber_sft_run_attestation(
         ("base_revision", manifest.base_revision, config.base_revision),
         ("receipt base_revision", receipt.base_revision, config.base_revision),
         ("receipt digest", receipt.adapter_digest, manifest.adapter_digest),
+        ("source run_id", training_source.run_id, config.run_id),
+        ("source base_model", training_source.base_model, config.base_model),
+        ("source base_revision", training_source.base_revision, config.base_revision),
+        (
+            "source corpus examples",
+            training_source.corpus_examples_sha256,
+            manifest.corpus_examples_sha256,
+        ),
+        (
+            "source corpus manifest",
+            training_source.corpus_manifest_sha256,
+            manifest.corpus_manifest_sha256,
+        ),
     )
     for label, observed, expected in binding_checks:
         if observed != expected:
@@ -257,6 +285,7 @@ def build_cyber_sft_run_attestation(
         "resolved_model_revision": model_preflight.resolved_revision,
         "config_sha256": _config_sha256(config),
         "plan_sha256": _sha256_bytes(plan_raw),
+        "training_source_sha256": _sha256_bytes(training_source_raw),
         "model_preflight_sha256": _sha256_bytes(model_preflight_raw),
         "verification_sha256": _sha256_bytes(supplied_verification_raw),
         "model_runtime_sha256": _sha256_bytes(model_runtime_raw),
