@@ -12,10 +12,17 @@ from tests.test_cyber_defense_promotion import _bundle, _load, _multi, _single
 from tests.test_gold_holdout_evaluation_evidence import _passing_fixture
 
 
-def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path) -> None:
-    release, pack, output, plan = _passing_fixture(tmp_path)
+def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path, monkeypatch) -> None:
+    release, pack, output, plan, candidate_export = _passing_fixture(
+        tmp_path,
+        monkeypatch,
+    )
 
-    verification = verify_gold_holdout_inference_output(output, pack)
+    verification = verify_gold_holdout_inference_output(
+        output,
+        pack,
+        candidate_export,
+    )
     assert verification.valid is True
     assert verification.complete_case_accounting is True
     assert verification.failure_count == 0
@@ -25,6 +32,7 @@ def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path) -> None:
         release_dir=release,
         inference_pack_dir=pack,
         inference_output_dir=output,
+        candidate_export_dir=candidate_export,
         policy=policy,
     )
     assert evidence.passed is True
