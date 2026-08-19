@@ -1,11 +1,16 @@
-import json
-from types import SimpleNamespace
-
 import pytest
 
+import koschei_sentinel.cyber_defense_promotion as promotion_module
 import koschei_sentinel.cyber_defense_promotion_cli as promotion_cli
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
-from tests.test_cyber_defense_promotion import ADAPTER_DIGEST, _gold_evidence
+from tests.test_cyber_defense_promotion import (
+    ADAPTER_DIGEST,
+    _bundle,
+    _gold_evidence,
+    _load,
+    _multi,
+    _single,
+)
 
 
 def _required_args() -> list[str]:
@@ -61,59 +66,56 @@ def test_promotion_cli_accepts_all_gold_source_artifacts() -> None:
     assert args.gold_candidate_export == "candidate-export"
 
 
+def _source_builder_kwargs(policy, supplied):
+    return {
+        "promotion_id": "promotion:test",
+        "candidate_model_ref": "sentinel:candidate",
+        "candidate_model_revision": ADAPTER_DIGEST,
+        "training_bundle": _bundle(),
+        "cyber_range_report": _single(),
+        "multi_incident_range_report": _multi(),
+        "defense_load_range_report": _load(),
+        "supplied_gold_holdout_evidence": supplied,
+        "gold_holdout_policy": policy,
+        "gold_release_dir": "release",
+        "gold_inference_pack_dir": "pack",
+        "gold_inference_output_dir": "inference-output",
+        "gold_candidate_export_dir": "candidate-export",
+    }
+
+
 def test_promotion_rejects_supplied_gold_evidence_that_differs_from_fresh_rebuild(
-    tmp_path,
     monkeypatch,
 ) -> None:
     policy = GoldHoldoutEvaluationPolicy()
     supplied = _gold_evidence(policy=policy)
     rebuilt = _gold_evidence(revision="8" * 64, policy=policy)
-    supplied_path = tmp_path / "gold.json"
-    supplied_path.write_text(
-        json.dumps(supplied.model_dump(mode="json")),
-        encoding="utf-8",
-    )
-    args = SimpleNamespace(
-        gold_holdout_evidence=str(supplied_path),
-        gold_release_dir="release",
-        gold_inference_pack="pack",
-        gold_inference_output="inference-output",
-        gold_candidate_export="candidate-export",
-    )
     monkeypatch.setattr(
-        promotion_cli,
+        promotion_module,
         "build_gold_holdout_evaluation_evidence",
         lambda **_kwargs: rebuilt,
     )
 
     with pytest.raises(ValueError, match="differs from fresh source-artifact rebuild"):
-        promotion_cli._rebuild_and_match_gold_evidence(args, policy)
+        promotion_module.build_cyber_defense_promotion_evidence_from_sources(
+            **_source_builder_kwargs(policy, supplied)
+        )
 
 
 def test_promotion_accepts_supplied_gold_evidence_only_when_fresh_rebuild_matches(
-    tmp_path,
     monkeypatch,
 ) -> None:
     policy = GoldHoldoutEvaluationPolicy()
     supplied = _gold_evidence(policy=policy)
-    supplied_path = tmp_path / "gold.json"
-    supplied_path.write_text(
-        json.dumps(supplied.model_dump(mode="json")),
-        encoding="utf-8",
-    )
-    args = SimpleNamespace(
-        gold_holdout_evidence=str(supplied_path),
-        gold_release_dir="release",
-        gold_inference_pack="pack",
-        gold_inference_output="inference-output",
-        gold_candidate_export="candidate-export",
-    )
     monkeypatch.setattr(
-        promotion_cli,
+        promotion_module,
         "build_gold_holdout_evaluation_evidence",
         lambda **_kwargs: supplied,
     )
 
-    rebuilt = promotion_cli._rebuild_and_match_gold_evidence(args, policy)
+    promotion = promotion_module.build_cyber_defense_promotion_evidence_from_sources(
+        **_source_builder_kwargs(policy, supplied)
+    )
 
-    assert rebuilt.evidence_sha256 == supplied.evidence_sha256
+    assert promotion.ready_for_promotion is True
+    assert promotion.gold_holdout_evaluation_evidence_sha256 == supplied.evidence_sha256
