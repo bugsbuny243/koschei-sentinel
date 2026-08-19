@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--training-config", required=True)
     parser.add_argument("--model-ref", required=True)
-    parser.add_argument("--generation-policy")
+    parser.add_argument("--generation-policy", required=True)
     parser.add_argument("--plan-output")
     parser.add_argument("--output-dir")
     parser.add_argument(
@@ -33,9 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_policy(path: str | None) -> GoldHoldoutGenerationPolicy | None:
-    if path is None:
-        return None
+def _load_policy(path: str) -> GoldHoldoutGenerationPolicy:
     try:
         return GoldHoldoutGenerationPolicy.model_validate_json(Path(path).read_bytes())
     except (OSError, ValueError) as exc:
@@ -45,7 +43,7 @@ def _load_policy(path: str | None) -> GoldHoldoutGenerationPolicy | None:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        selected_policy = _load_policy(args.generation_policy) or GoldHoldoutGenerationPolicy()
+        selected_policy = _load_policy(args.generation_policy)
         plan = build_gold_holdout_inference_plan(
             inference_pack_dir=args.inference_pack,
             run_dir=args.run_dir,
