@@ -1,6 +1,12 @@
 import hashlib
 import json
 
+from koschei_sentinel.cyber_sft_export_verify import CyberSFTExportVerification
+from koschei_sentinel.cyber_sft_run_attestation import (
+    _attestation_digest,
+    _config_sha256,
+)
+from koschei_sentinel.cyber_sft_training import CyberSFTConfig
 from koschei_sentinel.defense_reflex_gold_release import write_gold_defense_release
 from koschei_sentinel.gold_holdout_evaluation import export_gold_holdout_inference_pack
 from koschei_sentinel.gold_holdout_inference_runner import (
@@ -8,6 +14,7 @@ from koschei_sentinel.gold_holdout_inference_runner import (
     GoldHoldoutInferencePlan,
     GoldHoldoutInferenceRunReceipt,
     _digest_without,
+    _export_verification_sha256,
     _load_inference_pack,
     _policy_sha256,
     _prediction_from_generated_text,
@@ -41,6 +48,70 @@ def _prediction_text() -> str:
     )
 
 
+def _candidate_provenance():
+    config = CyberSFTConfig(
+        run_id="gold-holdout-test",
+        stage="DEFENSE_REFLEX",
+        base_model="Qwen/Qwen3.5-9B-Base",
+        base_revision="b" * 40,
+        corpus_dir="build/gold/train",
+        validation_corpus_dir="build/gold/validation",
+        output_dir="build/gold/run",
+        validation_ratio=0.0,
+        minimum_cuda_memory_gb=0.0,
+        quantization={"bits": 4, "compute_dtype": "float16"},
+    )
+    adapter_digest = "a" * 64
+    attestation_payload = {
+        "schema_version": "sentinel.cyber-sft-run-attestation.v1",
+        "run_id": config.run_id,
+        "selected_profile": "normal",
+        "repository_commit": "c" * 40,
+        "base_model": config.base_model,
+        "base_revision": config.base_revision,
+        "resolved_model_revision": config.base_revision,
+        "config_sha256": _config_sha256(config),
+        "plan_sha256": "1" * 64,
+        "training_source_sha256": "2" * 64,
+        "model_preflight_sha256": "3" * 64,
+        "verification_sha256": "4" * 64,
+        "model_runtime_sha256": "5" * 64,
+        "resume_runtime_sha256": "6" * 64,
+        "receipt_sha256": "7" * 64,
+        "adapter_digest": adapter_digest,
+        "corpus_examples_sha256": "8" * 64,
+        "corpus_manifest_sha256": "9" * 64,
+        "global_step": 1,
+        "resumed": False,
+        "resume_checkpoint": None,
+        "smoke_only": False,
+        "promotion_eligible": True,
+    }
+    attestation_payload["attestation_sha256"] = _attestation_digest(attestation_payload)
+
+    export_verification = CyberSFTExportVerification(
+        run_id=config.run_id,
+        valid=True,
+        attestation_sha256_verified=True,
+        config_sha256_verified=True,
+        plan_sha256_verified=True,
+        training_source_sha256_verified=True,
+        model_preflight_sha256_verified=True,
+        verification_sha256_verified=True,
+        model_runtime_sha256_verified=True,
+        resume_runtime_sha256_verified=True,
+        fresh_run_verification_valid=True,
+        receipt_binding_verified=True,
+        adapter_digest_verified=True,
+        corpus_examples_sha256_verified=True,
+        corpus_manifest_sha256_verified=True,
+        profile_binding_verified=True,
+        repository_commit_binding_verified=True,
+        violations=[],
+    )
+    return config, attestation_payload, export_verification, adapter_digest
+
+
 def _fixture(tmp_path):
     _policy, rows = _release_rows()
     release = tmp_path / "gold-release"
@@ -50,15 +121,20 @@ def _fixture(tmp_path):
     cases, inference_manifest, manifest_raw = _load_inference_pack(pack)
 
     generation_policy = GoldHoldoutGenerationPolicy()
-    adapter_digest = "a" * 64
+    config, attestation_payload, export_verification, adapter_digest = _candidate_provenance()
     plan_payload = {
-        "schema_version": "sentinel.gold-holdout-inference-plan.v1",
+        "schema_version": "sentinel.gold-holdout-inference-plan.v2",
         "model_ref": "koschei-sentinel:test",
         "model_revision": adapter_digest,
         "adapter_digest": adapter_digest,
-        "base_model": "Qwen/Qwen3.5-9B-Base",
-        "base_revision": "b" * 40,
-        "run_id": "gold-holdout-test",
+        "base_model": config.base_model,
+        "base_revision": config.base_revision,
+        "run_id": config.run_id,
+        "training_config_sha256": _config_sha256(config),
+        "run_attestation_sha256": attestation_payload["attestation_sha256"],
+        "candidate_export_verification_sha256": _export_verification_sha256(
+            export_verification
+        ),
         "case_count": len(cases),
         "inputs_sha256": inference_manifest.inputs_sha256,
         "inference_manifest_sha256": _sha256_bytes(manifest_raw),
@@ -85,13 +161,19 @@ def _fixture(tmp_path):
     )
     failure_payload = ""
     receipt_payload = {
-        "schema_version": "sentinel.gold-holdout-inference-run-receipt.v1",
+        "schema_version": "sentinel.gold-holdout-inference-run-receipt.v2",
         "plan_sha256": plan.plan_sha256,
+        "run_id": plan.run_id,
         "model_ref": plan.model_ref,
         "model_revision": adapter_digest,
         "adapter_digest": adapter_digest,
         "base_model": plan.base_model,
         "base_revision": plan.base_revision,
+        "training_config_sha256": plan.training_config_sha256,
+        "run_attestation_sha256": plan.run_attestation_sha256,
+        "candidate_export_verification_sha256": (
+            plan.candidate_export_verification_sha256
+        ),
         "case_count": len(cases),
         "prediction_count": len(predictions),
         "failure_count": 0,
@@ -119,6 +201,23 @@ def _fixture(tmp_path):
         json.dumps(generation_policy.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    (output / "training-config.json").write_text(
+        json.dumps(config.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (output / "run-attestation.json").write_text(
+        json.dumps(attestation_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (output / "candidate-export-verification.json").write_text(
+        json.dumps(
+            export_verification.model_dump(mode="json"),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (output / "predictions.jsonl").write_text(prediction_payload, encoding="utf-8")
     (output / "failures.jsonl").write_text(failure_payload, encoding="utf-8")
     return pack, output, cases, plan
@@ -129,7 +228,7 @@ def test_offline_inference_verifier_accepts_complete_bound_output(tmp_path) -> N
 
     report = verify_gold_holdout_inference_output(output, pack)
 
-    assert report.schema_version == "sentinel.gold-holdout-inference-verification.v2"
+    assert report.schema_version == "sentinel.gold-holdout-inference-verification.v3"
     assert report.valid is True
     assert report.case_count == len(cases)
     assert report.prediction_count == len(cases)
@@ -138,6 +237,9 @@ def test_offline_inference_verifier_accepts_complete_bound_output(tmp_path) -> N
     assert report.receipt_verified is True
     assert report.input_binding_verified is True
     assert report.generation_policy_verified is True
+    assert report.training_config_verified is True
+    assert report.run_attestation_verified is True
+    assert report.candidate_export_verification_verified is True
     assert report.prediction_hashes_verified is True
     assert report.identity_verified is True
     assert report.complete_case_accounting is True
@@ -159,6 +261,23 @@ def test_offline_inference_verifier_rejects_generation_policy_drift(tmp_path) ->
     assert report.valid is False
     assert report.generation_policy_verified is False
     assert any("generation policy SHA differs" in row for row in report.violations)
+
+
+def test_offline_inference_verifier_rejects_training_config_drift(tmp_path) -> None:
+    pack, output, _cases, _plan = _fixture(tmp_path)
+    config_path = output / "training-config.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    payload["max_sequence_length"] = 4096
+    config_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    report = verify_gold_holdout_inference_output(output, pack)
+
+    assert report.valid is False
+    assert report.training_config_verified is False
+    assert any("training config SHA differs" in row for row in report.violations)
 
 
 def test_offline_inference_verifier_rejects_missing_case_even_with_rewritten_receipt(tmp_path) -> None:
