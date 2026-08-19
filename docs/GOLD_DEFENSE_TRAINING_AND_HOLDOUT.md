@@ -105,17 +105,23 @@ graph_snapshots
 
 It does not contain the expected interpretation, expected defense sequence, range truth, simulated outcomes, or reviewer-only context.
 
-The GPU inference host should receive only the answer-key-isolated inference pack plus the verified adapter and its training config. The full Gold release, especially `holdout/cases.jsonl`, belongs on the evaluation side and should not be mounted into the model-inference environment.
+The GPU inference host should receive the answer-key-isolated inference pack plus the verified promotion-eligible Cyber SFT candidate export. The candidate export provides the exact training config, run attestation, adapter, and portable provenance evidence required to verify the candidate before model loading. The full Gold release, especially `holdout/cases.jsonl`, belongs on the evaluation side and should not be mounted into the model-inference environment.
 
 ## 7. Run the trained adapter against HOLDOUT
 
-First create a CPU-side inference plan. The plan re-verifies the Cyber SFT run and binds the candidate identity to the adapter digest.
+First verify the portable candidate export independently:
+
+```bash
+sentinel-cyber-sft-export-verify \
+  --export-dir build/cyber-training/exports/qwen35-9b-gold-defense-v1
+```
+
+Then create a CPU-side inference plan. The plan re-verifies the complete candidate export and binds the adapter digest, canonical training-config SHA, run-attestation SHA, candidate-export verification digest, input pack, and generation policy.
 
 ```bash
 sentinel-gold-holdout-infer \
   --inference-pack build/gold-holdout-inference \
-  --run-dir build/cyber-training/runs/qwen35-9b-gold-defense-v1 \
-  --training-config configs/training/cyber-sft.qwen3.5-9b.gold.example.json \
+  --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
   --model-ref koschei-sentinel:qwen35-9b-gold-defense-v1 \
   --generation-policy configs/training/gold-holdout-generation-policy.v1.json \
   --plan-output build/gold-holdout-inference-plan.json
@@ -126,8 +132,7 @@ Then execute on the GPU host:
 ```bash
 sentinel-gold-holdout-infer \
   --inference-pack build/gold-holdout-inference \
-  --run-dir build/cyber-training/runs/qwen35-9b-gold-defense-v1 \
-  --training-config configs/training/cyber-sft.qwen3.5-9b.gold.example.json \
+  --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
   --model-ref koschei-sentinel:qwen35-9b-gold-defense-v1 \
   --generation-policy configs/training/gold-holdout-generation-policy.v1.json \
   --output-dir build/gold-holdout-inference-output \
@@ -136,9 +141,9 @@ sentinel-gold-holdout-infer \
 
 Generation is deterministic: sampling is disabled and the model must return exactly one JSON object with `interpretation` and `defense_sequence`. The runner does not repair malformed model output. Parse failures are recorded as failed cases.
 
-The output also contains `generation-policy.json`. This makes the exact generation policy independently verifiable against the policy SHA already bound into the inference plan.
+The output persists `generation-policy.json`, `training-config.json`, `run-attestation.json`, and `candidate-export-verification.json` alongside the inference plan, receipt, predictions, and failures. This gives the offline verifier the exact provenance snapshots required to re-check candidate identity without trusting the GPU process.
 
-For real runner outputs, `model_revision` is the verified adapter digest. Operators do not supply a free-form model revision.
+For real runner outputs, `model_revision` is the verified adapter digest. Operators do not supply a free-form model revision. A smoke-only, non-promotion-eligible, config-drifted, attestation-drifted, or otherwise invalid candidate export is rejected before model loading.
 
 ## 8. Offline-verify inference output
 
@@ -155,6 +160,9 @@ Verification checks:
 - inference plan and receipt self-hashes,
 - exact input-pack binding,
 - persisted generation-policy schema and SHA,
+- canonical training-config SHA against the plan and run attestation,
+- run-attestation self-hash, candidate identity, and promotion eligibility,
+- persisted candidate-export verification digest and valid status,
 - prediction self-hashes,
 - model/adapter identity consistency,
 - prediction and failure input-context bindings,
