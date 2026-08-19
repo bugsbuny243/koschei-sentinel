@@ -21,6 +21,11 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: ruff check .
       - run: pytest
+      - name: Gold HOLDOUT fail-closed regression gate
+        run: >-
+          pytest -q
+          tests/test_gold_holdout_inference_verify.py
+          tests/test_cyber_defense_promotion_gold_case_count.py
       - run: >-
           sentinel-curriculum-check
           --config configs/curriculum/language-first.v1.json
