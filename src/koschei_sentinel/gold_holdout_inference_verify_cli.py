@@ -10,10 +10,14 @@ from koschei_sentinel.gold_holdout_inference_verify import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Offline-verify Gold HOLDOUT inference plan, receipt, outputs, and case accounting"
+        description=(
+            "Offline-verify Gold HOLDOUT inference output against its input pack and "
+            "independently verified Cyber SFT candidate export"
+        )
     )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--inference-pack", required=True)
+    parser.add_argument("--candidate-export", required=True)
     return parser
 
 
@@ -23,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         report = verify_gold_holdout_inference_output(
             args.output_dir,
             args.inference_pack,
+            args.candidate_export,
         )
         print(json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True))
         return 0 if report.valid else 1
