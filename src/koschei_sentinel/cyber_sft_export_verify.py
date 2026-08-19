@@ -265,6 +265,13 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
     if not adapter_verified:
         violations.append("adapter digest differs from attestation")
 
+    promotion_binding_verified = (
+        plan.corpus_promotion_eligible == attestation.promotion_eligible
+        and manifest.corpus_promotion_eligible == attestation.promotion_eligible
+    )
+    if not promotion_binding_verified:
+        violations.append("promotion eligibility differs across plan/manifest/attestation")
+
     examples_verified = (
         _sha256(required_files["corpus_examples"])
         == attestation.corpus_examples_sha256
@@ -367,6 +374,7 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
         and fresh_valid
         and receipt_binding_verified
         and adapter_verified
+        and promotion_binding_verified
         and examples_verified
         and corpus_manifest_verified
         and profile_verified
