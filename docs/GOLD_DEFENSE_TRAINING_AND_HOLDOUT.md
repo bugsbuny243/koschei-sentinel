@@ -141,18 +141,19 @@ sentinel-gold-holdout-infer \
 
 Generation is deterministic: sampling is disabled and the model must return exactly one JSON object with `interpretation` and `defense_sequence`. The runner does not repair malformed model output. Parse failures are recorded as failed cases.
 
-The output persists `generation-policy.json`, `training-config.json`, `run-attestation.json`, and `candidate-export-verification.json` alongside the inference plan, receipt, predictions, and failures. This gives the offline verifier the exact provenance snapshots required to re-check candidate identity without trusting the GPU process.
+The output persists `generation-policy.json`, `training-config.json`, `run-attestation.json`, and `candidate-export-verification.json` alongside the inference plan, receipt, predictions, and failures. These are audit snapshots, not the final trust anchor.
 
 For real runner outputs, `model_revision` is the verified adapter digest. Operators do not supply a free-form model revision. A smoke-only, non-promotion-eligible, config-drifted, attestation-drifted, or otherwise invalid candidate export is rejected before model loading.
 
 ## 8. Offline-verify inference output
 
-Before evaluation, independently re-verify the inference artifacts:
+Before evaluation, independently re-verify the inference artifacts and the original candidate export on the evaluation host:
 
 ```bash
 sentinel-gold-holdout-infer-verify \
   --inference-pack build/gold-holdout-inference \
-  --output-dir build/gold-holdout-inference-output
+  --output-dir build/gold-holdout-inference-output \
+  --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1
 ```
 
 Verification checks:
@@ -162,12 +163,16 @@ Verification checks:
 - persisted generation-policy schema and SHA,
 - canonical training-config SHA against the plan and run attestation,
 - run-attestation self-hash, candidate identity, and promotion eligibility,
-- persisted candidate-export verification digest and valid status,
+- a fresh independent verification of the original portable candidate export,
+- persisted candidate-export verification snapshot against that fresh result,
+- exact candidate run/base/adapter identity against the inference plan,
 - prediction self-hashes,
 - model/adapter identity consistency,
 - prediction and failure input-context bindings,
 - prediction/failure SHA values,
 - complete case accounting.
+
+The evaluation host does not trust a GPU-produced `valid=true` snapshot by itself. The original candidate export must still verify independently and match the plan-bound provenance digests.
 
 Every HOLDOUT case must appear exactly once: either as a valid prediction or as an inference failure.
 
@@ -180,6 +185,7 @@ sentinel-gold-holdout-eval evaluate-output \
   --release-dir build/gold-defense-release \
   --inference-pack build/gold-holdout-inference \
   --inference-output build/gold-holdout-inference-output \
+  --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
   --policy configs/training/gold-holdout-evaluation-policy.v1.json \
   --output build/gold-holdout-report.json
 ```
@@ -201,13 +207,14 @@ Evidence or targets absent from the model-visible graph fail grounding. Missing 
 
 If every HOLDOUT answer fails parsing, the verified runner output is not discarded as an exception-only failure. Evaluation emits a formal report with the exact adapter identity, zero predictions, all HOLDOUT cases marked missing, all quality metrics at `0.0`, and `passed=false`. The same failure is then bindable into Gold evaluation evidence, preserving why the candidate failed.
 
-Then bind the release audit, input pack, verified inference run, generation policy, evaluation policy, and evaluation report into one evidence object:
+Then bind the release audit, input pack, independently reverified candidate export, verified inference run, generation policy, evaluation policy, and evaluation report into one evidence object:
 
 ```bash
 sentinel-gold-holdout-evidence \
   --release-dir build/gold-defense-release \
   --inference-pack build/gold-holdout-inference \
   --inference-output build/gold-holdout-inference-output \
+  --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
   --policy configs/training/gold-holdout-evaluation-policy.v1.json \
   --output build/gold-holdout-evidence.json
 ```
