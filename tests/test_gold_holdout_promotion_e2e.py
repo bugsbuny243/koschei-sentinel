@@ -1,5 +1,5 @@
 from koschei_sentinel.cyber_defense_promotion import (
-    build_cyber_defense_promotion_evidence,
+    build_cyber_defense_promotion_evidence_from_sources,
 )
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
@@ -40,7 +40,7 @@ def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path, monkeypatch) -> None:
     assert evidence.inference_plan_sha256 == plan.plan_sha256
     assert evidence.adapter_digest == plan.adapter_digest
 
-    promotion = build_cyber_defense_promotion_evidence(
+    promotion = build_cyber_defense_promotion_evidence_from_sources(
         promotion_id="promotion:gold-holdout-e2e",
         candidate_model_ref=plan.model_ref,
         candidate_model_revision=plan.adapter_digest,
@@ -48,8 +48,12 @@ def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path, monkeypatch) -> None:
         cyber_range_report=_single(),
         multi_incident_range_report=_multi(),
         defense_load_range_report=_load(),
-        gold_holdout_evidence=evidence,
+        supplied_gold_holdout_evidence=evidence,
         gold_holdout_policy=policy,
+        gold_release_dir=release,
+        gold_inference_pack_dir=pack,
+        gold_inference_output_dir=output,
+        gold_candidate_export_dir=candidate_export,
     )
 
     assert promotion.schema_version == "sentinel.cyber-defense-promotion-evidence.v4"
