@@ -15,12 +15,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Plan or execute answer-key-isolated Gold HOLDOUT inference with a verified "
-            "Cyber SFT adapter"
+            "Cyber SFT candidate export"
         )
     )
     parser.add_argument("--inference-pack", required=True)
-    parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--training-config", required=True)
+    parser.add_argument("--candidate-export", required=True)
     parser.add_argument("--model-ref", required=True)
     parser.add_argument("--generation-policy", required=True)
     parser.add_argument("--plan-output")
@@ -46,8 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         selected_policy = _load_policy(args.generation_policy)
         plan = build_gold_holdout_inference_plan(
             inference_pack_dir=args.inference_pack,
-            run_dir=args.run_dir,
-            training_config_path=args.training_config,
+            candidate_export_dir=args.candidate_export,
             model_ref=args.model_ref,
             generation_policy=selected_policy,
         )
@@ -65,8 +63,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("--output-dir is required with --execute")
         receipt = execute_gold_holdout_inference(
             inference_pack_dir=args.inference_pack,
-            run_dir=args.run_dir,
-            training_config_path=args.training_config,
+            candidate_export_dir=args.candidate_export,
             model_ref=args.model_ref,
             output_dir=args.output_dir,
             generation_policy=selected_policy,
