@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -26,6 +30,7 @@ jobs:
           pytest -q
           tests/test_gold_holdout_inference_verify.py
           tests/test_cyber_defense_promotion_gold_case_count.py
+          tests/test_gold_holdout_promotion_e2e.py
       - run: >-
           sentinel-curriculum-check
           --config configs/curriculum/language-first.v1.json
