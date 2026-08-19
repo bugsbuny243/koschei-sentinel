@@ -117,7 +117,9 @@ def verify_gold_holdout_inference_output(
         )
         case_count = len(cases)
         case_by_id = {row.case_id: row for row in cases}
-        plan = GoldHoldoutInferencePlan.model_validate_json((output / "plan.json").read_bytes())
+        plan = GoldHoldoutInferencePlan.model_validate_json(
+            (output / "plan.json").read_bytes()
+        )
         receipt = GoldHoldoutInferenceRunReceipt.model_validate_json(
             (output / "receipt.json").read_bytes()
         )
@@ -153,7 +155,10 @@ def verify_gold_holdout_inference_output(
         prediction_count = len(predictions)
         failure_count = len(failures)
 
-        expected_plan_sha = _digest_without(plan.model_dump(mode="json"), "plan_sha256")
+        expected_plan_sha = _digest_without(
+            plan.model_dump(mode="json"),
+            "plan_sha256",
+        )
         plan_verified = expected_plan_sha == plan.plan_sha256
         if not plan_verified:
             violations.append("Gold HOLDOUT inference plan self-hash does not verify")
@@ -170,7 +175,9 @@ def verify_gold_holdout_inference_output(
             _policy_sha256(generation_policy) == plan.generation_policy_sha256
         )
         if not generation_policy_verified:
-            violations.append("Gold HOLDOUT generation policy SHA differs from inference plan")
+            violations.append(
+                "Gold HOLDOUT generation policy SHA differs from inference plan"
+            )
 
         persisted_config_sha = _config_sha256(training_config)
         candidate_config_sha = _config_sha256(candidate_config)
@@ -218,7 +225,9 @@ def verify_gold_holdout_inference_output(
                 "Gold HOLDOUT run attestation does not bind the promoted candidate export"
             )
 
-        persisted_export_sha = _export_verification_sha256(candidate_export_verification)
+        persisted_export_sha = _export_verification_sha256(
+            candidate_export_verification
+        )
         fresh_export_sha = _export_verification_sha256(fresh_export_verification)
         candidate_identity_verified = (
             candidate_config.run_id == plan.run_id
@@ -294,7 +303,11 @@ def verify_gold_holdout_inference_output(
                 receipt.predictions_sha256,
                 _sha256_bytes(prediction_raw),
             ),
-            ("failures_sha256", receipt.failures_sha256, _sha256_bytes(failure_raw)),
+            (
+                "failures_sha256",
+                receipt.failures_sha256,
+                _sha256_bytes(failure_raw),
+            ),
         )
         receipt_mismatches = [
             label for label, observed, expected in receipt_checks if observed != expected
@@ -311,7 +324,9 @@ def verify_gold_holdout_inference_output(
         context_failures: list[str] = []
         for prediction in predictions:
             if prediction.case_id in prediction_ids:
-                violations.append(f"duplicate Gold HOLDOUT prediction: {prediction.case_id}")
+                violations.append(
+                    f"duplicate Gold HOLDOUT prediction: {prediction.case_id}"
+                )
             prediction_ids.add(prediction.case_id)
             if _prediction_digest(prediction) != prediction.prediction_sha256:
                 prediction_hash_failures.append(prediction.case_id)
@@ -329,7 +344,8 @@ def verify_gold_holdout_inference_output(
 
         if prediction_hash_failures:
             violations.append(
-                "prediction self-hash failures: " + ", ".join(sorted(prediction_hash_failures))
+                "prediction self-hash failures: "
+                + ", ".join(sorted(prediction_hash_failures))
             )
         else:
             prediction_hashes_verified = True
@@ -350,7 +366,9 @@ def verify_gold_holdout_inference_output(
         failure_context_mismatches: list[str] = []
         for failure in failures:
             if failure.case_id in failure_ids:
-                violations.append(f"duplicate Gold HOLDOUT inference failure: {failure.case_id}")
+                violations.append(
+                    f"duplicate Gold HOLDOUT inference failure: {failure.case_id}"
+                )
             failure_ids.add(failure.case_id)
             case = case_by_id.get(failure.case_id)
             if case is None or failure.scenario_id != case.scenario_id:
@@ -367,11 +385,15 @@ def verify_gold_holdout_inference_output(
         missing = sorted(set(case_by_id) - prediction_ids - failure_ids)
         extra = sorted((prediction_ids | failure_ids) - set(case_by_id))
         if overlap:
-            violations.append("cases appear in both predictions and failures: " + ", ".join(overlap))
+            violations.append(
+                "cases appear in both predictions and failures: " + ", ".join(overlap)
+            )
         if missing:
             violations.append("inference output omits cases: " + ", ".join(missing))
         if extra:
-            violations.append("inference output contains unknown cases: " + ", ".join(extra))
+            violations.append(
+                "inference output contains unknown cases: " + ", ".join(extra)
+            )
         expected_failed_ids = sorted(failure_ids)
         if receipt.failed_case_ids != expected_failed_ids:
             violations.append("receipt failed_case_ids differs from failures.jsonl")
