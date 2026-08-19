@@ -20,14 +20,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--release-dir", required=True)
     parser.add_argument("--inference-pack", required=True)
     parser.add_argument("--inference-output", required=True)
-    parser.add_argument("--policy")
+    parser.add_argument("--policy", required=True)
     parser.add_argument("--output", required=True)
     return parser
 
 
-def _load_policy(path: str | None) -> GoldHoldoutEvaluationPolicy | None:
-    if path is None:
-        return None
+def _load_policy(path: str) -> GoldHoldoutEvaluationPolicy:
     try:
         return GoldHoldoutEvaluationPolicy.model_validate_json(Path(path).read_bytes())
     except (OSError, ValueError) as exc:
