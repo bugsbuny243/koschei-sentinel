@@ -41,7 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
     output_parser.add_argument("--release-dir", required=True)
     output_parser.add_argument("--inference-pack", required=True)
     output_parser.add_argument("--inference-output", required=True)
-    output_parser.add_argument("--policy")
+    output_parser.add_argument("--candidate-export", required=True)
+    output_parser.add_argument("--policy", required=True)
     output_parser.add_argument("--output")
     return parser
 
@@ -90,6 +91,7 @@ def _evaluate_verified_output(args):
     verification = verify_gold_holdout_inference_output(
         args.inference_output,
         args.inference_pack,
+        args.candidate_export,
     )
     if not verification.valid:
         raise ValueError("Gold HOLDOUT inference output verification failed")
