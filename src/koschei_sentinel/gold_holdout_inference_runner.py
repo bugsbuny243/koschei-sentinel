@@ -131,7 +131,8 @@ def _allowed_input_context(case: GoldHoldoutInferenceCase) -> None:
     observed_keys = set(case.input_context)
     if observed_keys != expected_keys:
         raise ValueError(
-            "Gold HOLDOUT inference input contains fields outside the answer-key-isolated contract: "
+            "Gold HOLDOUT inference input contains fields outside the "
+            "answer-key-isolated contract: "
             + ", ".join(sorted(observed_keys - expected_keys))
         )
     if case.input_context.get("scenario_id") != case.scenario_id:
@@ -213,7 +214,9 @@ def _load_candidate_identity(
     )
     attestation_payload = attestation.model_dump(mode="json")
     if _attestation_digest(attestation_payload) != attestation.attestation_sha256:
-        raise ValueError("Gold HOLDOUT candidate run attestation self-hash does not verify")
+        raise ValueError(
+            "Gold HOLDOUT candidate run attestation self-hash does not verify"
+        )
     if _config_sha256(config) != attestation.config_sha256:
         raise ValueError("Gold HOLDOUT training config SHA differs from run attestation")
 
@@ -227,8 +230,16 @@ def _load_candidate_identity(
         ("base_revision", manifest.base_revision, config.base_revision),
         ("attestation run_id", attestation.run_id, config.run_id),
         ("attestation base_model", attestation.base_model, config.base_model),
-        ("attestation base_revision", attestation.base_revision, config.base_revision),
-        ("attestation adapter_digest", attestation.adapter_digest, manifest.adapter_digest),
+        (
+            "attestation base_revision",
+            attestation.base_revision,
+            config.base_revision,
+        ),
+        (
+            "attestation adapter_digest",
+            attestation.adapter_digest,
+            manifest.adapter_digest,
+        ),
     )
     for label, observed, expected in checks:
         if observed != expected:
@@ -239,11 +250,14 @@ def _load_candidate_identity(
         )
     if attestation.promotion_eligible is not True or attestation.smoke_only:
         raise ValueError(
-            "Gold HOLDOUT promotion evaluation requires a promotion-eligible run attestation"
+            "Gold HOLDOUT promotion evaluation requires a promotion-eligible "
+            "run attestation"
         )
     adapter_path = run_path / "adapter"
     if not adapter_path.is_dir():
-        raise ValueError("verified Cyber SFT candidate export is missing its adapter directory")
+        raise ValueError(
+            "verified Cyber SFT candidate export is missing its adapter directory"
+        )
     return config, manifest, adapter_path, attestation, export_verification
 
 
@@ -310,7 +324,9 @@ def _prediction_from_generated_text(
     if not isinstance(payload, dict):
         raise ValueError("model output must be one JSON object")
     if set(payload) != {"interpretation", "defense_sequence"}:
-        raise ValueError("model output must contain exactly interpretation and defense_sequence")
+        raise ValueError(
+            "model output must contain exactly interpretation and defense_sequence"
+        )
     interpretation = payload.get("interpretation")
     sequence_payload = payload.get("defense_sequence")
     if not isinstance(interpretation, str) or not interpretation.strip():
@@ -335,7 +351,11 @@ def _prediction_from_generated_text(
 
 def _serialize_predictions(rows: list[GoldHoldoutPrediction]) -> str:
     return "".join(
-        json.dumps(row.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            row.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         + "\n"
         for row in sorted(rows, key=lambda item: item.case_id)
     )
@@ -343,7 +363,11 @@ def _serialize_predictions(rows: list[GoldHoldoutPrediction]) -> str:
 
 def _serialize_failures(rows: list[GoldHoldoutInferenceFailure]) -> str:
     return "".join(
-        json.dumps(row.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            row.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         + "\n"
         for row in sorted(rows, key=lambda item: item.case_id)
     )
@@ -409,7 +433,9 @@ def execute_gold_holdout_inference(
 
     destination = Path(output_dir)
     if destination.exists():
-        raise FileExistsError(f"Gold HOLDOUT inference output already exists: {destination}")
+        raise FileExistsError(
+            f"Gold HOLDOUT inference output already exists: {destination}"
+        )
 
     try:
         import torch
@@ -452,7 +478,9 @@ def execute_gold_holdout_inference(
             failures.append(failure)
             continue
         if encoded is None:
-            raise RuntimeError("Gold HOLDOUT prompt preparation returned no inputs or failure")
+            raise RuntimeError(
+                "Gold HOLDOUT prompt preparation returned no inputs or failure"
+            )
         prepared.append((case, encoded, prompt_tokens))
 
     predictions: list[GoldHoldoutPrediction] = []
@@ -541,7 +569,8 @@ def execute_gold_holdout_inference(
         encoding="utf-8",
     )
     (destination / "run-attestation.json").write_text(
-        json.dumps(attestation.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        json.dumps(attestation.model_dump(mode="json"), indent=2, sort_keys=True)
+        + "\n",
         encoding="utf-8",
     )
     (destination / "candidate-export-verification.json").write_text(
