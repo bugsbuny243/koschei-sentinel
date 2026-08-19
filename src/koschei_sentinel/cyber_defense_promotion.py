@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -15,6 +16,7 @@ from koschei_sentinel.gold_holdout_evaluation import (
 )
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     GoldHoldoutEvaluationEvidence,
+    build_gold_holdout_evaluation_evidence,
     verify_gold_holdout_evaluation_evidence,
 )
 from koschei_sentinel.models import StrictModel
@@ -237,4 +239,47 @@ def build_cyber_defense_promotion_evidence(
         gold_holdout_outcome_verification_rate=report.outcome_verification_rate,
         ready_for_promotion=ready,
         evidence_sha256=digest,
+    )
+
+
+def build_cyber_defense_promotion_evidence_from_sources(
+    *,
+    promotion_id: str,
+    candidate_model_ref: str,
+    candidate_model_revision: str,
+    training_bundle: CyberTrainingBundle,
+    cyber_range_report: CyberRangeSuiteReport,
+    multi_incident_range_report: MultiIncidentCyberRangeSuiteReport,
+    defense_load_range_report: DefenseLoadRangeReport,
+    supplied_gold_holdout_evidence: GoldHoldoutEvaluationEvidence,
+    gold_holdout_policy: GoldHoldoutEvaluationPolicy,
+    gold_release_dir: str | Path,
+    gold_inference_pack_dir: str | Path,
+    gold_inference_output_dir: str | Path,
+    gold_candidate_export_dir: str | Path,
+) -> CyberDefensePromotionEvidence:
+    fresh_gold_evidence = build_gold_holdout_evaluation_evidence(
+        release_dir=gold_release_dir,
+        inference_pack_dir=gold_inference_pack_dir,
+        inference_output_dir=gold_inference_output_dir,
+        candidate_export_dir=gold_candidate_export_dir,
+        policy=gold_holdout_policy,
+    )
+    if (
+        supplied_gold_holdout_evidence.model_dump(mode="json")
+        != fresh_gold_evidence.model_dump(mode="json")
+    ):
+        raise ValueError(
+            "supplied Gold HOLDOUT evidence differs from fresh source-artifact rebuild"
+        )
+    return build_cyber_defense_promotion_evidence(
+        promotion_id=promotion_id,
+        candidate_model_ref=candidate_model_ref,
+        candidate_model_revision=candidate_model_revision,
+        training_bundle=training_bundle,
+        cyber_range_report=cyber_range_report,
+        multi_incident_range_report=multi_incident_range_report,
+        defense_load_range_report=defense_load_range_report,
+        gold_holdout_evidence=fresh_gold_evidence,
+        gold_holdout_policy=gold_holdout_policy,
     )
