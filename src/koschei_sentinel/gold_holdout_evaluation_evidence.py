@@ -117,6 +117,7 @@ def build_gold_holdout_evaluation_evidence(
     release_dir: str | Path,
     inference_pack_dir: str | Path,
     inference_output_dir: str | Path,
+    candidate_export_dir: str | Path,
     policy: GoldHoldoutEvaluationPolicy | None = None,
 ) -> GoldHoldoutEvaluationEvidence:
     selected_policy = policy or GoldHoldoutEvaluationPolicy()
@@ -134,6 +135,7 @@ def build_gold_holdout_evaluation_evidence(
     verification: GoldHoldoutInferenceVerification = verify_gold_holdout_inference_output(
         inference_output_dir,
         inference_pack_dir,
+        candidate_export_dir,
     )
     if not verification.valid:
         raise ValueError("Gold HOLDOUT inference output is not valid")
