@@ -24,8 +24,11 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _passing_fixture(tmp_path):
-    pack, output, inference_cases, plan = _fixture(tmp_path)
+def _passing_fixture(tmp_path, monkeypatch):
+    pack, output, inference_cases, plan, candidate_export = _fixture(
+        tmp_path,
+        monkeypatch,
+    )
     release = tmp_path / "gold-release"
     gold_line = (release / "holdout" / "cases.jsonl").read_text(
         encoding="utf-8"
@@ -57,18 +60,23 @@ def _passing_fixture(tmp_path):
     receipt_payload["prediction_count"] = 1
     receipt_payload["failure_count"] = 0
     receipt_payload["failed_case_ids"] = []
-    receipt_payload["predictions_sha256"] = _sha256_bytes(prediction_payload.encode("utf-8"))
+    receipt_payload["predictions_sha256"] = _sha256_bytes(
+        prediction_payload.encode("utf-8")
+    )
     receipt_payload["failures_sha256"] = _sha256_bytes(b"")
     receipt_payload["receipt_sha256"] = _digest_without(receipt_payload, "receipt_sha256")
     (output / "receipt.json").write_text(
         json.dumps(receipt_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    return release, pack, output, plan
+    return release, pack, output, plan, candidate_export
 
 
-def _all_failure_fixture(tmp_path):
-    pack, output, inference_cases, plan = _fixture(tmp_path)
+def _all_failure_fixture(tmp_path, monkeypatch):
+    pack, output, inference_cases, plan, candidate_export = _fixture(
+        tmp_path,
+        monkeypatch,
+    )
     release = tmp_path / "gold-release"
     assert len(inference_cases) == 1
     case = inference_cases[0]
@@ -98,22 +106,28 @@ def _all_failure_fixture(tmp_path):
     receipt_payload["failure_count"] = 1
     receipt_payload["failed_case_ids"] = [case.case_id]
     receipt_payload["predictions_sha256"] = _sha256_bytes(b"")
-    receipt_payload["failures_sha256"] = _sha256_bytes(failure_payload.encode("utf-8"))
+    receipt_payload["failures_sha256"] = _sha256_bytes(
+        failure_payload.encode("utf-8")
+    )
     receipt_payload["receipt_sha256"] = _digest_without(receipt_payload, "receipt_sha256")
     (output / "receipt.json").write_text(
         json.dumps(receipt_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    return release, pack, output, plan
+    return release, pack, output, plan, candidate_export
 
 
-def test_verified_inference_builds_passing_gold_evidence(tmp_path) -> None:
-    release, pack, output, plan = _passing_fixture(tmp_path)
+def test_verified_inference_builds_passing_gold_evidence(tmp_path, monkeypatch) -> None:
+    release, pack, output, plan, candidate_export = _passing_fixture(
+        tmp_path,
+        monkeypatch,
+    )
 
     evidence = build_gold_holdout_evaluation_evidence(
         release_dir=release,
         inference_pack_dir=pack,
         inference_output_dir=output,
+        candidate_export_dir=candidate_export,
     )
 
     assert evidence.passed is True
@@ -128,13 +142,20 @@ def test_verified_inference_builds_passing_gold_evidence(tmp_path) -> None:
     verify_gold_holdout_evaluation_evidence(evidence)
 
 
-def test_all_inference_failures_produce_formal_zero_score_evidence(tmp_path) -> None:
-    release, pack, output, plan = _all_failure_fixture(tmp_path)
+def test_all_inference_failures_produce_formal_zero_score_evidence(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    release, pack, output, plan, candidate_export = _all_failure_fixture(
+        tmp_path,
+        monkeypatch,
+    )
 
     evidence = build_gold_holdout_evaluation_evidence(
         release_dir=release,
         inference_pack_dir=pack,
         inference_output_dir=output,
+        candidate_export_dir=candidate_export,
     )
 
     assert evidence.passed is False
@@ -156,8 +177,14 @@ def test_all_inference_failures_produce_formal_zero_score_evidence(tmp_path) -> 
     verify_gold_holdout_evaluation_evidence(evidence)
 
 
-def test_gold_evidence_rejects_pack_from_different_release_audit(tmp_path) -> None:
-    release, pack, output, _plan = _passing_fixture(tmp_path)
+def test_gold_evidence_rejects_pack_from_different_release_audit(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    release, pack, output, _plan, candidate_export = _passing_fixture(
+        tmp_path,
+        monkeypatch,
+    )
     manifest_path = pack / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["source_gold_audit_sha256"] = "0" * 64
@@ -171,15 +198,20 @@ def test_gold_evidence_rejects_pack_from_different_release_audit(tmp_path) -> No
             release_dir=release,
             inference_pack_dir=pack,
             inference_output_dir=output,
+            candidate_export_dir=candidate_export,
         )
 
 
-def test_gold_evidence_self_hash_detects_tamper(tmp_path) -> None:
-    release, pack, output, _plan = _passing_fixture(tmp_path)
+def test_gold_evidence_self_hash_detects_tamper(tmp_path, monkeypatch) -> None:
+    release, pack, output, _plan, candidate_export = _passing_fixture(
+        tmp_path,
+        monkeypatch,
+    )
     evidence = build_gold_holdout_evaluation_evidence(
         release_dir=release,
         inference_pack_dir=pack,
         inference_output_dir=output,
+        candidate_export_dir=candidate_export,
     )
     tampered = evidence.model_copy(update={"inference_inputs_sha256": "0" * 64})
 
