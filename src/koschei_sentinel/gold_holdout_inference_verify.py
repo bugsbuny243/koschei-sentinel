@@ -6,6 +6,13 @@ from typing import Literal
 
 from pydantic import Field
 
+from koschei_sentinel.cyber_sft_export_verify import CyberSFTExportVerification
+from koschei_sentinel.cyber_sft_run_attestation import (
+    CyberSFTRunAttestation,
+    _attestation_digest,
+    _config_sha256,
+)
+from koschei_sentinel.cyber_sft_training import CyberSFTConfig
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutPrediction
 from koschei_sentinel.gold_holdout_inference_runner import (
     GoldHoldoutGenerationPolicy,
@@ -13,6 +20,7 @@ from koschei_sentinel.gold_holdout_inference_runner import (
     GoldHoldoutInferencePlan,
     GoldHoldoutInferenceRunReceipt,
     _digest_without,
+    _export_verification_sha256,
     _load_inference_pack,
     _policy_sha256,
 )
@@ -21,8 +29,8 @@ from koschei_sentinel.training import canonical_json
 
 
 class GoldHoldoutInferenceVerification(StrictModel):
-    schema_version: Literal["sentinel.gold-holdout-inference-verification.v2"] = (
-        "sentinel.gold-holdout-inference-verification.v2"
+    schema_version: Literal["sentinel.gold-holdout-inference-verification.v3"] = (
+        "sentinel.gold-holdout-inference-verification.v3"
     )
     output_dir: str
     case_count: int = Field(ge=0)
@@ -32,6 +40,9 @@ class GoldHoldoutInferenceVerification(StrictModel):
     receipt_verified: bool
     input_binding_verified: bool
     generation_policy_verified: bool
+    training_config_verified: bool
+    run_attestation_verified: bool
+    candidate_export_verification_verified: bool
     prediction_hashes_verified: bool
     identity_verified: bool
     complete_case_accounting: bool
@@ -91,6 +102,9 @@ def verify_gold_holdout_inference_output(
     receipt_verified = False
     input_binding_verified = False
     generation_policy_verified = False
+    training_config_verified = False
+    run_attestation_verified = False
+    candidate_export_verification_verified = False
     prediction_hashes_verified = False
     identity_verified = False
     complete_case_accounting = False
@@ -105,6 +119,15 @@ def verify_gold_holdout_inference_output(
         )
         generation_policy = GoldHoldoutGenerationPolicy.model_validate_json(
             (output / "generation-policy.json").read_bytes()
+        )
+        training_config = CyberSFTConfig.model_validate_json(
+            (output / "training-config.json").read_bytes()
+        )
+        run_attestation = CyberSFTRunAttestation.model_validate_json(
+            (output / "run-attestation.json").read_bytes()
+        )
+        candidate_export_verification = CyberSFTExportVerification.model_validate_json(
+            (output / "candidate-export-verification.json").read_bytes()
         )
         predictions, prediction_raw = _load_jsonl(
             output / "predictions.jsonl",
@@ -138,6 +161,49 @@ def verify_gold_holdout_inference_output(
         if not generation_policy_verified:
             violations.append("Gold HOLDOUT generation policy SHA differs from inference plan")
 
+        config_sha = _config_sha256(training_config)
+        training_config_verified = (
+            config_sha == plan.training_config_sha256
+            and config_sha == run_attestation.config_sha256
+        )
+        if not training_config_verified:
+            violations.append(
+                "Gold HOLDOUT training config SHA differs from plan/run attestation"
+            )
+
+        attestation_self_hash_verified = (
+            _attestation_digest(run_attestation.model_dump(mode="json"))
+            == run_attestation.attestation_sha256
+        )
+        attestation_identity_verified = (
+            run_attestation.attestation_sha256 == plan.run_attestation_sha256
+            and run_attestation.run_id == plan.run_id
+            and run_attestation.base_model == plan.base_model
+            and run_attestation.base_revision == plan.base_revision
+            and run_attestation.adapter_digest == plan.adapter_digest
+            and run_attestation.promotion_eligible is True
+            and run_attestation.smoke_only is False
+        )
+        run_attestation_verified = (
+            attestation_self_hash_verified and attestation_identity_verified
+        )
+        if not run_attestation_verified:
+            violations.append(
+                "Gold HOLDOUT run attestation does not bind the promoted candidate"
+            )
+
+        candidate_export_verification_verified = (
+            candidate_export_verification.valid
+            and not candidate_export_verification.violations
+            and candidate_export_verification.run_id == plan.run_id
+            and _export_verification_sha256(candidate_export_verification)
+            == plan.candidate_export_verification_sha256
+        )
+        if not candidate_export_verification_verified:
+            violations.append(
+                "Gold HOLDOUT candidate export verification differs from inference plan"
+            )
+
         input_checks = (
             ("case_count", plan.case_count, case_count),
             ("inputs_sha256", plan.inputs_sha256, inference_manifest.inputs_sha256),
@@ -160,11 +226,27 @@ def verify_gold_holdout_inference_output(
 
         receipt_checks = (
             ("plan_sha256", receipt.plan_sha256, plan.plan_sha256),
+            ("run_id", receipt.run_id, plan.run_id),
             ("model_ref", receipt.model_ref, plan.model_ref),
             ("model_revision", receipt.model_revision, plan.model_revision),
             ("adapter_digest", receipt.adapter_digest, plan.adapter_digest),
             ("base_model", receipt.base_model, plan.base_model),
             ("base_revision", receipt.base_revision, plan.base_revision),
+            (
+                "training_config_sha256",
+                receipt.training_config_sha256,
+                plan.training_config_sha256,
+            ),
+            (
+                "run_attestation_sha256",
+                receipt.run_attestation_sha256,
+                plan.run_attestation_sha256,
+            ),
+            (
+                "candidate_export_verification_sha256",
+                receipt.candidate_export_verification_sha256,
+                plan.candidate_export_verification_sha256,
+            ),
             ("case_count", receipt.case_count, case_count),
             ("prediction_count", receipt.prediction_count, prediction_count),
             ("failure_count", receipt.failure_count, failure_count),
@@ -260,13 +342,16 @@ def verify_gold_holdout_inference_output(
         and receipt_verified
         and input_binding_verified
         and generation_policy_verified
+        and training_config_verified
+        and run_attestation_verified
+        and candidate_export_verification_verified
         and prediction_hashes_verified
         and identity_verified
         and complete_case_accounting
         and case_count == prediction_count + failure_count
     )
     payload: dict[str, object] = {
-        "schema_version": "sentinel.gold-holdout-inference-verification.v2",
+        "schema_version": "sentinel.gold-holdout-inference-verification.v3",
         "output_dir": str(output_dir),
         "case_count": case_count,
         "prediction_count": prediction_count,
@@ -275,6 +360,9 @@ def verify_gold_holdout_inference_output(
         "receipt_verified": receipt_verified,
         "input_binding_verified": input_binding_verified,
         "generation_policy_verified": generation_policy_verified,
+        "training_config_verified": training_config_verified,
+        "run_attestation_verified": run_attestation_verified,
+        "candidate_export_verification_verified": candidate_export_verification_verified,
         "prediction_hashes_verified": prediction_hashes_verified,
         "identity_verified": identity_verified,
         "complete_case_accounting": complete_case_accounting,
