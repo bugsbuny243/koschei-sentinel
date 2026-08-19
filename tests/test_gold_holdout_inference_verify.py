@@ -62,9 +62,13 @@ def _fixture(tmp_path, monkeypatch):
         model_ref="koschei-sentinel:test",
         generation_policy=generation_policy,
     )
-    config, _manifest, _adapter, attestation, export_verification = _load_candidate_identity(
-        candidate_export_dir=candidate_export
-    )
+    (
+        config,
+        _manifest,
+        _adapter,
+        attestation,
+        export_verification,
+    ) = _load_candidate_identity(candidate_export_dir=candidate_export)
 
     predictions = [
         _prediction_from_generated_text(
@@ -76,7 +80,11 @@ def _fixture(tmp_path, monkeypatch):
         for case in cases
     ]
     prediction_payload = "".join(
-        json.dumps(row.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            row.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         + "\n"
         for row in predictions
     )
@@ -105,7 +113,10 @@ def _fixture(tmp_path, monkeypatch):
         "cuda_device_name": "fixture-gpu",
         "runtime_versions": {"torch": "fixture"},
     }
-    receipt_payload["receipt_sha256"] = _digest_without(receipt_payload, "receipt_sha256")
+    receipt_payload["receipt_sha256"] = _digest_without(
+        receipt_payload,
+        "receipt_sha256",
+    )
     receipt = GoldHoldoutInferenceRunReceipt.model_validate(receipt_payload)
 
     output = tmp_path / "inference-output"
@@ -116,15 +127,23 @@ def _fixture(tmp_path, monkeypatch):
         "generation-policy.json": generation_policy.model_dump(mode="json"),
         "training-config.json": config.model_dump(mode="json"),
         "run-attestation.json": attestation.model_dump(mode="json"),
-        "candidate-export-verification.json": export_verification.model_dump(mode="json"),
+        "candidate-export-verification.json": export_verification.model_dump(
+            mode="json"
+        ),
     }
     for name, payload in artifacts.items():
         (output / name).write_text(
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-    (output / "predictions.jsonl").write_text(prediction_payload, encoding="utf-8")
-    (output / "failures.jsonl").write_text(failure_payload, encoding="utf-8")
+    (output / "predictions.jsonl").write_text(
+        prediction_payload,
+        encoding="utf-8",
+    )
+    (output / "failures.jsonl").write_text(
+        failure_payload,
+        encoding="utf-8",
+    )
     return pack, output, cases, plan, candidate_export
 
 
@@ -218,11 +237,17 @@ def test_offline_inference_verifier_rejects_missing_case_even_with_rewritten_rec
     monkeypatch,
 ) -> None:
     pack, output, cases, plan, candidate_export = _fixture(tmp_path, monkeypatch)
-    prediction_lines = (output / "predictions.jsonl").read_text(encoding="utf-8").splitlines()
-    shortened = "\n".join(prediction_lines[:-1]) + ("\n" if prediction_lines[:-1] else "")
+    prediction_lines = (output / "predictions.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    shortened = "\n".join(prediction_lines[:-1])
+    if prediction_lines[:-1]:
+        shortened += "\n"
     (output / "predictions.jsonl").write_text(shortened, encoding="utf-8")
 
-    receipt = json.loads((output / "receipt.json").read_text(encoding="utf-8"))
+    receipt = json.loads(
+        (output / "receipt.json").read_text(encoding="utf-8")
+    )
     receipt["prediction_count"] = len(cases) - 1
     receipt["predictions_sha256"] = _sha256_bytes(shortened.encode("utf-8"))
     receipt["receipt_sha256"] = _digest_without(receipt, "receipt_sha256")
