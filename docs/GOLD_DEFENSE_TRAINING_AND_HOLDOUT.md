@@ -237,6 +237,30 @@ Verified Unseen Gold HOLDOUT Evidence
 CyberDefensePromotionEvidence v4
 ```
 
-Promotion requires the Gold evidence to belong to the exact candidate model reference and adapter-digest revision, re-verifies the evidence and nested report self-hashes, requires the same versioned evaluation policy used to build the evidence, re-applies all Gold thresholds including evidence-selection accuracy, and binds the Gold source audit and inference verification digests into the promotion receipt.
+The production promotion path does not trust the supplied Gold evidence JSON by itself. Before creating Promotion v4, it rebuilds Gold evaluation evidence from the original Gold release, answer-key-isolated inference pack, verified inference output, original portable candidate export, and exact evaluation policy. The freshly rebuilt evidence must be semantically identical to the supplied evidence or promotion fails closed.
 
-If any gate fails, `ready_for_promotion=false`.
+The source-rebuilt evidence is then checked against the exact candidate model reference and adapter-digest revision. Promotion re-applies the Gold minimum case-count requirement and every quality threshold, including evidence-selection accuracy, and binds the Gold source audit and inference-verification digests into the promotion receipt.
+
+The production command therefore requires the original source artifacts:
+
+```bash
+sentinel-cyber-defense-promotion \
+  --promotion-id promotion:qwen35-9b-gold-defense-v1 \
+  --candidate-model koschei-sentinel:qwen35-9b-gold-defense-v1 \
+  --candidate-revision <verified-adapter-digest> \
+  --training-bundle build/cyber-training-bundle.json \
+  --cyber-range-report build/cyber-range-report.json \
+  --multi-incident-range-report build/multi-incident-range-report.json \
+  --defense-load-range-report build/defense-load-range-report.json \
+  --gold-holdout-evidence build/gold-holdout-evidence.json \
+  --gold-holdout-policy configs/training/gold-holdout-evaluation-policy.v1.json \
+  --gold-release-dir build/gold-defense-release \
+  --gold-inference-pack build/gold-holdout-inference \
+  --gold-inference-output build/gold-holdout-inference-output \
+  --gold-candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
+  --output build/cyber-defense-promotion-v4.json
+```
+
+The repository production Gold evaluation policy requires at least 50 unseen HOLDOUT cases. A smaller test-only policy can exercise artifact plumbing in unit tests, but it does not weaken the production policy file used by the promotion command.
+
+If any source artifact, candidate provenance binding, inference verification, Gold threshold, or independent defense gate fails, `ready_for_promotion=false`.
