@@ -26,7 +26,12 @@ def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _build_export(tmp_path: Path, monkeypatch) -> Path:
+def _build_export(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    promotion_eligible: bool = False,
+) -> Path:
     root = tmp_path / "export"
     root.mkdir()
 
@@ -65,7 +70,7 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
             "stage": "DEFENSE_REFLEX",
             "execution_profile": "DENSE_SINGLE_GPU_QLORA",
             "executable_with_current_trainer": True,
-            "corpus_promotion_eligible": False,
+            "corpus_promotion_eligible": promotion_eligible,
             "base_model": config.base_model,
             "base_revision": config.base_revision,
             "corpus_examples_sha256": examples_sha,
@@ -109,11 +114,12 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         },
     )
 
+    smoke_only = not promotion_eligible
     verification_payload = {
         "schema_version": "sentinel.cyber-sft-artifact-verification.v1",
         "run_id": config.run_id,
         "valid": True,
-        "smoke_only": True,
+        "smoke_only": smoke_only,
         "adapter_digest_verified": True,
         "receipt_digest_verified": True,
         "receipt_bindings_verified": True,
@@ -132,6 +138,7 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
     adapter_digest = "d" * 64
     receipt_sha = "e" * 64
     run = root / "run"
+    (run / "adapter").mkdir(parents=True)
     _write_json(
         run / "adapter-manifest.json",
         {
@@ -143,7 +150,7 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
             "base_revision": config.base_revision,
             "corpus_examples_sha256": examples_sha,
             "corpus_manifest_sha256": corpus_manifest_sha,
-            "corpus_promotion_eligible": False,
+            "corpus_promotion_eligible": promotion_eligible,
             "input_adapter_dir": None,
             "adapter_digest": adapter_digest,
             "adapter_files": [],
@@ -166,7 +173,7 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
             "base_revision": config.base_revision,
             "corpus_examples_sha256": examples_sha,
             "corpus_manifest_sha256": corpus_manifest_sha,
-            "corpus_promotion_eligible": False,
+            "corpus_promotion_eligible": promotion_eligible,
             "adapter_digest": adapter_digest,
             "optimizer": "paged_adamw_8bit",
             "global_step": 3,
@@ -243,8 +250,8 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         "global_step": 3,
         "resumed": False,
         "resume_checkpoint": None,
-        "smoke_only": True,
-        "promotion_eligible": False,
+        "smoke_only": smoke_only,
+        "promotion_eligible": promotion_eligible,
     }
     attestation_payload["attestation_sha256"] = _attestation_digest(
         attestation_payload
