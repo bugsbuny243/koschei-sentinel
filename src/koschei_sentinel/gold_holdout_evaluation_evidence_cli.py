@@ -14,12 +14,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Bind a verified answer-key-isolated Gold HOLDOUT inference run to its "
-            "evaluation report and policy"
+            "candidate export, evaluation report, and policy"
         )
     )
     parser.add_argument("--release-dir", required=True)
     parser.add_argument("--inference-pack", required=True)
     parser.add_argument("--inference-output", required=True)
+    parser.add_argument("--candidate-export", required=True)
     parser.add_argument("--policy", required=True)
     parser.add_argument("--output", required=True)
     return parser
@@ -39,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
             release_dir=args.release_dir,
             inference_pack_dir=args.inference_pack,
             inference_output_dir=args.inference_output,
+            candidate_export_dir=args.candidate_export,
             policy=_load_policy(args.policy),
         )
         payload = json.dumps(evidence.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
