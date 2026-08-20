@@ -1,5 +1,7 @@
 import shutil
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from koschei_sentinel.cyber_defense_promotion import (
     build_cyber_defense_promotion_evidence_from_sources,
 )
@@ -10,6 +12,7 @@ from koschei_sentinel.gold_holdout_evaluation_evidence import (
 from koschei_sentinel.gold_holdout_pack_signing import (
     sign_gold_holdout_inference_pack,
 )
+from koschei_sentinel.gold_reviewer_trust import build_gold_reviewer_trust_policy
 from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
 from tests.gold_candidate_binding_helpers import (
     rebind_inference_fixture_to_gold_candidate,
@@ -40,6 +43,12 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         return_private_key=True,
     )
     reviewer_public_key = reviewer_private_key.public_key()
+    owner_private_key = Ed25519PrivateKey.generate()
+    reviewer_trust_policy = build_gold_reviewer_trust_policy(
+        reviewer_public_key,
+        owner_private_key,
+        policy_id="gold-reviewer-v1",
+    )
     signature_audit = audit_gold_release_review_signatures(
         release,
         reviewer_public_key,
@@ -86,6 +95,8 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         gold_inference_output_dir=relocated_output,
         gold_candidate_export_dir=relocated_candidate,
         gold_reviewer_public_key=reviewer_public_key,
+        gold_reviewer_trust_policy=reviewer_trust_policy,
+        gold_owner_public_key=owner_private_key.public_key(),
         gold_inference_pack_signature_proof=pack_proof,
     )
 
