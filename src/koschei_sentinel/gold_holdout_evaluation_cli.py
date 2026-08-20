@@ -210,6 +210,7 @@ def _export_signed_inputs(
         proof = sign_gold_holdout_inference_pack(
             staged_pack / "manifest.json",
             reviewer_private_key,
+            review_signature_audit_sha256=signature_audit.audit_sha256,
         )
         verify_gold_holdout_inference_pack_signature(
             proof,
@@ -239,7 +240,7 @@ def _export_signed_inputs(
         # visible unless its detached trusted signature has already been published.
         os.replace(staged_pack, destination)
         return manifest, proof
-    except Exception:
+    except (OSError, TypeError, ValueError):
         if signature_published:
             signature_destination.unlink(missing_ok=True)
         raise
