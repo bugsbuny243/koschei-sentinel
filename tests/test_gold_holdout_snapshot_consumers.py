@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 import koschei_sentinel.gold_holdout_evaluation_cli as evaluation_cli
+import koschei_sentinel.gold_holdout_inference_runner_cli as runner_cli
 import koschei_sentinel.gold_holdout_inference_verify_cli as verify_cli
 import koschei_sentinel.gold_holdout_pack_admission as admission_module
 
@@ -63,6 +64,75 @@ def test_snapshot_admission_failure_removes_untrusted_copy(
         )
 
     assert not destination.exists()
+
+
+def test_inference_cli_plan_and_execute_consume_same_snapshots(monkeypatch) -> None:
+    admission = object()
+    policy = object()
+    observed_plan = None
+    observed_execute = None
+
+    monkeypatch.setattr(runner_cli, "_load_policy", lambda *_args: policy)
+    monkeypatch.setattr(runner_cli, "_verify_signed_pack", lambda **_kwargs: admission)
+    monkeypatch.setattr(runner_cli, "_assert_raw_candidate_export", lambda *_args: None)
+    monkeypatch.setattr(
+        runner_cli,
+        "_snapshot_signed_pack",
+        lambda **_kwargs: Path("revalidated-pack"),
+    )
+    monkeypatch.setattr(
+        runner_cli,
+        "snapshot_verified_cyber_sft_export",
+        lambda candidate_export, destination: Path("revalidated-candidate"),
+    )
+
+    def fake_plan(**kwargs):
+        nonlocal observed_plan
+        observed_plan = (
+            Path(kwargs["inference_pack_dir"]),
+            Path(kwargs["candidate_export_dir"]),
+        )
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {"plan_sha256": "a" * 64},
+        )
+
+    def fake_execute(**kwargs):
+        nonlocal observed_execute
+        observed_execute = (
+            Path(kwargs["inference_pack"]),
+            Path(kwargs["candidate_export"]),
+        )
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {"receipt_sha256": "b" * 64},
+        )
+
+    monkeypatch.setattr(runner_cli, "build_gold_holdout_inference_plan", fake_plan)
+    monkeypatch.setattr(runner_cli, "_execute_atomic", fake_execute)
+
+    status = runner_cli.main(
+        [
+            "--inference-pack",
+            "pack",
+            "--inference-pack-signature",
+            "pack-signature.json",
+            "--reviewer-public-key",
+            "reviewer-public.pem",
+            "--candidate-export",
+            "candidate-export",
+            "--model-ref",
+            "sentinel:test",
+            "--generation-policy",
+            "generation-policy.json",
+            "--execute",
+            "--output-dir",
+            "output",
+        ]
+    )
+
+    expected = (Path("revalidated-pack"), Path("revalidated-candidate"))
+    assert status == 0
+    assert observed_plan == expected
+    assert observed_execute == expected
 
 
 def test_offline_verify_cli_consumes_revalidated_snapshots(monkeypatch) -> None:
