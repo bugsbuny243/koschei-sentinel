@@ -387,6 +387,7 @@ def _prepare_prompt(
     case: GoldHoldoutInferenceCase,
     tokenizer: Any,
     max_sequence_length: int,
+    max_new_tokens: int,
 ) -> tuple[dict[str, Any] | None, int, GoldHoldoutInferenceFailure | None]:
     prompt = tokenizer.apply_chat_template(
         _prompt_messages(case),
@@ -396,7 +397,8 @@ def _prepare_prompt(
     )
     encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
     prompt_tokens = int(encoded["input_ids"].shape[-1])
-    if prompt_tokens <= max_sequence_length:
+    required_tokens = prompt_tokens + max_new_tokens
+    if required_tokens <= max_sequence_length:
         return encoded, prompt_tokens, None
     failure = GoldHoldoutInferenceFailure(
         case_id=case.case_id,
@@ -404,7 +406,8 @@ def _prepare_prompt(
         input_context_sha256=case.input_context_sha256,
         failure_type="PROMPT_TOO_LONG",
         detail=(
-            f"prompt requires {prompt_tokens} tokens, above "
+            f"prompt requires {prompt_tokens} tokens plus generation reserve "
+            f"max_new_tokens={max_new_tokens}, total={required_tokens}, above "
             f"max_sequence_length={max_sequence_length}"
         ),
     )
@@ -473,6 +476,7 @@ def execute_gold_holdout_inference(
             case,
             tokenizer,
             config.max_sequence_length,
+            policy.max_new_tokens,
         )
         if failure is not None:
             failures.append(failure)
