@@ -25,6 +25,12 @@ _SUPPORTED_LORA_TARGET_TYPES = {
     "bitsandbytes.nn.modules.Linear4bit",
     "bitsandbytes.nn.modules.Linear8bitLt",
 }
+_REQUIRED_ADAPTER_FILES = frozenset(
+    {
+        "adapter/adapter_config.json",
+        "adapter/adapter_model.safetensors",
+    }
+)
 
 
 class CyberSFTArtifactVerification(StrictModel):
@@ -187,8 +193,14 @@ def verify_cyber_sft_run(
     try:
         observed_files = _adapter_file_inventory(run_path)
         expected_files = sorted(manifest.adapter_files)
+        missing_required = sorted(_REQUIRED_ADAPTER_FILES - set(expected_files))
         if not expected_files:
             violations.append("adapter manifest contains no adapter files")
+        elif missing_required:
+            violations.append(
+                "adapter manifest lacks required PEFT files: "
+                + ", ".join(missing_required)
+            )
         elif observed_files != expected_files:
             missing = sorted(set(expected_files) - set(observed_files))
             extra = sorted(set(observed_files) - set(expected_files))
