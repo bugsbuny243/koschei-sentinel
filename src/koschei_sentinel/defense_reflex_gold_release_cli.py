@@ -7,9 +7,9 @@ from pathlib import Path
 from koschei_sentinel.cyber_range import CyberRangeScenario
 from koschei_sentinel.defense_reflex_gold_queue import GoldDefenseReviewPacket
 from koschei_sentinel.defense_reflex_gold_review import GoldReviewedPacket
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 from koschei_sentinel.gold_review_signing import (
     GoldReviewSignatureProof,
-    load_reviewer_public_key,
     write_signed_gold_defense_release,
 )
 
@@ -46,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ed25519 Gold review signature proof; repeat in scenario order",
     )
     parser.add_argument("--reviewer-public-key", required=True)
+    parser.add_argument("--reviewer-trust-policy", required=True)
+    parser.add_argument("--owner-public-key", required=True)
     parser.add_argument("--output-dir", required=True)
     return parser
 
@@ -92,7 +94,11 @@ def main(argv: list[str] | None = None) -> int:
             _load(path, GoldReviewSignatureProof, "Gold review signature proof")
             for path in args.review_signature
         ]
-        reviewer_public_key = load_reviewer_public_key(args.reviewer_public_key)
+        reviewer_public_key = load_trusted_reviewer_public_key(
+            reviewer_public_key_path=args.reviewer_public_key,
+            trust_policy_path=args.reviewer_trust_policy,
+            owner_public_key_path=args.owner_public_key,
+        )
         manifest = write_signed_gold_defense_release(
             rows,
             proofs,
