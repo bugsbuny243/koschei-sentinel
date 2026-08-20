@@ -1,5 +1,8 @@
 import pytest
 
+from koschei_sentinel.defense_reflex_gold_release_audit_cli import (
+    build_parser as build_audit_parser,
+)
 from koschei_sentinel.defense_reflex_gold_release_cli import (
     build_parser as build_release_parser,
 )
@@ -85,4 +88,26 @@ def test_gold_release_cli_accepts_signed_release_contract() -> None:
     )
 
     assert args.review_signature == ["review-signature.json"]
+    assert args.reviewer_public_key == "reviewer-public.pem"
+
+
+def test_gold_audit_cli_requires_trusted_reviewer_public_key() -> None:
+    with pytest.raises(SystemExit) as exc:
+        build_audit_parser().parse_args(["--release-dir", "gold-release"])
+
+    assert exc.value.code == 2
+
+
+def test_gold_audit_cli_accepts_signed_audit_contract() -> None:
+    args = build_audit_parser().parse_args(
+        [
+            "--release-dir",
+            "gold-release",
+            "--reviewer-public-key",
+            "reviewer-public.pem",
+            "--output",
+            "gold-audit.json",
+        ]
+    )
+
     assert args.reviewer_public_key == "reviewer-public.pem"
