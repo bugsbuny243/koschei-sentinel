@@ -9,6 +9,7 @@ from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.training import canonical_json
 from tests.test_cyber_defense_promotion import (
     ADAPTER_DIGEST,
+    PACK_SIGNATURE_PROOF_DIGEST,
     _bundle,
     _gold_evidence,
     _load,
@@ -57,6 +58,8 @@ def test_promotion_cli_accepts_all_gold_source_artifacts() -> None:
             "release",
             "--gold-inference-pack",
             "pack",
+            "--gold-inference-pack-signature",
+            "pack-signature.json",
             "--gold-inference-output",
             "inference-output",
             "--gold-candidate-export",
@@ -68,6 +71,7 @@ def test_promotion_cli_accepts_all_gold_source_artifacts() -> None:
 
     assert args.gold_release_dir == "release"
     assert args.gold_inference_pack == "pack"
+    assert args.gold_inference_pack_signature == "pack-signature.json"
     assert args.gold_inference_output == "inference-output"
     assert args.gold_candidate_export == "candidate-export"
     assert args.gold_reviewer_public_key == "reviewer-public.pem"
@@ -98,6 +102,7 @@ def _source_builder_kwargs(policy, supplied):
         "gold_inference_output_dir": "inference-output",
         "gold_candidate_export_dir": "candidate-export",
         "gold_reviewer_public_key": reviewer_public_key,
+        "gold_inference_pack_signature_proof": object(),
     }
 
 
@@ -136,4 +141,8 @@ def test_promotion_accepts_supplied_gold_evidence_only_when_fresh_rebuild_matche
 
     assert promotion.ready_for_promotion is True
     assert promotion.gold_review_signature_audit_sha256 == "a" * 64
+    assert (
+        promotion.gold_holdout_pack_signature_proof_sha256
+        == PACK_SIGNATURE_PROOF_DIGEST
+    )
     assert promotion.gold_holdout_evaluation_evidence_sha256 == supplied.evidence_sha256
