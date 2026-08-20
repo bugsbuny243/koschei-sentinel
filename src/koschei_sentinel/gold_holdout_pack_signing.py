@@ -27,6 +27,7 @@ class GoldHoldoutPackSignatureProof(StrictModel):
     )
     reviewer_key_fingerprint: str = Field(pattern=_DIGEST)
     source_gold_audit_sha256: str = Field(pattern=_DIGEST)
+    review_signature_audit_sha256: str = Field(pattern=_DIGEST)
     inputs_sha256: str = Field(pattern=_DIGEST)
     inference_manifest_sha256: str = Field(pattern=_DIGEST)
     binding_sha256: str = Field(pattern=_DIGEST)
@@ -52,10 +53,12 @@ def _binding_payload(
     manifest: GoldHoldoutInferenceManifest,
     manifest_sha256: str,
     reviewer_key_fingerprint_value: str,
+    review_signature_audit_sha256: str,
 ) -> dict[str, object]:
     return {
         "reviewer_key_fingerprint": reviewer_key_fingerprint_value,
         "source_gold_audit_sha256": manifest.source_gold_audit_sha256,
+        "review_signature_audit_sha256": review_signature_audit_sha256,
         "inputs_sha256": manifest.inputs_sha256,
         "inference_manifest_sha256": manifest_sha256,
     }
@@ -68,7 +71,13 @@ def _signature_message(binding_sha256: str) -> bytes:
 def sign_gold_holdout_inference_pack(
     manifest_path: str | Path,
     reviewer_private_key: Ed25519PrivateKey,
+    *,
+    review_signature_audit_sha256: str,
 ) -> GoldHoldoutPackSignatureProof:
+    if len(review_signature_audit_sha256) != 64 or any(
+        char not in "0123456789abcdef" for char in review_signature_audit_sha256
+    ):
+        raise ValueError("Gold HOLDOUT pack signing requires a valid review-signature audit SHA")
     raw = Path(manifest_path).read_bytes()
     manifest = GoldHoldoutInferenceManifest.model_validate_json(raw)
     fingerprint = reviewer_public_key_fingerprint(reviewer_private_key.public_key())
@@ -77,6 +86,7 @@ def sign_gold_holdout_inference_pack(
         manifest=manifest,
         manifest_sha256=manifest_sha,
         reviewer_key_fingerprint_value=fingerprint,
+        review_signature_audit_sha256=review_signature_audit_sha256,
     )
     binding_sha = _digest(binding)
     signature = reviewer_private_key.sign(_signature_message(binding_sha))
@@ -113,6 +123,7 @@ def verify_gold_holdout_inference_pack_signature(
         manifest=manifest,
         manifest_sha256=manifest_sha,
         reviewer_key_fingerprint_value=fingerprint,
+        review_signature_audit_sha256=proof.review_signature_audit_sha256,
     )
     if _digest(binding) != proof.binding_sha256:
         raise ValueError(
@@ -122,6 +133,7 @@ def verify_gold_holdout_inference_pack_signature(
     observed = {
         "reviewer_key_fingerprint": proof.reviewer_key_fingerprint,
         "source_gold_audit_sha256": proof.source_gold_audit_sha256,
+        "review_signature_audit_sha256": proof.review_signature_audit_sha256,
         "inputs_sha256": proof.inputs_sha256,
         "inference_manifest_sha256": proof.inference_manifest_sha256,
     }
