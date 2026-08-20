@@ -163,6 +163,41 @@ def test_adapter_symlink_is_detected(tmp_path) -> None:
     assert any("must not be a symlink" in row for row in report.violations)
 
 
+def test_empty_adapter_manifest_is_detected_even_with_rewritten_receipt(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    empty_digest = hashlib.sha256(b"").hexdigest()
+
+    manifest_path = run / "adapter-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["adapter_files"] = []
+    manifest["adapter_digest"] = empty_digest
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run / "adapter" / "adapter_model.safetensors").unlink()
+
+    receipt_path = run / "training-receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["adapter_digest"] = empty_digest
+    receipt.pop("receipt_sha256")
+    receipt["receipt_sha256"] = hashlib.sha256(
+        canonical_json(receipt).encode("utf-8")
+    ).hexdigest()
+    receipt_path.write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+
+    assert report.valid is False
+    assert report.adapter_digest_verified is False
+    assert report.receipt_digest_verified is True
+    assert report.receipt_bindings_verified is True
+    assert any("contains no adapter files" in row for row in report.violations)
+
+
 def test_receipt_tamper_is_detected(tmp_path) -> None:
     run = _write_run(tmp_path)
     receipt_path = run / "training-receipt.json"
