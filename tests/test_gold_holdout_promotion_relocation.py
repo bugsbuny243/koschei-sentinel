@@ -7,6 +7,9 @@ from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     build_gold_holdout_evaluation_evidence,
 )
+from koschei_sentinel.gold_holdout_pack_signing import (
+    sign_gold_holdout_inference_pack,
+)
 from tests.gold_candidate_binding_helpers import (
     rebind_inference_fixture_to_gold_candidate,
 )
@@ -31,7 +34,15 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         output=output,
         model_ref=plan.model_ref,
     )
-    reviewer_public_key = attach_signed_review_proofs(release)
+    reviewer_private_key = attach_signed_review_proofs(
+        release,
+        return_private_key=True,
+    )
+    reviewer_public_key = reviewer_private_key.public_key()
+    pack_proof = sign_gold_holdout_inference_pack(
+        pack / "manifest.json",
+        reviewer_private_key,
+    )
     policy = GoldHoldoutEvaluationPolicy(minimum_case_count=1)
     supplied = build_gold_holdout_evaluation_evidence(
         release_dir=release,
@@ -40,6 +51,7 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         candidate_export_dir=candidate_export,
         policy=policy,
         reviewer_public_key=reviewer_public_key,
+        inference_pack_signature_proof=pack_proof,
     )
 
     relocated_root = tmp_path / "promotion-host"
@@ -67,16 +79,22 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         gold_inference_output_dir=relocated_output,
         gold_candidate_export_dir=relocated_candidate,
         gold_reviewer_public_key=reviewer_public_key,
+        gold_inference_pack_signature_proof=pack_proof,
     )
 
     assert promotion.ready_for_promotion is True
     assert promotion.gold_holdout_passed is True
     assert promotion.gold_review_signature_audit_sha256 is not None
     assert promotion.gold_candidate_training_binding_sha256 is not None
+    assert promotion.gold_holdout_pack_signature_proof_sha256 == pack_proof.proof_sha256
     assert promotion.gold_holdout_evaluation_evidence_sha256 == supplied.evidence_sha256
     assert (
         promotion.gold_candidate_training_binding_sha256
         == supplied.candidate_training_binding_verification_sha256
+    )
+    assert (
+        promotion.gold_holdout_pack_signature_proof_sha256
+        == supplied.inference_pack_signature_proof_sha256
     )
     assert (
         promotion.gold_holdout_inference_verification_sha256
