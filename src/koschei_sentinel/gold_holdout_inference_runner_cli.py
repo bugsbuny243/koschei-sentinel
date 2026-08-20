@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import tempfile
 from pathlib import Path
 
@@ -20,7 +19,7 @@ from koschei_sentinel.gold_holdout_inference_verify import (
 from koschei_sentinel.gold_holdout_pack_admission import (
     GoldHoldoutPackAdmission,
     admit_signed_gold_holdout_pack,
-    verify_admitted_gold_holdout_pack,
+    snapshot_admitted_gold_holdout_pack,
 )
 
 
@@ -73,15 +72,11 @@ def _snapshot_signed_pack(
     admission: GoldHoldoutPackAdmission,
     destination: Path,
 ) -> Path:
-    if destination.exists():
-        raise FileExistsError(f"Gold HOLDOUT pack snapshot already exists: {destination}")
-    try:
-        shutil.copytree(inference_pack, destination, symlinks=True)
-        verify_admitted_gold_holdout_pack(admission, destination)
-        return destination
-    except (OSError, TypeError, ValueError):
-        shutil.rmtree(destination, ignore_errors=True)
-        raise
+    return snapshot_admitted_gold_holdout_pack(
+        admission,
+        inference_pack,
+        destination,
+    )
 
 
 def _assert_raw_candidate_export(candidate_export: str) -> None:
@@ -137,6 +132,8 @@ def _execute_atomic(
         os.replace(staging, destination)
         return receipt
     finally:
+        import shutil
+
         shutil.rmtree(staging_root, ignore_errors=True)
 
 
