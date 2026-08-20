@@ -15,9 +15,16 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from pydantic import Field
 
-from koschei_sentinel.gold_review_signing import reviewer_public_key_fingerprint
+from koschei_sentinel.gold_review_signing import (
+    load_reviewer_private_key,
+    load_reviewer_public_key,
+    reviewer_public_key_fingerprint,
+)
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.promotion import public_key_fingerprint
+from koschei_sentinel.promotion import (
+    load_owner_public_key,
+    public_key_fingerprint,
+)
 
 _DIGEST = r"^[a-f0-9]{64}$"
 _POLICY_ID = r"^[a-z0-9][a-z0-9._-]{0,127}$"
@@ -140,6 +147,40 @@ def load_gold_reviewer_trust_policy(path: str | Path) -> GoldReviewerTrustPolicy
         return GoldReviewerTrustPolicy.model_validate_json(Path(path).read_bytes())
     except (OSError, ValueError) as exc:
         raise ValueError("invalid Gold reviewer trust policy") from exc
+
+
+def load_trusted_reviewer_public_key(
+    *,
+    reviewer_public_key_path: str | Path,
+    trust_policy_path: str | Path,
+    owner_public_key_path: str | Path,
+) -> Ed25519PublicKey:
+    reviewer_public_key = load_reviewer_public_key(reviewer_public_key_path)
+    policy = load_gold_reviewer_trust_policy(trust_policy_path)
+    owner_public_key = load_owner_public_key(owner_public_key_path)
+    verify_gold_reviewer_trust_policy(
+        policy,
+        reviewer_public_key,
+        owner_public_key,
+    )
+    return reviewer_public_key
+
+
+def load_trusted_reviewer_private_key(
+    *,
+    reviewer_private_key_path: str | Path,
+    trust_policy_path: str | Path,
+    owner_public_key_path: str | Path,
+) -> Ed25519PrivateKey:
+    reviewer_private_key = load_reviewer_private_key(reviewer_private_key_path)
+    policy = load_gold_reviewer_trust_policy(trust_policy_path)
+    owner_public_key = load_owner_public_key(owner_public_key_path)
+    verify_gold_reviewer_trust_policy(
+        policy,
+        reviewer_private_key.public_key(),
+        owner_public_key,
+    )
+    return reviewer_private_key
 
 
 def write_gold_reviewer_trust_policy(
