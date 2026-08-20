@@ -24,7 +24,9 @@ from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
 from koschei_sentinel.gold_holdout_pack_admission import (
+    GoldHoldoutPackAdmission,
     admit_signed_gold_holdout_pack,
+    snapshot_admitted_gold_holdout_pack,
 )
 from koschei_sentinel.gold_holdout_pack_preflight import (
     preflight_gold_holdout_inference_pack,
@@ -127,8 +129,8 @@ def _verify_signed_pack(
     inference_pack: str,
     signature_path: str,
     reviewer_public_key_path: str,
-) -> None:
-    admit_signed_gold_holdout_pack(
+) -> GoldHoldoutPackAdmission:
+    return admit_signed_gold_holdout_pack(
         inference_pack=inference_pack,
         signature_path=signature_path,
         reviewer_public_key_path=reviewer_public_key_path,
@@ -249,26 +251,32 @@ def _export_signed_inputs(
 
 
 def _evaluate_verified_output(args):
-    _verify_signed_pack(
+    admission = _verify_signed_pack(
         inference_pack=args.inference_pack,
         signature_path=args.inference_pack_signature,
         reviewer_public_key_path=args.reviewer_public_key,
     )
     _assert_raw_candidate_export(args.candidate_export)
-    verification = verify_gold_holdout_inference_output(
-        args.inference_output,
-        args.inference_pack,
-        args.candidate_export,
-    )
-    if not verification.valid:
-        raise ValueError("Gold HOLDOUT inference output verification failed")
+    with tempfile.TemporaryDirectory(prefix="gold-holdout-pack-snapshot-") as temp_dir:
+        snapshot = snapshot_admitted_gold_holdout_pack(
+            admission,
+            args.inference_pack,
+            Path(temp_dir) / "pack",
+        )
+        verification = verify_gold_holdout_inference_output(
+            args.inference_output,
+            snapshot,
+            args.candidate_export,
+        )
+        if not verification.valid:
+            raise ValueError("Gold HOLDOUT inference output verification failed")
+        inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
+            (snapshot / "manifest.json").read_bytes()
+        )
 
     release_audit = audit_gold_defense_release(args.release_dir)
     if not release_audit.valid:
         raise ValueError("Gold HOLDOUT release audit is invalid")
-    inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
-        (Path(args.inference_pack) / "manifest.json").read_bytes()
-    )
     if inference_manifest.source_gold_audit_sha256 != release_audit.audit_sha256:
         raise ValueError("inference pack was exported from a different Gold release audit")
 
