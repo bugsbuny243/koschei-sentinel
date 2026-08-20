@@ -17,8 +17,8 @@ def test_signed_export_rejects_pack_manifest_from_different_release_snapshot(
 
     monkeypatch.setattr(
         cli_module,
-        "load_reviewer_private_key",
-        lambda *_args: private_key,
+        "load_trusted_reviewer_private_key",
+        lambda **_kwargs: private_key,
     )
     monkeypatch.setattr(
         cli_module,
@@ -68,17 +68,15 @@ def test_signed_export_rejects_pack_manifest_from_different_release_snapshot(
         raise AssertionError("mismatched pack must fail before signing")
 
     monkeypatch.setattr(cli_module, "_export_inputs_atomic", fake_export)
-    monkeypatch.setattr(
-        cli_module,
-        "sign_gold_holdout_inference_pack",
-        forbidden_sign,
-    )
+    monkeypatch.setattr(cli_module, "sign_gold_holdout_inference_pack", forbidden_sign)
 
     with pytest.raises(ValueError, match="manifest differs from release snapshot audit"):
         cli_module._export_signed_inputs(
             release_dir="release",
             output_dir=str(destination),
             reviewer_private_key_path="reviewer.pem",
+            reviewer_trust_policy_path="reviewer-trust.json",
+            owner_public_key_path="owner-public.pem",
             signature_output=str(signature),
         )
 
