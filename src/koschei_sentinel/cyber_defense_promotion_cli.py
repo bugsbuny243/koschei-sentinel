@@ -14,13 +14,13 @@ from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     GoldHoldoutEvaluationEvidence,
 )
-from koschei_sentinel.gold_holdout_pack_signing import (
-    load_gold_holdout_pack_signature,
-)
-from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
+from koschei_sentinel.gold_holdout_pack_signing import load_gold_holdout_pack_signature
+from koschei_sentinel.gold_reviewer_trust import load_gold_reviewer_trust_policy
+from koschei_sentinel.gold_review_signing import load_reviewer_public_key
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
+from koschei_sentinel.promotion import load_owner_public_key
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -72,11 +72,6 @@ def main(argv: list[str] | None = None) -> int:
         gold_policy = GoldHoldoutEvaluationPolicy.model_validate_json(
             Path(args.gold_holdout_policy).read_text(encoding="utf-8")
         )
-        gold_reviewer_public_key = load_trusted_reviewer_public_key(
-            reviewer_public_key_path=args.gold_reviewer_public_key,
-            trust_policy_path=args.gold_reviewer_trust_policy,
-            owner_public_key_path=args.gold_owner_public_key,
-        )
         evidence = build_cyber_defense_promotion_evidence_from_sources(
             promotion_id=args.promotion_id,
             candidate_model_ref=args.candidate_model,
@@ -91,7 +86,13 @@ def main(argv: list[str] | None = None) -> int:
             gold_inference_pack_dir=args.gold_inference_pack,
             gold_inference_output_dir=args.gold_inference_output,
             gold_candidate_export_dir=args.gold_candidate_export,
-            gold_reviewer_public_key=gold_reviewer_public_key,
+            gold_reviewer_public_key=load_reviewer_public_key(
+                args.gold_reviewer_public_key
+            ),
+            gold_reviewer_trust_policy=load_gold_reviewer_trust_policy(
+                args.gold_reviewer_trust_policy
+            ),
+            gold_owner_public_key=load_owner_public_key(args.gold_owner_public_key),
             gold_inference_pack_signature_proof=load_gold_holdout_pack_signature(
                 args.gold_inference_pack_signature
             ),
