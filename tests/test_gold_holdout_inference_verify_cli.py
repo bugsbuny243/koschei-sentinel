@@ -16,39 +16,49 @@ def _base_args():
         "pack-signature.json",
         "--reviewer-public-key",
         "reviewer-public.pem",
+        "--reviewer-trust-policy",
+        "reviewer-trust.json",
+        "--owner-public-key",
+        "owner-public.pem",
         "--candidate-export",
         "candidate-export",
     ]
 
 
+def _without(argv: list[str], option: str) -> list[str]:
+    result = list(argv)
+    index = result.index(option)
+    del result[index : index + 2]
+    return result
+
+
 def test_gold_holdout_verify_cli_requires_candidate_export() -> None:
-    argv = _base_args()
-    index = argv.index("--candidate-export")
-    del argv[index : index + 2]
-
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(argv)
-
+        build_parser().parse_args(_without(_base_args(), "--candidate-export"))
     assert exc.value.code == 2
 
 
 def test_gold_holdout_verify_cli_requires_signed_pack_identity() -> None:
-    argv = _base_args()
-    index = argv.index("--inference-pack-signature")
-    del argv[index : index + 2]
-
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(argv)
-
+        build_parser().parse_args(_without(_base_args(), "--inference-pack-signature"))
     assert exc.value.code == 2
 
 
-def test_gold_holdout_verify_cli_accepts_candidate_export() -> None:
+@pytest.mark.parametrize("missing", ["--reviewer-trust-policy", "--owner-public-key"])
+def test_gold_holdout_verify_cli_requires_owner_pinned_trust(missing: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(_without(_base_args(), missing))
+    assert exc.value.code == 2
+
+
+def test_gold_holdout_verify_cli_accepts_owner_pinned_candidate_export() -> None:
     args = build_parser().parse_args(_base_args())
 
     assert args.candidate_export == "candidate-export"
     assert args.inference_pack_signature == "pack-signature.json"
     assert args.reviewer_public_key == "reviewer-public.pem"
+    assert args.reviewer_trust_policy == "reviewer-trust.json"
+    assert args.owner_public_key == "owner-public.pem"
 
 
 def test_signed_pack_failure_blocks_candidate_and_offline_verifier(
@@ -100,11 +110,7 @@ def test_raw_candidate_failure_blocks_offline_verifier(monkeypatch, capsys) -> N
         verified = True
         raise AssertionError("offline verifier must not run after raw candidate failure")
 
-    monkeypatch.setattr(
-        cli_module,
-        "verify_gold_holdout_inference_output",
-        forbidden_verify,
-    )
+    monkeypatch.setattr(cli_module, "verify_gold_holdout_inference_output", forbidden_verify)
 
     argv = _base_args()
     argv[argv.index("candidate-export")] = "candidate-export-link"
