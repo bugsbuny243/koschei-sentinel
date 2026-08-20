@@ -28,6 +28,8 @@ jobs:
       - name: Gold HOLDOUT fail-closed regression gate
         run: >-
           pytest -q
+          tests/test_cyber_sft_export.py
+          tests/test_cyber_sft_export_verify.py
           tests/test_cyber_sft_export_promotion_binding.py
           tests/test_gold_review_signing.py
           tests/test_gold_review_cli_contracts.py
