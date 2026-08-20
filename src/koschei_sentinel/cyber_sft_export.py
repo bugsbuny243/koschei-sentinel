@@ -70,7 +70,8 @@ def _validate_adapter_relative_path(relative: str) -> Path:
     parsed = PurePosixPath(relative)
     if parsed.is_absolute() or not parsed.parts or ".." in parsed.parts:
         raise ValueError(f"adapter file path is not portable: {relative}")
-    if any(part in {"", "."} for part in parsed.parts):
+    canonical = parsed.as_posix()
+    if relative != canonical:
         raise ValueError(f"adapter file path is not canonical: {relative}")
     if parsed.parts[0] != "adapter":
         raise ValueError(f"adapter file must remain under adapter/: {relative}")
@@ -176,10 +177,13 @@ def build_cyber_sft_export(
         run_files.append((source, Path("run") / name))
     seen_adapter_files: set[str] = set()
     for relative in manifest.adapter_files:
-        if relative in seen_adapter_files:
-            raise ValueError(f"adapter manifest contains duplicate file path: {relative}")
-        seen_adapter_files.add(relative)
         portable_relative = _validate_adapter_relative_path(relative)
+        canonical_relative = portable_relative.as_posix()
+        if canonical_relative in seen_adapter_files:
+            raise ValueError(
+                f"adapter manifest contains duplicate canonical file path: {relative}"
+            )
+        seen_adapter_files.add(canonical_relative)
         source = _source_path(
             root_path,
             run_source / portable_relative,
