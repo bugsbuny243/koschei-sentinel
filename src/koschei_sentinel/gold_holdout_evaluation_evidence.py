@@ -8,6 +8,9 @@ from typing import Literal
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import Field, model_validator
 
+from koschei_sentinel.cyber_sft_candidate_snapshot import (
+    snapshot_verified_cyber_sft_export,
+)
 from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
 from koschei_sentinel.gold_candidate_training_binding import (
     verify_gold_candidate_training_binding,
@@ -204,18 +207,6 @@ def build_gold_holdout_evaluation_evidence(
             reviewer_public_key=reviewer_public_key,
         )
         verify_admitted_gold_holdout_pack(admission, pack)
-        with tempfile.TemporaryDirectory(prefix="gold-holdout-pack-snapshot-") as temp_dir:
-            snapshot = snapshot_admitted_gold_holdout_pack(
-                admission,
-                pack,
-                Path(temp_dir) / "pack",
-            )
-            inference_manifest, verification = _load_pack_evaluation_state(
-                pack=snapshot,
-                inference_output_dir=inference_output_dir,
-                candidate_export_dir=candidate_export_dir,
-                source_gold_audit_sha256=release_audit.audit_sha256,
-            )
 
         signature_audit = audit_gold_release_review_signatures(
             release_dir,
@@ -237,24 +228,46 @@ def build_gold_holdout_evaluation_evidence(
         review_signature_audit_sha = signature_audit.audit_sha256
         inference_pack_signature_sha = inference_pack_signature_proof.proof_sha256
 
-        candidate_binding = verify_gold_candidate_training_binding(
-            release_dir,
-            candidate_export_dir,
-        )
-        if not candidate_binding.valid:
-            detail = "; ".join(candidate_binding.violations[:5])
-            raise ValueError(
-                "Gold HOLDOUT candidate training binding failed"
-                + (f": {detail}" if detail else "")
+        with tempfile.TemporaryDirectory(prefix="gold-holdout-evidence-snapshot-") as temp_dir:
+            snapshot_root = Path(temp_dir)
+            inference_snapshot = snapshot_admitted_gold_holdout_pack(
+                admission,
+                pack,
+                snapshot_root / "pack",
             )
-        candidate_training_binding_sha = candidate_binding.verification_sha256
+            candidate_snapshot = snapshot_verified_cyber_sft_export(
+                candidate_export_dir,
+                snapshot_root / "candidate-export",
+            )
+            inference_manifest, verification = _load_pack_evaluation_state(
+                pack=inference_snapshot,
+                inference_output_dir=inference_output_dir,
+                candidate_export_dir=candidate_snapshot,
+                source_gold_audit_sha256=release_audit.audit_sha256,
+            )
+            candidate_binding = verify_gold_candidate_training_binding(
+                release_dir,
+                candidate_snapshot,
+            )
+            if not candidate_binding.valid:
+                detail = "; ".join(candidate_binding.violations[:5])
+                raise ValueError(
+                    "Gold HOLDOUT candidate training binding failed"
+                    + (f": {detail}" if detail else "")
+                )
+            candidate_training_binding_sha = candidate_binding.verification_sha256
     else:
-        inference_manifest, verification = _load_pack_evaluation_state(
-            pack=pack,
-            inference_output_dir=inference_output_dir,
-            candidate_export_dir=candidate_export_dir,
-            source_gold_audit_sha256=release_audit.audit_sha256,
-        )
+        with tempfile.TemporaryDirectory(prefix="gold-holdout-evidence-snapshot-") as temp_dir:
+            candidate_snapshot = snapshot_verified_cyber_sft_export(
+                candidate_export_dir,
+                Path(temp_dir) / "candidate-export",
+            )
+            inference_manifest, verification = _load_pack_evaluation_state(
+                pack=pack,
+                inference_output_dir=inference_output_dir,
+                candidate_export_dir=candidate_snapshot,
+                source_gold_audit_sha256=release_audit.audit_sha256,
+            )
 
     output = Path(inference_output_dir)
     plan = GoldHoldoutInferencePlan.model_validate_json((output / "plan.json").read_bytes())
