@@ -113,6 +113,8 @@ validation_ratio      = 0.0
 
 The trainer never re-splits these datasets. Validation hashes are included in the training plan, resume binding, source binding, and run attestation.
 
+On `sentinel-cyber-sft --execute`, the CLI revalidates the planned TRAIN and VALIDATION hashes, split disjointness, example counts, and promotion eligibility before entering the GPU executor. The text trainer performs its own execution-time checks again as an independent inner gate.
+
 ## 6. Export answer-key-isolated HOLDOUT inputs
 
 Never give the inference runtime `holdout/cases.jsonl` directly. Export an answer-key-free inference pack instead:
@@ -137,7 +139,22 @@ The GPU inference host should receive the answer-key-isolated inference pack plu
 
 ## 7. Run the trained adapter against HOLDOUT
 
-First verify the portable candidate export independently:
+Create the portable candidate export from the exact training artifacts first. The producer fresh-rebuilds the run attestation, revalidates the planned TRAIN/VALIDATION sources, copies exact artifact bytes into a staging directory, verifies the staged package independently, and publishes it atomically only when verification succeeds.
+
+```bash
+sentinel-cyber-sft-export \
+  --config configs/training/cyber-sft.qwen3.5-9b.gold.example.json \
+  --plan <training-plan.json> \
+  --training-source <training-source.json> \
+  --model-preflight <model-preflight.json> \
+  --verification <verification.json> \
+  --attestation <run-attestation.json> \
+  --output-dir build/cyber-training/exports/qwen35-9b-gold-defense-v1
+```
+
+The exporter refuses stale attestation state, source drift, TRAIN/VALIDATION count drift, symlink-traversed source artifacts, duplicate adapter paths, non-portable adapter paths, an existing destination, or a staged package that fails fresh verification. It does not rewrite provenance to make a bad run look valid.
+
+Then verify the portable candidate export independently:
 
 ```bash
 sentinel-cyber-sft-export-verify \
@@ -216,7 +233,7 @@ sentinel-gold-holdout-eval evaluate-output \
 
 The evaluator measures structural sequence exactness, mode/action/target accuracy, evidence-selection accuracy, evidence grounding, target grounding, and outcome-verification discipline.
 
-Production Gold evidence additionally re-verifies every human-review signature against the external trust root and binds the resulting review-signature-audit SHA into the evidence self-hash:
+Production Gold evidence additionally re-verifies every human-review signature against the external trust root and binds the resulting review-signature-audit SHA into the evidence self-hash. It also binds the independent candidate-training verification proving that the evaluated adapter is tied to the same signed Gold TRAIN and VALIDATION release bytes.
 
 ```bash
 sentinel-gold-holdout-evidence \
@@ -229,7 +246,7 @@ sentinel-gold-holdout-evidence \
   --output build/gold-holdout-evidence.json
 ```
 
-The Gold evidence passes only when evaluation passes and inference contains zero failed cases. A wrong reviewer key, missing proof, extra proof, modified review binding, or invalid Ed25519 signature prevents production evidence creation.
+The Gold evidence passes only when evaluation passes and inference contains zero failed cases. A wrong reviewer key, missing proof, extra proof, modified review binding, invalid Ed25519 signature, or candidate trained against different TRAIN/VALIDATION bytes prevents production evidence creation.
 
 ## 10. Promotion v4
 
@@ -249,7 +266,7 @@ CyberDefensePromotionEvidence v4
 
 The production promotion path does not trust the supplied Gold evidence JSON by itself. It rebuilds Gold evaluation evidence from the original Gold release, answer-key-isolated inference pack, verified inference output, original portable candidate export, exact evaluation policy, and external reviewer public key. The freshly rebuilt evidence must be semantically identical to the supplied evidence or promotion fails closed.
 
-Promotion re-applies the minimum case-count and every Gold quality threshold. The Promotion v4 receipt binds the Gold source audit, reviewer-signature audit, inference verification, evaluation report, and evaluation evidence digests.
+Promotion re-applies the minimum case-count and every Gold quality threshold. The Promotion v4 receipt binds the Gold source audit, reviewer-signature audit, candidate-training binding, inference verification, evaluation report, and evaluation evidence digests.
 
 ```bash
 sentinel-cyber-defense-promotion \
@@ -280,4 +297,4 @@ Gold provenance identity is content-based rather than host-path-based. The Gold 
 
 The trusted reviewer public key is external and is not part of the relocated artifact directory. Full-artifact relocation is valid only when the same trusted reviewer public key is supplied again.
 
-Artifacts produced before the host-path-independent digest and signed-review changes must not be mixed with the new Promotion v4 path. Regenerate the Gold release audit/inference pack, signed Gold evidence, and downstream promotion evidence from the current code before a real HOLDOUT promotion attempt.
+Artifacts produced before the host-path-independent digest, signed-review, candidate-training binding, or deterministic candidate-export changes must not be mixed with the current Promotion v4 path. Regenerate the portable candidate export, Gold release audit/inference pack, signed Gold evidence, and downstream promotion evidence from the current code before a real HOLDOUT promotion attempt.
