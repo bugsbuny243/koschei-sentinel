@@ -57,6 +57,7 @@ jobs:
           tests/test_gold_holdout_evaluation_cli.py
           tests/test_gold_holdout_evaluation_evidence.py
           tests/test_gold_holdout_evaluation_evidence_cli.py
+          tests/test_gold_holdout_evidence_snapshot.py
           tests/test_gold_holdout_signed_evidence.py
           tests/test_cyber_defense_promotion_gold_case_count.py
           tests/test_cyber_defense_promotion_cli.py
