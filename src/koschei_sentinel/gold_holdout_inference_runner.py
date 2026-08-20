@@ -38,6 +38,8 @@ from koschei_sentinel.gold_holdout_evaluation import (
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
 
+_EXPECTED_INFERENCE_PACK_FILES = frozenset({"inputs.jsonl", "manifest.json"})
+
 
 class GoldHoldoutGenerationPolicy(StrictModel):
     schema_version: Literal["sentinel.gold-holdout-generation-policy.v1"] = (
@@ -143,10 +145,37 @@ def _load_inference_pack(
     inference_pack_dir: str | Path,
 ) -> tuple[list[GoldHoldoutInferenceCase], GoldHoldoutInferenceManifest, bytes]:
     root = Path(inference_pack_dir)
+    if root.is_symlink():
+        raise ValueError("Gold HOLDOUT inference pack directory must not be a symlink")
+    if not root.is_dir():
+        raise ValueError("Gold HOLDOUT inference pack directory is missing")
+
+    observed_files: list[str] = []
+    for path in root.rglob("*"):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            raise ValueError(
+                f"Gold HOLDOUT inference pack must not contain symlinks: {relative}"
+            )
+        if path.is_file():
+            observed_files.append(relative)
+    expected_files = sorted(_EXPECTED_INFERENCE_PACK_FILES)
+    observed_files = sorted(observed_files)
+    if observed_files != expected_files:
+        missing = sorted(set(expected_files) - set(observed_files))
+        extra = sorted(set(observed_files) - set(expected_files))
+        detail: list[str] = []
+        if missing:
+            detail.append("missing=" + ",".join(missing[:8]))
+        if extra:
+            detail.append("extra=" + ",".join(extra[:8]))
+        raise ValueError(
+            "Gold HOLDOUT inference pack file set differs from answer-key-isolated contract: "
+            + ("; ".join(detail) or "file-set mismatch")
+        )
+
     manifest_path = root / "manifest.json"
     inputs_path = root / "inputs.jsonl"
-    if not manifest_path.is_file() or not inputs_path.is_file():
-        raise ValueError("Gold HOLDOUT inference pack requires manifest.json and inputs.jsonl")
     manifest_raw = manifest_path.read_bytes()
     manifest = GoldHoldoutInferenceManifest.model_validate_json(manifest_raw)
     if not manifest.answer_key_excluded:
