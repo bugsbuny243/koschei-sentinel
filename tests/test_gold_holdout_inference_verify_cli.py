@@ -35,8 +35,54 @@ def test_gold_holdout_verify_cli_accepts_candidate_export() -> None:
     assert args.candidate_export == "candidate-export"
 
 
+def test_pack_preflight_failure_blocks_candidate_and_offline_verifier(
+    monkeypatch,
+    capsys,
+) -> None:
+    candidate_checked = False
+    verified = False
+
+    def fail_preflight(_path):
+        raise ValueError("forbidden answer-key/review fields")
+
+    def forbidden_candidate(_path):
+        nonlocal candidate_checked
+        candidate_checked = True
+        raise AssertionError("candidate verification must not run after pack preflight failure")
+
+    def forbidden_verify(*_args, **_kwargs):
+        nonlocal verified
+        verified = True
+        raise AssertionError("offline verifier must not run after pack preflight failure")
+
+    monkeypatch.setattr(cli_module, "preflight_gold_holdout_inference_pack", fail_preflight)
+    monkeypatch.setattr(cli_module, "verify_cyber_sft_export", forbidden_candidate)
+    monkeypatch.setattr(cli_module, "verify_gold_holdout_inference_output", forbidden_verify)
+
+    status = cli_module.main(
+        [
+            "--output-dir",
+            "output",
+            "--inference-pack",
+            "poisoned-pack",
+            "--candidate-export",
+            "candidate-export",
+        ]
+    )
+
+    assert status == 2
+    assert candidate_checked is False
+    assert verified is False
+    assert "forbidden answer-key/review fields" in capsys.readouterr().out
+
+
 def test_raw_candidate_failure_blocks_offline_verifier(monkeypatch, capsys) -> None:
     verified = False
+    monkeypatch.setattr(
+        cli_module,
+        "preflight_gold_holdout_inference_pack",
+        lambda *_args: None,
+    )
     monkeypatch.setattr(
         cli_module,
         "verify_cyber_sft_export",
