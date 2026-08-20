@@ -378,3 +378,42 @@ def test_portable_export_rejects_dtype_semantic_leak(
     assert report.valid is False
     assert report.model_runtime_sha256_verified is True
     assert any("runtime semantic bindings" in row for row in report.violations)
+
+
+def test_portable_export_rejects_unlisted_extra_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = _build_export(tmp_path, monkeypatch)
+    (root / "holdout-answers.json").write_text(
+        '{"answer_key":"must-not-travel"}\n',
+        encoding="utf-8",
+    )
+
+    report = verify_cyber_sft_export(root)
+
+    assert report.valid is False
+    assert any(
+        "candidate export file set differs" in row
+        and "extra=holdout-answers.json" in row
+        for row in report.violations
+    )
+
+
+def test_portable_export_rejects_metadata_symlink(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = _build_export(tmp_path, monkeypatch)
+    config_path = root / "training-config.json"
+    external = tmp_path / "external-training-config.json"
+    config_path.replace(external)
+    config_path.symlink_to(external)
+
+    report = verify_cyber_sft_export(root)
+
+    assert report.valid is False
+    assert any(
+        "candidate export artifact must not be a symlink: training-config.json" in row
+        for row in report.violations
+    )
