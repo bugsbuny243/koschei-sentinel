@@ -37,6 +37,7 @@ STAGES = [
 ADAPTER_DIGEST = "9" * 64
 REVIEW_SIGNATURE_AUDIT_DIGEST = "7" * 64
 CANDIDATE_TRAINING_BINDING_DIGEST = "8" * 64
+PACK_SIGNATURE_PROOF_DIGEST = "a" * 64
 
 
 def _bundle() -> CyberTrainingBundle:
@@ -181,6 +182,7 @@ def _gold_evidence(
         "candidate_training_binding_verification_sha256": (
             CANDIDATE_TRAINING_BINDING_DIGEST
         ),
+        "inference_pack_signature_proof_sha256": PACK_SIGNATURE_PROOF_DIGEST,
         "inference_inputs_sha256": "2" * 64,
         "inference_plan_sha256": "3" * 64,
         "inference_receipt_sha256": "4" * 64,
@@ -205,6 +207,7 @@ def _unsigned_gold_evidence() -> GoldHoldoutEvaluationEvidence:
     payload.pop("evidence_sha256")
     payload.pop("review_signature_audit_sha256")
     payload.pop("candidate_training_binding_verification_sha256")
+    payload.pop("inference_pack_signature_proof_sha256")
     digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
     return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
 
@@ -214,6 +217,15 @@ def _gold_unbound_evidence() -> GoldHoldoutEvaluationEvidence:
     payload = bound.model_dump(mode="json")
     payload.pop("evidence_sha256")
     payload.pop("candidate_training_binding_verification_sha256")
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
+
+
+def _gold_unsigned_pack_evidence() -> GoldHoldoutEvaluationEvidence:
+    bound = _gold_evidence()
+    payload = bound.model_dump(mode="json")
+    payload.pop("evidence_sha256")
+    payload.pop("inference_pack_signature_proof_sha256")
     digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
     return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
 
@@ -288,6 +300,21 @@ def test_promotion_rejects_gold_evidence_without_candidate_training_binding() ->
             multi_incident_range_report=_multi(),
             defense_load_range_report=_load(),
             gold_holdout_evidence=_gold_unbound_evidence(),
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+        )
+
+
+def test_promotion_rejects_gold_evidence_without_signed_pack_binding() -> None:
+    with pytest.raises(ValueError, match="signed Gold HOLDOUT inference-pack evidence"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:unsigned-pack",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision=ADAPTER_DIGEST,
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_evidence=_gold_unsigned_pack_evidence(),
             gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
         )
 
@@ -380,5 +407,6 @@ def test_promotion_evidence_is_deterministic() -> None:
         first.gold_candidate_training_binding_sha256
         == CANDIDATE_TRAINING_BINDING_DIGEST
     )
+    assert first.gold_holdout_pack_signature_proof_sha256 == PACK_SIGNATURE_PROOF_DIGEST
     assert first.gold_holdout_inference_verification_sha256 == "5" * 64
     assert first.schema_version == "sentinel.cyber-defense-promotion-evidence.v4"
