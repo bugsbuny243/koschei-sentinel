@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 from typing import Literal
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import Field, model_validator
 
 from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
@@ -25,6 +26,7 @@ from koschei_sentinel.gold_holdout_inference_verify import (
 from koschei_sentinel.gold_holdout_zero_prediction import (
     build_zero_prediction_gold_report,
 )
+from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
 
@@ -37,6 +39,10 @@ class GoldHoldoutEvaluationEvidence(StrictModel):
     model_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
     adapter_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     source_gold_audit_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    review_signature_audit_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
     inference_inputs_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     inference_plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     inference_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -119,11 +125,26 @@ def build_gold_holdout_evaluation_evidence(
     inference_output_dir: str | Path,
     candidate_export_dir: str | Path,
     policy: GoldHoldoutEvaluationPolicy | None = None,
+    reviewer_public_key: Ed25519PublicKey | None = None,
 ) -> GoldHoldoutEvaluationEvidence:
     selected_policy = policy or GoldHoldoutEvaluationPolicy()
     release_audit = audit_gold_defense_release(release_dir)
     if not release_audit.valid:
         raise ValueError("cannot build Gold HOLDOUT evidence from an invalid Gold release")
+
+    review_signature_audit_sha: str | None = None
+    if reviewer_public_key is not None:
+        signature_audit = audit_gold_release_review_signatures(
+            release_dir,
+            reviewer_public_key,
+        )
+        if not signature_audit.valid:
+            detail = "; ".join(signature_audit.violations[:5])
+            raise ValueError(
+                "Gold HOLDOUT review signature audit failed"
+                + (f": {detail}" if detail else "")
+            )
+        review_signature_audit_sha = signature_audit.audit_sha256
 
     pack = Path(inference_pack_dir)
     inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
@@ -178,6 +199,7 @@ def build_gold_holdout_evaluation_evidence(
         "model_revision": report.model_revision,
         "adapter_digest": report.adapter_digest,
         "source_gold_audit_sha256": release_audit.audit_sha256,
+        "review_signature_audit_sha256": review_signature_audit_sha,
         "inference_inputs_sha256": inference_manifest.inputs_sha256,
         "inference_plan_sha256": plan.plan_sha256,
         "inference_receipt_sha256": receipt.receipt_sha256,
