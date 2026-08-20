@@ -11,7 +11,7 @@ from koschei_sentinel.gold_holdout_evaluation_evidence import (
 from koschei_sentinel.gold_holdout_pack_signing import (
     load_gold_holdout_pack_signature,
 )
-from koschei_sentinel.gold_review_signing import load_reviewer_public_key
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,6 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--inference-output", required=True)
     parser.add_argument("--candidate-export", required=True)
     parser.add_argument("--reviewer-public-key", required=True)
+    parser.add_argument("--reviewer-trust-policy", required=True)
+    parser.add_argument("--owner-public-key", required=True)
     parser.add_argument("--policy", required=True)
     parser.add_argument("--output", required=True)
     return parser
@@ -42,13 +44,18 @@ def _load_policy(path: str) -> GoldHoldoutEvaluationPolicy:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        reviewer_public_key = load_trusted_reviewer_public_key(
+            reviewer_public_key_path=args.reviewer_public_key,
+            trust_policy_path=args.reviewer_trust_policy,
+            owner_public_key_path=args.owner_public_key,
+        )
         evidence = build_gold_holdout_evaluation_evidence(
             release_dir=args.release_dir,
             inference_pack_dir=args.inference_pack,
             inference_output_dir=args.inference_output,
             candidate_export_dir=args.candidate_export,
             policy=_load_policy(args.policy),
-            reviewer_public_key=load_reviewer_public_key(args.reviewer_public_key),
+            reviewer_public_key=reviewer_public_key,
             inference_pack_signature_proof=load_gold_holdout_pack_signature(
                 args.inference_pack_signature
             ),
