@@ -9,6 +9,15 @@ import koschei_sentinel.gold_holdout_inference_verify_cli as verify_cli
 import koschei_sentinel.gold_holdout_pack_admission as admission_module
 
 
+def _trust_cli_args() -> list[str]:
+    return [
+        "--reviewer-trust-policy",
+        "reviewer-trust.json",
+        "--owner-public-key",
+        "owner-public.pem",
+    ]
+
+
 def test_snapshot_admission_copies_then_reverifies(monkeypatch, tmp_path: Path) -> None:
     source = tmp_path / "pack"
     source.mkdir()
@@ -22,11 +31,7 @@ def test_snapshot_admission_copies_then_reverifies(monkeypatch, tmp_path: Path) 
         assert given_admission is admission
         observed.append(Path(pack))
 
-    monkeypatch.setattr(
-        admission_module,
-        "verify_admitted_gold_holdout_pack",
-        fake_verify,
-    )
+    monkeypatch.setattr(admission_module, "verify_admitted_gold_holdout_pack", fake_verify)
 
     snapshot = admission_module.snapshot_admitted_gold_holdout_pack(
         admission,
@@ -92,9 +97,7 @@ def test_inference_cli_plan_and_execute_consume_same_snapshots(monkeypatch) -> N
             Path(kwargs["inference_pack_dir"]),
             Path(kwargs["candidate_export_dir"]),
         )
-        return SimpleNamespace(
-            model_dump=lambda **_kwargs: {"plan_sha256": "a" * 64},
-        )
+        return SimpleNamespace(model_dump=lambda **_kwargs: {"plan_sha256": "a" * 64})
 
     def fake_execute(**kwargs):
         nonlocal observed_execute
@@ -102,9 +105,7 @@ def test_inference_cli_plan_and_execute_consume_same_snapshots(monkeypatch) -> N
             Path(kwargs["inference_pack"]),
             Path(kwargs["candidate_export"]),
         )
-        return SimpleNamespace(
-            model_dump=lambda **_kwargs: {"receipt_sha256": "b" * 64},
-        )
+        return SimpleNamespace(model_dump=lambda **_kwargs: {"receipt_sha256": "b" * 64})
 
     monkeypatch.setattr(runner_cli, "build_gold_holdout_inference_plan", fake_plan)
     monkeypatch.setattr(runner_cli, "_execute_atomic", fake_execute)
@@ -117,6 +118,7 @@ def test_inference_cli_plan_and_execute_consume_same_snapshots(monkeypatch) -> N
             "pack-signature.json",
             "--reviewer-public-key",
             "reviewer-public.pem",
+            *_trust_cli_args(),
             "--candidate-export",
             "candidate-export",
             "--model-ref",
@@ -164,10 +166,7 @@ def test_offline_verify_cli_consumes_revalidated_snapshots(monkeypatch) -> None:
             Path(inference_pack),
             Path(candidate_export),
         )
-        return SimpleNamespace(
-            valid=True,
-            model_dump=lambda **_kwargs: {"valid": True},
-        )
+        return SimpleNamespace(valid=True, model_dump=lambda **_kwargs: {"valid": True})
 
     monkeypatch.setattr(verify_cli, "verify_gold_holdout_inference_output", fake_verify)
 
@@ -181,6 +180,7 @@ def test_offline_verify_cli_consumes_revalidated_snapshots(monkeypatch) -> None:
             "pack-signature.json",
             "--reviewer-public-key",
             "reviewer-public.pem",
+            *_trust_cli_args(),
             "--candidate-export",
             "candidate-export",
         ]
@@ -207,6 +207,8 @@ def test_evaluate_output_passes_sealed_snapshots_to_inference_verifier(monkeypat
         inference_pack="pack",
         inference_pack_signature="pack-signature.json",
         reviewer_public_key="reviewer-public.pem",
+        reviewer_trust_policy="reviewer-trust.json",
+        owner_public_key="owner-public.pem",
         release_dir="release",
         policy="policy.json",
     )
