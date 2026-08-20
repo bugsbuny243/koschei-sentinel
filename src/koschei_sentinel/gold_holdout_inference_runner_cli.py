@@ -17,6 +17,9 @@ from koschei_sentinel.gold_holdout_inference_runner import (
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
+from koschei_sentinel.gold_holdout_pack_preflight import (
+    preflight_gold_holdout_inference_pack,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -107,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         selected_policy = _load_policy(args.generation_policy)
+        preflight_gold_holdout_inference_pack(args.inference_pack)
         _assert_raw_candidate_export(args.candidate_export)
         plan = build_gold_holdout_inference_plan(
             inference_pack_dir=args.inference_pack,
