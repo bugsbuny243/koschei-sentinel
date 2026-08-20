@@ -137,43 +137,38 @@ def test_inference_cli_plan_and_execute_consume_same_snapshots(monkeypatch) -> N
 
 def test_offline_verify_cli_consumes_revalidated_snapshots(monkeypatch) -> None:
     admission = object()
-    observed_pack = None
-    observed_candidate = None
+    observed = None
 
     monkeypatch.setattr(verify_cli, "_verify_signed_pack", lambda **_kwargs: admission)
     monkeypatch.setattr(verify_cli, "_assert_raw_candidate_export", lambda *_args: None)
-
-    def fake_pack_snapshot(given_admission, inference_pack, destination):
-        assert given_admission is admission
-        assert inference_pack == "pack"
-        assert Path(destination).name == "pack"
-        return Path("revalidated-pack")
-
-    def fake_candidate_snapshot(candidate_export, destination):
-        assert candidate_export == "candidate-export"
-        assert Path(destination).name == "candidate-export"
-        return Path("revalidated-candidate")
+    monkeypatch.setattr(
+        verify_cli,
+        "snapshot_admitted_gold_holdout_pack",
+        lambda given_admission, inference_pack, destination: Path("revalidated-pack"),
+    )
+    monkeypatch.setattr(
+        verify_cli,
+        "snapshot_verified_cyber_sft_export",
+        lambda candidate_export, destination: Path("revalidated-candidate"),
+    )
+    monkeypatch.setattr(
+        verify_cli,
+        "copy_gold_holdout_inference_output_snapshot",
+        lambda output_dir, destination: Path("revalidated-output"),
+    )
 
     def fake_verify(output_dir, inference_pack, candidate_export):
-        nonlocal observed_pack, observed_candidate
-        assert output_dir == "output"
-        observed_pack = Path(inference_pack)
-        observed_candidate = Path(candidate_export)
+        nonlocal observed
+        observed = (
+            Path(output_dir),
+            Path(inference_pack),
+            Path(candidate_export),
+        )
         return SimpleNamespace(
             valid=True,
             model_dump=lambda **_kwargs: {"valid": True},
         )
 
-    monkeypatch.setattr(
-        verify_cli,
-        "snapshot_admitted_gold_holdout_pack",
-        fake_pack_snapshot,
-    )
-    monkeypatch.setattr(
-        verify_cli,
-        "snapshot_verified_cyber_sft_export",
-        fake_candidate_snapshot,
-    )
     monkeypatch.setattr(verify_cli, "verify_gold_holdout_inference_output", fake_verify)
 
     status = verify_cli.main(
@@ -192,14 +187,20 @@ def test_offline_verify_cli_consumes_revalidated_snapshots(monkeypatch) -> None:
     )
 
     assert status == 0
-    assert observed_pack == Path("revalidated-pack")
-    assert observed_candidate == Path("revalidated-candidate")
+    assert observed == (
+        Path("revalidated-output"),
+        Path("revalidated-pack"),
+        Path("revalidated-candidate"),
+    )
 
 
-def test_evaluate_output_passes_snapshots_to_inference_verifier(monkeypatch) -> None:
-    admission = object()
-    observed_pack = None
-    observed_candidate = None
+def test_evaluate_output_passes_sealed_snapshots_to_inference_verifier(monkeypatch) -> None:
+    proof = SimpleNamespace(
+        source_gold_audit_sha256="a" * 64,
+        review_signature_audit_sha256="b" * 64,
+    )
+    admission = SimpleNamespace(proof=proof, reviewer_public_key=object())
+    observed = None
     args = SimpleNamespace(
         candidate_export="candidate-export",
         inference_output="output",
@@ -222,13 +223,31 @@ def test_evaluate_output_passes_snapshots_to_inference_verifier(monkeypatch) -> 
         "snapshot_verified_cyber_sft_export",
         lambda candidate_export, destination: Path("revalidated-candidate"),
     )
+    monkeypatch.setattr(
+        evaluation_cli,
+        "snapshot_verified_gold_release",
+        lambda *args, **kwargs: (
+            Path("revalidated-release"),
+            SimpleNamespace(
+                release_audit=SimpleNamespace(valid=True, audit_sha256="a" * 64),
+                review_signature_audit=SimpleNamespace(valid=True, audit_sha256="b" * 64),
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        evaluation_cli,
+        "copy_gold_holdout_inference_output_snapshot",
+        lambda output_dir, destination: Path("revalidated-output"),
+    )
 
     def stop_after_snapshot(output_dir, inference_pack, candidate_export):
-        nonlocal observed_pack, observed_candidate
-        assert output_dir == "output"
-        observed_pack = Path(inference_pack)
-        observed_candidate = Path(candidate_export)
-        raise ValueError("stop after snapshot verifier call")
+        nonlocal observed
+        observed = (
+            Path(output_dir),
+            Path(inference_pack),
+            Path(candidate_export),
+        )
+        raise ValueError("stop after sealed snapshot verifier call")
 
     monkeypatch.setattr(
         evaluation_cli,
@@ -236,8 +255,11 @@ def test_evaluate_output_passes_snapshots_to_inference_verifier(monkeypatch) -> 
         stop_after_snapshot,
     )
 
-    with pytest.raises(ValueError, match="stop after snapshot verifier call"):
+    with pytest.raises(ValueError, match="stop after sealed snapshot verifier call"):
         evaluation_cli._evaluate_verified_output(args)
 
-    assert observed_pack == Path("revalidated-pack")
-    assert observed_candidate == Path("revalidated-candidate")
+    assert observed == (
+        Path("revalidated-output"),
+        Path("revalidated-pack"),
+        Path("revalidated-candidate"),
+    )
