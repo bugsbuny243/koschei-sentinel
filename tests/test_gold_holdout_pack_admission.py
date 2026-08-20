@@ -6,6 +6,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.gold_holdout_pack_admission import (
     admit_signed_gold_holdout_pack,
+    verify_admitted_gold_holdout_pack,
 )
 from koschei_sentinel.gold_holdout_pack_signing import sign_gold_holdout_inference_pack
 from tests.test_gold_holdout_inference_runner import _pack
@@ -44,13 +45,14 @@ def _signed_pack(tmp_path):
 def test_signed_pack_admission_accepts_exact_pack_proof_and_trust_root(tmp_path) -> None:
     pack, signature_path, public_key_path, proof = _signed_pack(tmp_path)
 
-    admitted = admit_signed_gold_holdout_pack(
+    admission = admit_signed_gold_holdout_pack(
         inference_pack=pack,
         signature_path=signature_path,
         reviewer_public_key_path=public_key_path,
     )
 
-    assert admitted == proof
+    assert admission.proof == proof
+    verify_admitted_gold_holdout_pack(admission, pack)
 
 
 def test_signed_pack_admission_rejects_wrong_trust_root(tmp_path) -> None:
@@ -64,3 +66,20 @@ def test_signed_pack_admission_rejects_wrong_trust_root(tmp_path) -> None:
             signature_path=signature_path,
             reviewer_public_key_path=wrong_key_path,
         )
+
+
+def test_admission_keeps_original_trust_root_after_key_and_proof_paths_are_swapped(
+    tmp_path,
+) -> None:
+    pack, signature_path, public_key_path, proof = _signed_pack(tmp_path)
+    admission = admit_signed_gold_holdout_pack(
+        inference_pack=pack,
+        signature_path=signature_path,
+        reviewer_public_key_path=public_key_path,
+    )
+
+    _write_public_key(public_key_path, Ed25519PrivateKey.generate())
+    signature_path.write_text("{}\n", encoding="utf-8")
+
+    verify_admitted_gold_holdout_pack(admission, pack)
+    assert admission.proof == proof
