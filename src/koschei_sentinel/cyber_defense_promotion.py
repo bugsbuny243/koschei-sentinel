@@ -17,14 +17,11 @@ from koschei_sentinel.gold_holdout_evaluation import (
 )
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     GoldHoldoutEvaluationEvidence,
-    build_gold_holdout_evaluation_evidence,
+    build_owner_trusted_gold_holdout_evaluation_evidence,
     verify_gold_holdout_evaluation_evidence,
 )
 from koschei_sentinel.gold_holdout_pack_signing import GoldHoldoutPackSignatureProof
-from koschei_sentinel.gold_reviewer_trust import (
-    GoldReviewerTrustPolicy,
-    verify_gold_reviewer_trust_policy,
-)
+from koschei_sentinel.gold_reviewer_trust import GoldReviewerTrustPolicy
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
@@ -290,18 +287,15 @@ def build_cyber_defense_promotion_evidence_from_sources(
     gold_owner_public_key: Ed25519PublicKey,
     gold_inference_pack_signature_proof: GoldHoldoutPackSignatureProof,
 ) -> CyberDefensePromotionEvidence:
-    verify_gold_reviewer_trust_policy(
-        gold_reviewer_trust_policy,
-        gold_reviewer_public_key,
-        gold_owner_public_key,
-    )
-    fresh_gold_evidence = build_gold_holdout_evaluation_evidence(
+    fresh_gold_evidence = build_owner_trusted_gold_holdout_evaluation_evidence(
         release_dir=gold_release_dir,
         inference_pack_dir=gold_inference_pack_dir,
         inference_output_dir=gold_inference_output_dir,
         candidate_export_dir=gold_candidate_export_dir,
         policy=gold_holdout_policy,
         reviewer_public_key=gold_reviewer_public_key,
+        reviewer_trust_policy=gold_reviewer_trust_policy,
+        owner_public_key=gold_owner_public_key,
         inference_pack_signature_proof=gold_inference_pack_signature_proof,
     )
     if fresh_gold_evidence.review_signature_audit_sha256 is None:
@@ -312,6 +306,10 @@ def build_cyber_defense_promotion_evidence_from_sources(
         )
     if fresh_gold_evidence.inference_pack_signature_proof_sha256 is None:
         raise ValueError("Promotion v4 requires signed Gold HOLDOUT inference-pack evidence")
+    if fresh_gold_evidence.reviewer_trust_policy_sha256 is None:
+        raise ValueError("Promotion v4 requires owner-signed Gold reviewer trust evidence")
+    if fresh_gold_evidence.owner_key_fingerprint is None:
+        raise ValueError("Promotion v4 requires the Gold owner trust-root fingerprint")
     if (
         supplied_gold_holdout_evidence.model_dump(mode="json")
         != fresh_gold_evidence.model_dump(mode="json")
