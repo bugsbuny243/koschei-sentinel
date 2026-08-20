@@ -7,6 +7,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
 from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
 from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutEvaluationPolicy,
@@ -93,6 +94,16 @@ def _write_report(report, output: str | None) -> None:
     print(payload, end="")
 
 
+def _assert_raw_candidate_export(candidate_export: str) -> None:
+    report = verify_cyber_sft_export(candidate_export)
+    if not report.valid:
+        detail = "; ".join(report.violations[:5])
+        raise ValueError(
+            "Gold HOLDOUT candidate export failed raw-path verification"
+            + (f": {detail}" if detail else "")
+        )
+
+
 def _export_inputs_atomic(release_dir: str, output_dir: str) -> GoldHoldoutInferenceManifest:
     destination = Path(output_dir)
     if destination.exists():
@@ -121,6 +132,7 @@ def _export_inputs_atomic(release_dir: str, output_dir: str) -> GoldHoldoutInfer
 
 
 def _evaluate_verified_output(args):
+    _assert_raw_candidate_export(args.candidate_export)
     verification = verify_gold_holdout_inference_output(
         args.inference_output,
         args.inference_pack,
