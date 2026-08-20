@@ -7,6 +7,15 @@ import koschei_sentinel.gold_holdout_evaluation_cli as cli_module
 from koschei_sentinel.gold_holdout_evaluation_cli import build_parser
 
 
+def _trust_args():
+    return [
+        "--reviewer-trust-policy",
+        "reviewer-trust.json",
+        "--owner-public-key",
+        "owner-public.pem",
+    ]
+
+
 def _verified_evaluate_args():
     return [
         "evaluate-output",
@@ -18,6 +27,7 @@ def _verified_evaluate_args():
         "pack-signature.json",
         "--reviewer-public-key",
         "reviewer-public.pem",
+        *_trust_args(),
         "--inference-output",
         "output",
         "--candidate-export",
@@ -27,36 +37,37 @@ def _verified_evaluate_args():
     ]
 
 
+def _without(argv: list[str], option: str) -> list[str]:
+    result = list(argv)
+    index = result.index(option)
+    del result[index : index + 2]
+    return result
+
+
 def test_gold_evaluate_output_requires_candidate_export() -> None:
-    argv = _verified_evaluate_args()
-    index = argv.index("--candidate-export")
-    del argv[index : index + 2]
-
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(argv)
-
+        build_parser().parse_args(_without(_verified_evaluate_args(), "--candidate-export"))
     assert exc.value.code == 2
 
 
 def test_gold_evaluate_output_requires_explicit_policy() -> None:
-    argv = _verified_evaluate_args()
-    index = argv.index("--policy")
-    del argv[index : index + 2]
-
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(argv)
-
+        build_parser().parse_args(_without(_verified_evaluate_args(), "--policy"))
     assert exc.value.code == 2
 
 
 def test_gold_evaluate_output_requires_signed_pack_identity() -> None:
-    argv = _verified_evaluate_args()
-    index = argv.index("--inference-pack-signature")
-    del argv[index : index + 2]
-
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(argv)
+        build_parser().parse_args(
+            _without(_verified_evaluate_args(), "--inference-pack-signature")
+        )
+    assert exc.value.code == 2
 
+
+@pytest.mark.parametrize("missing", ["--reviewer-trust-policy", "--owner-public-key"])
+def test_gold_evaluate_output_requires_owner_pinned_trust(missing: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(_without(_verified_evaluate_args(), missing))
     assert exc.value.code == 2
 
 
@@ -66,10 +77,12 @@ def test_gold_evaluate_output_accepts_verified_inputs() -> None:
     assert args.candidate_export == "candidate-export"
     assert args.inference_pack_signature == "pack-signature.json"
     assert args.reviewer_public_key == "reviewer-public.pem"
+    assert args.reviewer_trust_policy == "reviewer-trust.json"
+    assert args.owner_public_key == "owner-public.pem"
     assert args.policy == "configs/training/gold-holdout-evaluation-policy.v1.json"
 
 
-def test_export_inputs_requires_signing_key_and_signature_output() -> None:
+def test_export_inputs_requires_signing_key_owner_trust_and_signature_output() -> None:
     with pytest.raises(SystemExit) as exc:
         build_parser().parse_args(
             [
@@ -80,8 +93,27 @@ def test_export_inputs_requires_signing_key_and_signature_output() -> None:
                 "pack",
             ]
         )
-
     assert exc.value.code == 2
+
+
+def test_export_inputs_accepts_owner_pinned_signing_contract() -> None:
+    args = build_parser().parse_args(
+        [
+            "export-inputs",
+            "--release-dir",
+            "release",
+            "--output-dir",
+            "pack",
+            "--reviewer-private-key",
+            "reviewer-private.pem",
+            *_trust_args(),
+            "--signature-output",
+            "pack-signature.json",
+        ]
+    )
+    assert args.reviewer_private_key == "reviewer-private.pem"
+    assert args.reviewer_trust_policy == "reviewer-trust.json"
+    assert args.owner_public_key == "owner-public.pem"
 
 
 def test_atomic_export_publishes_only_after_sealed_verification(
@@ -104,11 +136,7 @@ def test_atomic_export_publishes_only_after_sealed_verification(
         "_load_inference_pack",
         lambda staging: ([object()], manifest, b"{}\n"),
     )
-    monkeypatch.setattr(
-        cli_module,
-        "preflight_gold_holdout_inference_pack",
-        lambda *_args: None,
-    )
+    monkeypatch.setattr(cli_module, "preflight_gold_holdout_inference_pack", lambda *_args: None)
 
     result = cli_module._export_inputs_atomic("release", str(destination))
 
@@ -158,11 +186,7 @@ def test_atomic_export_rejects_existing_destination_before_build(
         called = True
         raise AssertionError("exporter must not run for an existing destination")
 
-    monkeypatch.setattr(
-        cli_module,
-        "export_gold_holdout_inference_pack",
-        forbidden_export,
-    )
+    monkeypatch.setattr(cli_module, "export_gold_holdout_inference_pack", forbidden_export)
 
     with pytest.raises(FileExistsError, match="output already exists"):
         cli_module._export_inputs_atomic("release", str(destination))
@@ -173,8 +197,8 @@ def test_atomic_export_rejects_existing_destination_before_build(
 def _mock_signed_release_admission(monkeypatch, private_key) -> None:
     monkeypatch.setattr(
         cli_module,
-        "load_reviewer_private_key",
-        lambda *_args: private_key,
+        "load_trusted_reviewer_private_key",
+        lambda **_kwargs: private_key,
     )
     monkeypatch.setattr(
         cli_module,
@@ -217,10 +241,7 @@ def test_signed_export_failure_never_publishes_unsigned_pack(
     destination = tmp_path / "holdout-pack"
     signature = tmp_path / "holdout-pack.signature.json"
     private_key = SimpleNamespace(public_key=lambda: object())
-    manifest = SimpleNamespace(
-        case_count=1,
-        source_gold_audit_sha256="r" * 64,
-    )
+    manifest = SimpleNamespace(case_count=1, source_gold_audit_sha256="r" * 64)
 
     _mock_signed_release_admission(monkeypatch, private_key)
 
@@ -242,6 +263,8 @@ def test_signed_export_failure_never_publishes_unsigned_pack(
             release_dir="release",
             output_dir=str(destination),
             reviewer_private_key_path="reviewer.pem",
+            reviewer_trust_policy_path="reviewer-trust.json",
+            owner_public_key_path="owner-public.pem",
             signature_output=str(signature),
         )
 
@@ -258,13 +281,8 @@ def test_signed_export_builds_pack_from_reverified_release_snapshot(
     signature = tmp_path / "holdout-pack.signature.json"
     private_key = SimpleNamespace(public_key=lambda: object())
     observed_release = None
-    manifest = SimpleNamespace(
-        case_count=1,
-        source_gold_audit_sha256="r" * 64,
-    )
-    proof = SimpleNamespace(
-        model_dump=lambda **_kwargs: {"proof_sha256": "p" * 64},
-    )
+    manifest = SimpleNamespace(case_count=1, source_gold_audit_sha256="r" * 64)
+    proof = SimpleNamespace(model_dump=lambda **_kwargs: {"proof_sha256": "p" * 64})
 
     _mock_signed_release_admission(monkeypatch, private_key)
 
@@ -277,11 +295,7 @@ def test_signed_export_builds_pack_from_reverified_release_snapshot(
         return manifest
 
     monkeypatch.setattr(cli_module, "_export_inputs_atomic", fake_export)
-    monkeypatch.setattr(
-        cli_module,
-        "sign_gold_holdout_inference_pack",
-        lambda *_args, **_kwargs: proof,
-    )
+    monkeypatch.setattr(cli_module, "sign_gold_holdout_inference_pack", lambda *_args, **_kwargs: proof)
     monkeypatch.setattr(
         cli_module,
         "verify_gold_holdout_inference_pack_signature",
@@ -292,6 +306,8 @@ def test_signed_export_builds_pack_from_reverified_release_snapshot(
         release_dir="release",
         output_dir=str(destination),
         reviewer_private_key_path="reviewer.pem",
+        reviewer_trust_policy_path="reviewer-trust.json",
+        owner_public_key_path="owner-public.pem",
         signature_output=str(signature),
     )
 
@@ -302,18 +318,24 @@ def test_signed_export_builds_pack_from_reverified_release_snapshot(
     assert signature.is_file()
 
 
-def test_signed_pack_failure_blocks_candidate_and_verified_evaluation(monkeypatch) -> None:
-    candidate_checked = False
-    verified = False
-    args = SimpleNamespace(
-        candidate_export="candidate-export",
+def _evaluation_args(candidate_export: str = "candidate-export") -> SimpleNamespace:
+    return SimpleNamespace(
+        candidate_export=candidate_export,
         inference_output="output",
         inference_pack="pack",
         inference_pack_signature="pack-signature.json",
         reviewer_public_key="reviewer-public.pem",
+        reviewer_trust_policy="reviewer-trust.json",
+        owner_public_key="owner-public.pem",
         release_dir="release",
         policy="policy.json",
     )
+
+
+def test_signed_pack_failure_blocks_candidate_and_verified_evaluation(monkeypatch) -> None:
+    candidate_checked = False
+    verified = False
+    args = _evaluation_args()
 
     def fail_signed_pack(**_kwargs):
         raise ValueError("Gold HOLDOUT pack signature proof does not bind this inference manifest")
@@ -341,15 +363,7 @@ def test_signed_pack_failure_blocks_candidate_and_verified_evaluation(monkeypatc
 
 def test_raw_candidate_failure_blocks_verified_evaluation(monkeypatch) -> None:
     verified = False
-    args = SimpleNamespace(
-        candidate_export="candidate-export-link",
-        inference_output="output",
-        inference_pack="pack",
-        inference_pack_signature="pack-signature.json",
-        reviewer_public_key="reviewer-public.pem",
-        release_dir="release",
-        policy="policy.json",
-    )
+    args = _evaluation_args("candidate-export-link")
     monkeypatch.setattr(cli_module, "_verify_signed_pack", lambda **_kwargs: None)
     monkeypatch.setattr(
         cli_module,
@@ -365,11 +379,7 @@ def test_raw_candidate_failure_blocks_verified_evaluation(monkeypatch) -> None:
         verified = True
         raise AssertionError("inference verifier must not run after raw candidate failure")
 
-    monkeypatch.setattr(
-        cli_module,
-        "verify_gold_holdout_inference_output",
-        forbidden_verify,
-    )
+    monkeypatch.setattr(cli_module, "verify_gold_holdout_inference_output", forbidden_verify)
 
     with pytest.raises(ValueError, match="must not be a symlink"):
         cli_module._evaluate_verified_output(args)
