@@ -44,7 +44,7 @@ def snapshot_verified_gold_release(
                 + (f": {detail}" if detail else "")
             )
         if release_audit.audit_sha256 != expected_release_audit_sha256:
-            raise ValueError("Gold release snapshot structural audit SHA differs from signed pack")
+            raise ValueError("Gold release snapshot belongs to a different release audit")
 
         signature_audit = audit_gold_release_review_signatures(
             snapshot,
@@ -57,7 +57,7 @@ def snapshot_verified_gold_release(
                 + (f": {detail}" if detail else "")
             )
         if signature_audit.audit_sha256 != expected_review_signature_audit_sha256:
-            raise ValueError("Gold release snapshot review-signature audit SHA differs from signed pack")
+            raise ValueError("Gold release snapshot binds a different signed-review audit")
 
         return snapshot, GoldReleaseSnapshotVerification(
             release_audit=release_audit,
