@@ -87,6 +87,13 @@ def _sha256_text(payload: str) -> str:
 def _digest_without(payload: dict[str, object], field_name: str) -> str:
     unsigned = dict(payload)
     unsigned.pop(field_name, None)
+    if (
+        field_name == "evidence_sha256"
+        and unsigned.get("review_signature_audit_sha256") is None
+    ):
+        # Preserve the original v1 evidence digest when no signed-review audit
+        # is present. Signed production evidence includes the non-null audit SHA.
+        unsigned.pop("review_signature_audit_sha256", None)
     return _sha256_text(canonical_json(unsigned))
 
 
