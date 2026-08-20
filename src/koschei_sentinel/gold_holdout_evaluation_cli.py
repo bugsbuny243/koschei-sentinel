@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
 from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
@@ -12,7 +15,10 @@ from koschei_sentinel.gold_holdout_evaluation import (
     evaluate_gold_holdout_predictions,
     export_gold_holdout_inference_pack,
 )
-from koschei_sentinel.gold_holdout_inference_runner import GoldHoldoutInferenceRunReceipt
+from koschei_sentinel.gold_holdout_inference_runner import (
+    GoldHoldoutInferenceRunReceipt,
+    _load_inference_pack,
+)
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
@@ -87,6 +93,33 @@ def _write_report(report, output: str | None) -> None:
     print(payload, end="")
 
 
+def _export_inputs_atomic(release_dir: str, output_dir: str) -> GoldHoldoutInferenceManifest:
+    destination = Path(output_dir)
+    if destination.exists():
+        raise FileExistsError(
+            f"Gold HOLDOUT inference pack output already exists: {destination}"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging_root = Path(
+        tempfile.mkdtemp(
+            prefix=f".{destination.name}.staging-",
+            dir=destination.parent,
+        )
+    )
+    staging = staging_root / "pack"
+    try:
+        manifest = export_gold_holdout_inference_pack(release_dir, staging)
+        rows, verified_manifest, _manifest_raw = _load_inference_pack(staging)
+        if verified_manifest != manifest or len(rows) != manifest.case_count:
+            raise ValueError(
+                "fresh Gold HOLDOUT inference pack differs from sealed loader verification"
+            )
+        os.replace(staging, destination)
+        return manifest
+    finally:
+        shutil.rmtree(staging_root, ignore_errors=True)
+
+
 def _evaluate_verified_output(args):
     verification = verify_gold_holdout_inference_output(
         args.inference_output,
@@ -143,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.command == "export-inputs":
-            result = export_gold_holdout_inference_pack(
+            result = _export_inputs_atomic(
                 args.release_dir,
                 args.output_dir,
             )
@@ -163,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         _write_report(report, args.output)
         return 0 if report.passed else 1
-    except (OSError, TypeError, ValueError) as exc:
+    except (FileExistsError, OSError, TypeError, ValueError) as exc:
         print(f"sentinel-gold-holdout-eval: {exc}")
         return 2
 
