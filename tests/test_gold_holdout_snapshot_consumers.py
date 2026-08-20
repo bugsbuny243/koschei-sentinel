@@ -65,30 +65,45 @@ def test_snapshot_admission_failure_removes_untrusted_copy(
     assert not destination.exists()
 
 
-def test_offline_verify_cli_consumes_revalidated_snapshot(monkeypatch) -> None:
+def test_offline_verify_cli_consumes_revalidated_snapshots(monkeypatch) -> None:
     admission = object()
     observed_pack = None
+    observed_candidate = None
 
     monkeypatch.setattr(verify_cli, "_verify_signed_pack", lambda **_kwargs: admission)
     monkeypatch.setattr(verify_cli, "_assert_raw_candidate_export", lambda *_args: None)
 
-    def fake_snapshot(given_admission, inference_pack, destination):
+    def fake_pack_snapshot(given_admission, inference_pack, destination):
         assert given_admission is admission
         assert inference_pack == "pack"
         assert Path(destination).name == "pack"
-        return Path("revalidated-snapshot")
+        return Path("revalidated-pack")
+
+    def fake_candidate_snapshot(candidate_export, destination):
+        assert candidate_export == "candidate-export"
+        assert Path(destination).name == "candidate-export"
+        return Path("revalidated-candidate")
 
     def fake_verify(output_dir, inference_pack, candidate_export):
-        nonlocal observed_pack
+        nonlocal observed_pack, observed_candidate
         assert output_dir == "output"
-        assert candidate_export == "candidate-export"
         observed_pack = Path(inference_pack)
+        observed_candidate = Path(candidate_export)
         return SimpleNamespace(
             valid=True,
             model_dump=lambda **_kwargs: {"valid": True},
         )
 
-    monkeypatch.setattr(verify_cli, "snapshot_admitted_gold_holdout_pack", fake_snapshot)
+    monkeypatch.setattr(
+        verify_cli,
+        "snapshot_admitted_gold_holdout_pack",
+        fake_pack_snapshot,
+    )
+    monkeypatch.setattr(
+        verify_cli,
+        "snapshot_verified_cyber_sft_export",
+        fake_candidate_snapshot,
+    )
     monkeypatch.setattr(verify_cli, "verify_gold_holdout_inference_output", fake_verify)
 
     status = verify_cli.main(
@@ -107,12 +122,14 @@ def test_offline_verify_cli_consumes_revalidated_snapshot(monkeypatch) -> None:
     )
 
     assert status == 0
-    assert observed_pack == Path("revalidated-snapshot")
+    assert observed_pack == Path("revalidated-pack")
+    assert observed_candidate == Path("revalidated-candidate")
 
 
-def test_evaluate_output_passes_snapshot_to_inference_verifier(monkeypatch) -> None:
+def test_evaluate_output_passes_snapshots_to_inference_verifier(monkeypatch) -> None:
     admission = object()
     observed_pack = None
+    observed_candidate = None
     args = SimpleNamespace(
         candidate_export="candidate-export",
         inference_output="output",
@@ -128,14 +145,19 @@ def test_evaluate_output_passes_snapshot_to_inference_verifier(monkeypatch) -> N
     monkeypatch.setattr(
         evaluation_cli,
         "snapshot_admitted_gold_holdout_pack",
-        lambda given_admission, inference_pack, destination: Path("revalidated-snapshot"),
+        lambda given_admission, inference_pack, destination: Path("revalidated-pack"),
+    )
+    monkeypatch.setattr(
+        evaluation_cli,
+        "snapshot_verified_cyber_sft_export",
+        lambda candidate_export, destination: Path("revalidated-candidate"),
     )
 
     def stop_after_snapshot(output_dir, inference_pack, candidate_export):
-        nonlocal observed_pack
+        nonlocal observed_pack, observed_candidate
         assert output_dir == "output"
-        assert candidate_export == "candidate-export"
         observed_pack = Path(inference_pack)
+        observed_candidate = Path(candidate_export)
         raise ValueError("stop after snapshot verifier call")
 
     monkeypatch.setattr(
@@ -147,4 +169,5 @@ def test_evaluate_output_passes_snapshot_to_inference_verifier(monkeypatch) -> N
     with pytest.raises(ValueError, match="stop after snapshot verifier call"):
         evaluation_cli._evaluate_verified_output(args)
 
-    assert observed_pack == Path("revalidated-snapshot")
+    assert observed_pack == Path("revalidated-pack")
+    assert observed_candidate == Path("revalidated-candidate")
