@@ -26,6 +26,13 @@ from koschei_sentinel.gold_holdout_inference_verify import (
     GoldHoldoutInferenceVerification,
     verify_gold_holdout_inference_output,
 )
+from koschei_sentinel.gold_holdout_pack_preflight import (
+    preflight_gold_holdout_inference_pack,
+)
+from koschei_sentinel.gold_holdout_pack_signing import (
+    GoldHoldoutPackSignatureProof,
+    verify_gold_holdout_inference_pack_signature,
+)
 from koschei_sentinel.gold_holdout_zero_prediction import (
     build_zero_prediction_gold_report,
 )
@@ -47,6 +54,10 @@ class GoldHoldoutEvaluationEvidence(StrictModel):
         pattern=r"^[a-f0-9]{64}$",
     )
     candidate_training_binding_verification_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    inference_pack_signature_proof_sha256: str | None = Field(
         default=None,
         pattern=r"^[a-f0-9]{64}$",
     )
@@ -96,11 +107,12 @@ def _digest_without(payload: dict[str, object], field_name: str) -> str:
     unsigned.pop(field_name, None)
     if field_name == "evidence_sha256":
         # Preserve prior v1 digests for research/legacy evidence that predates
-        # signed-review or Gold candidate-training binding. Production evidence
-        # includes both non-null SHA values in its self-hash.
+        # signed-review, candidate-training, or signed-HOLDOUT-pack binding.
+        # Production evidence includes all three non-null SHA values in its self-hash.
         for optional_field in (
             "review_signature_audit_sha256",
             "candidate_training_binding_verification_sha256",
+            "inference_pack_signature_proof_sha256",
         ):
             if unsigned.get(optional_field) is None:
                 unsigned.pop(optional_field, None)
@@ -143,15 +155,36 @@ def build_gold_holdout_evaluation_evidence(
     candidate_export_dir: str | Path,
     policy: GoldHoldoutEvaluationPolicy | None = None,
     reviewer_public_key: Ed25519PublicKey | None = None,
+    inference_pack_signature_proof: GoldHoldoutPackSignatureProof | None = None,
 ) -> GoldHoldoutEvaluationEvidence:
     selected_policy = policy or GoldHoldoutEvaluationPolicy()
     release_audit = audit_gold_defense_release(release_dir)
     if not release_audit.valid:
         raise ValueError("cannot build Gold HOLDOUT evidence from an invalid Gold release")
 
+    pack = Path(inference_pack_dir)
+    preflight_gold_holdout_inference_pack(pack)
+    inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
+        (pack / "manifest.json").read_bytes()
+    )
+    if inference_manifest.source_gold_audit_sha256 != release_audit.audit_sha256:
+        raise ValueError("Gold HOLDOUT inference pack belongs to a different release audit")
+
     review_signature_audit_sha: str | None = None
     candidate_training_binding_sha: str | None = None
+    inference_pack_signature_sha: str | None = None
     if reviewer_public_key is not None:
+        if inference_pack_signature_proof is None:
+            raise ValueError(
+                "production Gold HOLDOUT evidence requires a signed inference-pack proof"
+            )
+        verify_gold_holdout_inference_pack_signature(
+            inference_pack_signature_proof,
+            pack / "manifest.json",
+            reviewer_public_key,
+        )
+        inference_pack_signature_sha = inference_pack_signature_proof.proof_sha256
+
         signature_audit = audit_gold_release_review_signatures(
             release_dir,
             reviewer_public_key,
@@ -175,13 +208,6 @@ def build_gold_holdout_evaluation_evidence(
                 + (f": {detail}" if detail else "")
             )
         candidate_training_binding_sha = candidate_binding.verification_sha256
-
-    pack = Path(inference_pack_dir)
-    inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
-        (pack / "manifest.json").read_bytes()
-    )
-    if inference_manifest.source_gold_audit_sha256 != release_audit.audit_sha256:
-        raise ValueError("Gold HOLDOUT inference pack belongs to a different release audit")
 
     verification: GoldHoldoutInferenceVerification = verify_gold_holdout_inference_output(
         inference_output_dir,
@@ -231,6 +257,7 @@ def build_gold_holdout_evaluation_evidence(
         "source_gold_audit_sha256": release_audit.audit_sha256,
         "review_signature_audit_sha256": review_signature_audit_sha,
         "candidate_training_binding_verification_sha256": candidate_training_binding_sha,
+        "inference_pack_signature_proof_sha256": inference_pack_signature_sha,
         "inference_inputs_sha256": inference_manifest.inputs_sha256,
         "inference_plan_sha256": plan.plan_sha256,
         "inference_receipt_sha256": receipt.receipt_sha256,
