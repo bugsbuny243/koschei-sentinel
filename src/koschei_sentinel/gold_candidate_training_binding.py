@@ -40,6 +40,7 @@ class GoldCandidateTrainingBindingVerification(StrictModel):
     stage_verified: bool
     promotion_eligible_verified: bool
     explicit_validation_verified: bool
+    example_counts_verified: bool
     exported_training_bytes_verified: bool
     training_hashes_verified: bool
     validation_hashes_verified: bool
@@ -85,6 +86,7 @@ def verify_gold_candidate_training_binding(
     stage_verified = False
     promotion_eligible_verified = False
     explicit_validation_verified = False
+    example_counts_verified = False
     exported_training_bytes_verified = False
     training_hashes_verified = False
     validation_hashes_verified = False
@@ -152,6 +154,19 @@ def verify_gold_candidate_training_binding(
                 "Gold candidate requires non-empty explicit validation with validation_ratio=0.0"
             )
 
+        example_counts_verified = (
+            plan.training_examples == release_audit.train_examples
+            and plan.validation_examples == release_audit.validation_examples
+            and plan.example_count
+            == release_audit.train_examples + release_audit.validation_examples
+            and adapter_manifest.training_examples == release_audit.train_examples
+            and adapter_manifest.validation_examples == release_audit.validation_examples
+        )
+        if not example_counts_verified:
+            violations.append(
+                "candidate plan/adapter example counts differ from Gold TRAIN/VALIDATION"
+            )
+
         train_examples = release / "train" / "examples.jsonl"
         train_manifest = release / "train" / "manifest.json"
         validation_examples = release / "validation" / "examples.jsonl"
@@ -200,6 +215,7 @@ def verify_gold_candidate_training_binding(
         stage_verified
         and promotion_eligible_verified
         and explicit_validation_verified
+        and example_counts_verified
         and exported_training_bytes_verified
         and training_hashes_verified
         and validation_hashes_verified
@@ -218,6 +234,7 @@ def verify_gold_candidate_training_binding(
         "stage_verified": stage_verified,
         "promotion_eligible_verified": promotion_eligible_verified,
         "explicit_validation_verified": explicit_validation_verified,
+        "example_counts_verified": example_counts_verified,
         "exported_training_bytes_verified": exported_training_bytes_verified,
         "training_hashes_verified": training_hashes_verified,
         "validation_hashes_verified": validation_hashes_verified,
