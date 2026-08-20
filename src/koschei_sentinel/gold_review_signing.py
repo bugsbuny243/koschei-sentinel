@@ -22,7 +22,6 @@ from koschei_sentinel.defense_reflex_gold_release import (
 )
 from koschei_sentinel.defense_reflex_gold_review import GoldReviewedPacket
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.promotion import public_key_fingerprint
 from koschei_sentinel.training import canonical_json
 
 _DIGEST = r"^[a-f0-9]{64}$"
@@ -71,6 +70,14 @@ def _digest(payload: dict[str, object], field_name: str | None = None) -> str:
     return _sha256_text(canonical_json(unsigned))
 
 
+def reviewer_public_key_fingerprint(public_key: Ed25519PublicKey) -> str:
+    raw = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return hashlib.sha256(raw).hexdigest()
+
+
 def load_reviewer_private_key(path: str | Path) -> Ed25519PrivateKey:
     key = serialization.load_pem_private_key(Path(path).read_bytes(), password=None)
     if not isinstance(key, Ed25519PrivateKey):
@@ -108,7 +115,7 @@ def sign_gold_reviewed_packet(
     reviewer_private_key: Ed25519PrivateKey,
 ) -> GoldReviewSignatureProof:
     public_key = reviewer_private_key.public_key()
-    fingerprint = public_key_fingerprint(public_key)
+    fingerprint = reviewer_public_key_fingerprint(public_key)
     binding = _binding_payload(reviewed, fingerprint)
     binding_sha = _digest(binding)
     signature = reviewer_private_key.sign(_signature_message(binding_sha))
@@ -132,7 +139,7 @@ def verify_gold_review_signature_proof(
     payload = proof.model_dump(mode="json")
     if _digest(payload, "proof_sha256") != proof.proof_sha256:
         raise ValueError("Gold review signature proof self-hash does not verify")
-    fingerprint = public_key_fingerprint(reviewer_public_key)
+    fingerprint = reviewer_public_key_fingerprint(reviewer_public_key)
     if proof.reviewer_key_fingerprint != fingerprint:
         raise ValueError("Gold review signature proof uses an untrusted reviewer key")
     binding = {
@@ -240,7 +247,7 @@ def audit_gold_release_review_signatures(
     reviewer_public_key: Ed25519PublicKey,
 ) -> GoldReviewSignatureAudit:
     root = Path(release_dir)
-    fingerprint = public_key_fingerprint(reviewer_public_key)
+    fingerprint = reviewer_public_key_fingerprint(reviewer_public_key)
     violations: list[str] = []
     proofs: list[GoldReviewSignatureProof] = []
     expected: set[tuple[str, str, str, str]] = set()
