@@ -187,7 +187,9 @@ def verify_cyber_sft_run(
     try:
         observed_files = _adapter_file_inventory(run_path)
         expected_files = sorted(manifest.adapter_files)
-        if observed_files != expected_files:
+        if not expected_files:
+            violations.append("adapter manifest contains no adapter files")
+        elif observed_files != expected_files:
             missing = sorted(set(expected_files) - set(observed_files))
             extra = sorted(set(observed_files) - set(expected_files))
             detail: list[str] = []
