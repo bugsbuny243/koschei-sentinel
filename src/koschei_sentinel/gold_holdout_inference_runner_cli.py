@@ -20,6 +20,11 @@ from koschei_sentinel.gold_holdout_inference_verify import (
 from koschei_sentinel.gold_holdout_pack_preflight import (
     preflight_gold_holdout_inference_pack,
 )
+from koschei_sentinel.gold_holdout_pack_signing import (
+    load_gold_holdout_pack_signature,
+    verify_gold_holdout_inference_pack_signature,
+)
+from koschei_sentinel.gold_review_signing import load_reviewer_public_key
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--inference-pack", required=True)
+    parser.add_argument("--inference-pack-signature", required=True)
+    parser.add_argument("--reviewer-public-key", required=True)
     parser.add_argument("--candidate-export", required=True)
     parser.add_argument("--model-ref", required=True)
     parser.add_argument("--generation-policy", required=True)
@@ -48,6 +55,22 @@ def _load_policy(path: str) -> GoldHoldoutGenerationPolicy:
         return GoldHoldoutGenerationPolicy.model_validate_json(Path(path).read_bytes())
     except (OSError, ValueError) as exc:
         raise ValueError(f"invalid Gold HOLDOUT generation policy: {path}") from exc
+
+
+def _verify_signed_pack(
+    *,
+    inference_pack: str,
+    signature_path: str,
+    reviewer_public_key_path: str,
+) -> None:
+    preflight_gold_holdout_inference_pack(inference_pack)
+    proof = load_gold_holdout_pack_signature(signature_path)
+    reviewer_public_key = load_reviewer_public_key(reviewer_public_key_path)
+    verify_gold_holdout_inference_pack_signature(
+        proof,
+        Path(inference_pack) / "manifest.json",
+        reviewer_public_key,
+    )
 
 
 def _assert_raw_candidate_export(candidate_export: str) -> None:
@@ -110,7 +133,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         selected_policy = _load_policy(args.generation_policy)
-        preflight_gold_holdout_inference_pack(args.inference_pack)
+        _verify_signed_pack(
+            inference_pack=args.inference_pack,
+            signature_path=args.inference_pack_signature,
+            reviewer_public_key_path=args.reviewer_public_key,
+        )
         _assert_raw_candidate_export(args.candidate_export)
         plan = build_gold_holdout_inference_plan(
             inference_pack_dir=args.inference_pack,
