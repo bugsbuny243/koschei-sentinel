@@ -173,9 +173,34 @@ def test_inference_pack_rejects_answer_key_field_even_if_hashes_are_recomputed(t
     inputs_path.write_text(payload, encoding="utf-8")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["inputs_sha256"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(ValueError, match="outside the answer-key-isolated contract"):
+        _load_inference_pack(pack)
+
+
+def test_inference_pack_rejects_unlisted_answer_file(tmp_path) -> None:
+    pack = _pack(tmp_path)
+    (pack / "answers.json").write_text(
+        '{"expected_sequence":[]}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="file set differs from answer-key-isolated"):
+        _load_inference_pack(pack)
+
+
+def test_inference_pack_rejects_symlinked_inputs(tmp_path) -> None:
+    pack = _pack(tmp_path)
+    inputs = pack / "inputs.jsonl"
+    external = tmp_path / "external-inputs.jsonl"
+    inputs.replace(external)
+    inputs.symlink_to(external)
+
+    with pytest.raises(ValueError, match="must not contain symlinks"):
         _load_inference_pack(pack)
 
 
