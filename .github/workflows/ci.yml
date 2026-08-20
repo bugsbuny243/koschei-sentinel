@@ -50,6 +50,7 @@ jobs:
           tests/test_gold_holdout_inference_verify_cli.py
           tests/test_gold_holdout_pack_preflight.py
           tests/test_gold_holdout_pack_admission.py
+          tests/test_gold_holdout_snapshot_consumers.py
           tests/test_gold_holdout_pack_signing.py
           tests/test_gold_holdout_path_portability.py
           tests/test_gold_holdout_evaluation.py
