@@ -63,6 +63,9 @@ def _sha256_text(payload: str) -> str:
 def _verification_digest(payload: dict[str, object]) -> str:
     unsigned = dict(payload)
     unsigned.pop("verification_sha256", None)
+    # output_dir is diagnostic metadata, not inference identity. Excluding it
+    # keeps the verification digest stable when sealed artifacts move hosts.
+    unsigned.pop("output_dir", None)
     return _sha256_text(canonical_json(unsigned))
 
 
