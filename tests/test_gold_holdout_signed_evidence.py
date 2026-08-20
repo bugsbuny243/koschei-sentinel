@@ -124,6 +124,36 @@ def test_gold_evidence_rejects_missing_pack_signature_in_production_path(
         )
 
 
+def test_gold_evidence_rejects_pack_signed_against_different_review_audit(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    release, pack, output, _plan, candidate_export = _gold_bound_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    reviewer_private_key = attach_signed_review_proofs(
+        release,
+        return_private_key=True,
+    )
+    wrong_audit_proof = sign_gold_holdout_inference_pack(
+        pack / "manifest.json",
+        reviewer_private_key,
+        review_signature_audit_sha256="0" * 64,
+    )
+
+    with pytest.raises(ValueError, match="different signed-review audit"):
+        build_gold_holdout_evaluation_evidence(
+            release_dir=release,
+            inference_pack_dir=pack,
+            inference_output_dir=output,
+            candidate_export_dir=candidate_export,
+            policy=GoldHoldoutEvaluationPolicy(minimum_case_count=1),
+            reviewer_public_key=reviewer_private_key.public_key(),
+            inference_pack_signature_proof=wrong_audit_proof,
+        )
+
+
 def test_gold_evidence_rejects_signed_release_with_unrelated_candidate_corpus(
     tmp_path,
     monkeypatch,
