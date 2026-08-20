@@ -43,6 +43,7 @@ jobs:
           tests/test_cyber_defense_promotion_gold_case_count.py
           tests/test_cyber_defense_promotion_cli.py
           tests/test_gold_holdout_promotion_e2e.py
+          tests/test_gold_holdout_promotion_relocation.py
       - run: >-
           sentinel-curriculum-check
           --config configs/curriculum/language-first.v1.json
