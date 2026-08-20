@@ -74,13 +74,17 @@ def _snapshot_signed_pack(
 ) -> Path:
     if destination.exists():
         raise FileExistsError(f"Gold HOLDOUT pack snapshot already exists: {destination}")
-    shutil.copytree(inference_pack, destination, symlinks=True)
-    _verify_signed_pack(
-        inference_pack=str(destination),
-        signature_path=signature_path,
-        reviewer_public_key_path=reviewer_public_key_path,
-    )
-    return destination
+    try:
+        shutil.copytree(inference_pack, destination, symlinks=True)
+        _verify_signed_pack(
+            inference_pack=str(destination),
+            signature_path=signature_path,
+            reviewer_public_key_path=reviewer_public_key_path,
+        )
+        return destination
+    except (OSError, TypeError, ValueError):
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
 
 
 def _assert_raw_candidate_export(candidate_export: str) -> None:
