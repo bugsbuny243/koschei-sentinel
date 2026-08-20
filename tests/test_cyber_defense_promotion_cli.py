@@ -1,8 +1,12 @@
+import hashlib
+
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import koschei_sentinel.cyber_defense_promotion as promotion_module
 import koschei_sentinel.cyber_defense_promotion_cli as promotion_cli
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
+from koschei_sentinel.training import canonical_json
 from tests.test_cyber_defense_promotion import (
     ADAPTER_DIGEST,
     _bundle,
@@ -57,6 +61,8 @@ def test_promotion_cli_accepts_all_gold_source_artifacts() -> None:
             "inference-output",
             "--gold-candidate-export",
             "candidate-export",
+            "--gold-reviewer-public-key",
+            "reviewer-public.pem",
         ]
     )
 
@@ -64,9 +70,19 @@ def test_promotion_cli_accepts_all_gold_source_artifacts() -> None:
     assert args.gold_inference_pack == "pack"
     assert args.gold_inference_output == "inference-output"
     assert args.gold_candidate_export == "candidate-export"
+    assert args.gold_reviewer_public_key == "reviewer-public.pem"
+
+
+def _signed_evidence(evidence):
+    payload = evidence.model_dump(mode="json")
+    payload.pop("evidence_sha256", None)
+    payload["review_signature_audit_sha256"] = "a" * 64
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return evidence.__class__.model_validate({**payload, "evidence_sha256": digest})
 
 
 def _source_builder_kwargs(policy, supplied):
+    reviewer_public_key = Ed25519PrivateKey.generate().public_key()
     return {
         "promotion_id": "promotion:test",
         "candidate_model_ref": "sentinel:candidate",
@@ -81,6 +97,7 @@ def _source_builder_kwargs(policy, supplied):
         "gold_inference_pack_dir": "pack",
         "gold_inference_output_dir": "inference-output",
         "gold_candidate_export_dir": "candidate-export",
+        "gold_reviewer_public_key": reviewer_public_key,
     }
 
 
@@ -88,8 +105,8 @@ def test_promotion_rejects_supplied_gold_evidence_that_differs_from_fresh_rebuil
     monkeypatch,
 ) -> None:
     policy = GoldHoldoutEvaluationPolicy()
-    supplied = _gold_evidence(policy=policy)
-    rebuilt = _gold_evidence(revision="8" * 64, policy=policy)
+    supplied = _signed_evidence(_gold_evidence(policy=policy))
+    rebuilt = _signed_evidence(_gold_evidence(revision="8" * 64, policy=policy))
     monkeypatch.setattr(
         promotion_module,
         "build_gold_holdout_evaluation_evidence",
@@ -106,7 +123,7 @@ def test_promotion_accepts_supplied_gold_evidence_only_when_fresh_rebuild_matche
     monkeypatch,
 ) -> None:
     policy = GoldHoldoutEvaluationPolicy()
-    supplied = _gold_evidence(policy=policy)
+    supplied = _signed_evidence(_gold_evidence(policy=policy))
     monkeypatch.setattr(
         promotion_module,
         "build_gold_holdout_evaluation_evidence",
@@ -118,4 +135,5 @@ def test_promotion_accepts_supplied_gold_evidence_only_when_fresh_rebuild_matche
     )
 
     assert promotion.ready_for_promotion is True
+    assert promotion.gold_review_signature_audit_sha256 == "a" * 64
     assert promotion.gold_holdout_evaluation_evidence_sha256 == supplied.evidence_sha256
