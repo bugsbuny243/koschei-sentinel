@@ -8,6 +8,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import Field, model_validator
 
 from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
+from koschei_sentinel.gold_candidate_training_binding import (
+    verify_gold_candidate_training_binding,
+)
 from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutEvaluationPolicy,
     GoldHoldoutEvaluationReport,
@@ -40,6 +43,10 @@ class GoldHoldoutEvaluationEvidence(StrictModel):
     adapter_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     source_gold_audit_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     review_signature_audit_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    candidate_training_binding_verification_sha256: str | None = Field(
         default=None,
         pattern=r"^[a-f0-9]{64}$",
     )
@@ -87,13 +94,16 @@ def _sha256_text(payload: str) -> str:
 def _digest_without(payload: dict[str, object], field_name: str) -> str:
     unsigned = dict(payload)
     unsigned.pop(field_name, None)
-    if (
-        field_name == "evidence_sha256"
-        and unsigned.get("review_signature_audit_sha256") is None
-    ):
-        # Preserve the original v1 evidence digest when no signed-review audit
-        # is present. Signed production evidence includes the non-null audit SHA.
-        unsigned.pop("review_signature_audit_sha256", None)
+    if field_name == "evidence_sha256":
+        # Preserve prior v1 digests for research/legacy evidence that predates
+        # signed-review or Gold candidate-training binding. Production evidence
+        # includes both non-null SHA values in its self-hash.
+        for optional_field in (
+            "review_signature_audit_sha256",
+            "candidate_training_binding_verification_sha256",
+        ):
+            if unsigned.get(optional_field) is None:
+                unsigned.pop(optional_field, None)
     return _sha256_text(canonical_json(unsigned))
 
 
@@ -140,6 +150,7 @@ def build_gold_holdout_evaluation_evidence(
         raise ValueError("cannot build Gold HOLDOUT evidence from an invalid Gold release")
 
     review_signature_audit_sha: str | None = None
+    candidate_training_binding_sha: str | None = None
     if reviewer_public_key is not None:
         signature_audit = audit_gold_release_review_signatures(
             release_dir,
@@ -152,6 +163,18 @@ def build_gold_holdout_evaluation_evidence(
                 + (f": {detail}" if detail else "")
             )
         review_signature_audit_sha = signature_audit.audit_sha256
+
+        candidate_binding = verify_gold_candidate_training_binding(
+            release_dir,
+            candidate_export_dir,
+        )
+        if not candidate_binding.valid:
+            detail = "; ".join(candidate_binding.violations[:5])
+            raise ValueError(
+                "Gold HOLDOUT candidate training binding failed"
+                + (f": {detail}" if detail else "")
+            )
+        candidate_training_binding_sha = candidate_binding.verification_sha256
 
     pack = Path(inference_pack_dir)
     inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
@@ -207,6 +230,7 @@ def build_gold_holdout_evaluation_evidence(
         "adapter_digest": report.adapter_digest,
         "source_gold_audit_sha256": release_audit.audit_sha256,
         "review_signature_audit_sha256": review_signature_audit_sha,
+        "candidate_training_binding_verification_sha256": candidate_training_binding_sha,
         "inference_inputs_sha256": inference_manifest.inputs_sha256,
         "inference_plan_sha256": plan.plan_sha256,
         "inference_receipt_sha256": receipt.receipt_sha256,
