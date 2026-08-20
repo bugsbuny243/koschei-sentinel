@@ -42,6 +42,7 @@ jobs:
           tests/test_defense_reflex_gold_review.py
           tests/test_gold_review_signing.py
           tests/test_gold_reviewer_trust.py
+          tests/test_gold_reviewer_trust_cli.py
           tests/test_gold_review_cli_contracts.py
           tests/test_gold_release_snapshot.py
           tests/test_gold_candidate_training_binding.py
