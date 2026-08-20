@@ -65,6 +65,17 @@ def _json_object(path: Path, *, label: str) -> dict[str, object]:
     return payload
 
 
+def _portable_file_inventory(root: Path) -> list[str]:
+    observed: list[str] = []
+    for path in root.rglob("*"):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            raise ValueError(f"candidate export artifact must not be a symlink: {relative}")
+        if path.is_file():
+            observed.append(relative)
+    return sorted(observed)
+
+
 def _runtime_semantics_match(
     model_runtime: dict[str, object],
     resume_runtime: dict[str, object],
@@ -120,7 +131,17 @@ def _invalid(
 
 
 def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerification:
-    root = Path(export_dir).resolve()
+    requested_root = Path(export_dir).expanduser()
+    if requested_root.is_symlink():
+        return _invalid(violations=["candidate export directory must not be a symlink"])
+    root = requested_root.resolve()
+    if not root.is_dir():
+        return _invalid(violations=["candidate export directory is missing"])
+    try:
+        observed_inventory = _portable_file_inventory(root)
+    except ValueError as exc:
+        return _invalid(violations=[str(exc)])
+
     required_files = {
         "attestation": root / "run-attestation.json",
         "config": root / "training-config.json",
@@ -192,6 +213,26 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
         return _invalid(
             violations=[f"export artifact parsing failed: {exc}"],
             run_id=attestation.run_id,
+        )
+
+    expected_inventory = sorted(
+        {
+            path.relative_to(root).as_posix()
+            for path in required_files.values()
+        }
+        | {f"run/{relative}" for relative in manifest.adapter_files}
+    )
+    if observed_inventory != expected_inventory:
+        missing_inventory = sorted(set(expected_inventory) - set(observed_inventory))
+        extra_inventory = sorted(set(observed_inventory) - set(expected_inventory))
+        detail: list[str] = []
+        if missing_inventory:
+            detail.append("missing=" + ",".join(missing_inventory[:8]))
+        if extra_inventory:
+            detail.append("extra=" + ",".join(extra_inventory[:8]))
+        violations.append(
+            "candidate export file set differs from manifest contract: "
+            + ("; ".join(detail) or "file-set mismatch")
         )
 
     config_verified = _config_sha256(config) == attestation.config_sha256
@@ -379,6 +420,7 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
         and verification_verified
         and model_runtime_verified
         and resume_runtime_verified
+        and observed_inventory == expected_inventory
         and fresh_valid
         and receipt_binding_verified
         and adapter_verified
