@@ -7,6 +7,9 @@ from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
+from koschei_sentinel.gold_holdout_pack_preflight import (
+    preflight_gold_holdout_inference_pack,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +38,7 @@ def _assert_raw_candidate_export(candidate_export: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        preflight_gold_holdout_inference_pack(args.inference_pack)
         _assert_raw_candidate_export(args.candidate_export)
         report = verify_gold_holdout_inference_output(
             args.output_dir,
