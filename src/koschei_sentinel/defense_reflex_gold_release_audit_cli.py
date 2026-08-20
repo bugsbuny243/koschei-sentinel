@@ -7,10 +7,8 @@ from pathlib import Path
 from koschei_sentinel.defense_reflex_gold_release_audit import (
     audit_gold_defense_release,
 )
-from koschei_sentinel.gold_review_signing import (
-    audit_gold_release_review_signatures,
-    load_reviewer_public_key,
-)
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
+from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +20,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--release-dir", required=True)
     parser.add_argument("--reviewer-public-key", required=True)
+    parser.add_argument("--reviewer-trust-policy", required=True)
+    parser.add_argument("--owner-public-key", required=True)
     parser.add_argument("--output", help="Optional combined JSON audit report path")
     return parser
 
@@ -29,10 +29,15 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        reviewer_public_key = load_trusted_reviewer_public_key(
+            reviewer_public_key_path=args.reviewer_public_key,
+            trust_policy_path=args.reviewer_trust_policy,
+            owner_public_key_path=args.owner_public_key,
+        )
         structural = audit_gold_defense_release(args.release_dir)
         signature = audit_gold_release_review_signatures(
             args.release_dir,
-            load_reviewer_public_key(args.reviewer_public_key),
+            reviewer_public_key,
         )
         valid = structural.valid and signature.valid
         report = {
