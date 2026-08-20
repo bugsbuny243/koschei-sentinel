@@ -87,6 +87,7 @@ def test_signed_gold_release_audit_requires_exact_signed_review_set(tmp_path) ->
     assert valid.valid is True
     assert valid.exact_review_set_verified is True
     assert valid.proof_count == len(rows)
+    assert len(valid.proof_set_sha256) == 64
 
     lines = (release / "review-signatures.jsonl").read_text(
         encoding="utf-8"
@@ -99,4 +100,5 @@ def test_signed_gold_release_audit_requires_exact_signed_review_set(tmp_path) ->
 
     assert missing.valid is False
     assert missing.exact_review_set_verified is False
+    assert missing.proof_set_sha256 != valid.proof_set_sha256
     assert any("proof set differs" in row for row in missing.violations)
