@@ -72,3 +72,24 @@ def test_gold_evidence_rejects_untrusted_reviewer_key(
             policy=GoldHoldoutEvaluationPolicy(minimum_case_count=1),
             reviewer_public_key=wrong_key,
         )
+
+
+def test_gold_evidence_rejects_signed_release_with_unrelated_candidate_corpus(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    release, pack, output, _plan, candidate_export = _passing_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    reviewer_public_key = attach_signed_review_proofs(release)
+
+    with pytest.raises(ValueError, match="candidate training binding failed"):
+        build_gold_holdout_evaluation_evidence(
+            release_dir=release,
+            inference_pack_dir=pack,
+            inference_output_dir=output,
+            candidate_export_dir=candidate_export,
+            policy=GoldHoldoutEvaluationPolicy(minimum_case_count=1),
+            reviewer_public_key=reviewer_public_key,
+        )
