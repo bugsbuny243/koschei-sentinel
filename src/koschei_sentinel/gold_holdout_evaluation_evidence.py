@@ -74,6 +74,14 @@ class GoldHoldoutEvaluationEvidence(StrictModel):
         default=None,
         pattern=r"^[a-f0-9]{64}$",
     )
+    reviewer_trust_policy_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    owner_key_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
     inference_inputs_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     inference_plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     inference_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -103,6 +111,12 @@ class GoldHoldoutEvaluationEvidence(StrictModel):
             raise ValueError("Gold HOLDOUT evidence report case count mismatch")
         if self.report.prediction_count != self.prediction_count:
             raise ValueError("Gold HOLDOUT evidence report prediction count mismatch")
+        if (self.reviewer_trust_policy_sha256 is None) != (
+            self.owner_key_fingerprint is None
+        ):
+            raise ValueError(
+                "Gold HOLDOUT reviewer trust policy and owner fingerprint must be bound together"
+            )
         expected = self.report.passed and self.failure_count == 0
         if self.passed != expected:
             raise ValueError(
@@ -120,12 +134,13 @@ def _digest_without(payload: dict[str, object], field_name: str) -> str:
     unsigned.pop(field_name, None)
     if field_name == "evidence_sha256":
         # Preserve prior v1 digests for research/legacy evidence that predates
-        # signed-review, candidate-training, or signed-HOLDOUT-pack binding.
-        # Production evidence includes all three non-null SHA values in its self-hash.
+        # production signature, training, pack, or owner-trust binding.
         for optional_field in (
             "review_signature_audit_sha256",
             "candidate_training_binding_verification_sha256",
             "inference_pack_signature_proof_sha256",
+            "reviewer_trust_policy_sha256",
+            "owner_key_fingerprint",
         ):
             if unsigned.get(optional_field) is None:
                 unsigned.pop(optional_field, None)
@@ -373,7 +388,7 @@ def build_owner_trusted_gold_holdout_evaluation_evidence(
         reviewer_public_key,
         owner_public_key,
     )
-    return build_gold_holdout_evaluation_evidence(
+    evidence = build_gold_holdout_evaluation_evidence(
         release_dir=release_dir,
         inference_pack_dir=inference_pack_dir,
         inference_output_dir=inference_output_dir,
@@ -382,6 +397,12 @@ def build_owner_trusted_gold_holdout_evaluation_evidence(
         reviewer_public_key=reviewer_public_key,
         inference_pack_signature_proof=inference_pack_signature_proof,
     )
+    payload = evidence.model_dump(mode="json")
+    payload.pop("evidence_sha256")
+    payload["reviewer_trust_policy_sha256"] = reviewer_trust_policy.policy_digest
+    payload["owner_key_fingerprint"] = reviewer_trust_policy.owner_key_fingerprint
+    payload["evidence_sha256"] = _digest_without(payload, "evidence_sha256")
+    return GoldHoldoutEvaluationEvidence.model_validate(payload)
 
 
 def verify_gold_holdout_evaluation_evidence(
