@@ -92,6 +92,53 @@ def test_owner_trusted_evidence_rejects_wrong_owner_before_artifact_rebuild(
     assert rebuilt is False
 
 
+def test_owner_trust_policy_digest_changes_gold_evidence_identity(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    release, pack, output, _plan, candidate_export = _gold_bound_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    reviewer_private_key, pack_proof = _signed_release_and_pack(release, pack)
+    owner_private_key = Ed25519PrivateKey.generate()
+    first_policy = build_gold_reviewer_trust_policy(
+        reviewer_private_key.public_key(),
+        owner_private_key,
+        policy_id="gold-reviewer-v1",
+    )
+    second_policy = build_gold_reviewer_trust_policy(
+        reviewer_private_key.public_key(),
+        owner_private_key,
+        policy_id="gold-reviewer-v2",
+    )
+    evaluation_policy = GoldHoldoutEvaluationPolicy(minimum_case_count=1)
+    common = {
+        "release_dir": release,
+        "inference_pack_dir": pack,
+        "inference_output_dir": output,
+        "candidate_export_dir": candidate_export,
+        "policy": evaluation_policy,
+        "reviewer_public_key": reviewer_private_key.public_key(),
+        "owner_public_key": owner_private_key.public_key(),
+        "inference_pack_signature_proof": pack_proof,
+    }
+
+    first = build_owner_trusted_gold_holdout_evaluation_evidence(
+        **common,
+        reviewer_trust_policy=first_policy,
+    )
+    second = build_owner_trusted_gold_holdout_evaluation_evidence(
+        **common,
+        reviewer_trust_policy=second_policy,
+    )
+
+    assert first.reviewer_trust_policy_sha256 == first_policy.policy_digest
+    assert second.reviewer_trust_policy_sha256 == second_policy.policy_digest
+    assert first.owner_key_fingerprint == second.owner_key_fingerprint
+    assert first.evidence_sha256 != second.evidence_sha256
+
+
 def test_gold_evidence_binds_valid_reviewer_signature_and_training_audits(
     tmp_path,
     monkeypatch,
@@ -117,6 +164,8 @@ def test_gold_evidence_binds_valid_reviewer_signature_and_training_audits(
     assert evidence.review_signature_audit_sha256 == pack_proof.review_signature_audit_sha256
     assert evidence.candidate_training_binding_verification_sha256 is not None
     assert evidence.inference_pack_signature_proof_sha256 == pack_proof.proof_sha256
+    assert evidence.reviewer_trust_policy_sha256 is None
+    assert evidence.owner_key_fingerprint is None
 
 
 def test_gold_evidence_rejects_untrusted_reviewer_key(
