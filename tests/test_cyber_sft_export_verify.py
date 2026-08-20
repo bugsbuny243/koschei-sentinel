@@ -31,9 +31,21 @@ def _build_export(
     monkeypatch,
     *,
     promotion_eligible: bool = False,
+    corpus_examples_raw: bytes | None = None,
+    corpus_manifest_raw: bytes | None = None,
+    validation_examples_sha256: str | None = None,
+    validation_manifest_sha256: str | None = None,
 ) -> Path:
     root = tmp_path / "export"
     root.mkdir()
+    explicit_validation = (
+        validation_examples_sha256 is not None
+        or validation_manifest_sha256 is not None
+    )
+    if explicit_validation and (
+        validation_examples_sha256 is None or validation_manifest_sha256 is None
+    ):
+        raise ValueError("explicit validation fixture requires both validation digests")
 
     config = CyberSFTConfig(
         run_id="portable-export-test",
@@ -41,6 +53,8 @@ def _build_export(
         base_model="Qwen/Qwen3.5-9B-Base",
         base_revision="a" * 40,
         corpus_dir="build/corpus",
+        validation_corpus_dir=("build/validation" if explicit_validation else None),
+        validation_ratio=(0.0 if explicit_validation else 0.10),
         output_dir="build/run",
         minimum_cuda_memory_gb=0.0,
         quantization={"bits": 4, "compute_dtype": "float16"},
@@ -49,16 +63,22 @@ def _build_export(
     _write_json(config_path, config.model_dump(mode="json"))
     config_sha = _config_sha256(config)
 
-    examples_raw = b'{"example_id":"portable"}\n'
+    examples_raw = corpus_examples_raw or b'{"example_id":"portable"}\n'
     (root / "corpus-examples.jsonl").write_bytes(examples_raw)
     examples_sha = _sha(examples_raw)
-    corpus_manifest_raw = _write_json(
-        root / "corpus-manifest.json",
-        {
-            "schema_version": "sentinel.defense-reflex-corpus-manifest.v3",
-            "examples_sha256": examples_sha,
-        },
-    )
+    if corpus_manifest_raw is None:
+        corpus_manifest_raw = (
+            json.dumps(
+                {
+                    "schema_version": "sentinel.defense-reflex-corpus-manifest.v3",
+                    "examples_sha256": examples_sha,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+    (root / "corpus-manifest.json").write_bytes(corpus_manifest_raw)
     corpus_manifest_sha = _sha(corpus_manifest_raw)
 
     plan_path = root / "training-plan.json"
@@ -75,6 +95,9 @@ def _build_export(
             "base_revision": config.base_revision,
             "corpus_examples_sha256": examples_sha,
             "corpus_manifest_sha256": corpus_manifest_sha,
+            "validation_corpus_examples_sha256": validation_examples_sha256,
+            "validation_corpus_manifest_sha256": validation_manifest_sha256,
+            "explicit_validation": explicit_validation,
             "example_count": 10,
             "training_examples": 9,
             "validation_examples": 1,
