@@ -14,13 +14,11 @@ from koschei_sentinel.cyber_sft_run_attestation import (
     CyberSFTRunAttestation,
     build_cyber_sft_run_attestation,
 )
-from koschei_sentinel.cyber_sft_trainer import CyberSFTAdapterManifest
-from koschei_sentinel.cyber_sft_training import (
-    CyberSFTPlan,
-    load_cyber_sft_config,
-    load_cyber_sft_examples,
-    load_cyber_sft_validation_examples,
+from koschei_sentinel.cyber_sft_trainer import (
+    CyberSFTAdapterManifest,
+    _resolve_planned_corpora,
 )
+from koschei_sentinel.cyber_sft_training import CyberSFTPlan, load_cyber_sft_config
 
 _RUN_METADATA_FILES = (
     "adapter-manifest.json",
@@ -138,30 +136,15 @@ def build_cyber_sft_export(
     ):
         raise ValueError("supplied run attestation differs from a fresh source rebuild")
 
-    train_rows, train_examples_sha, train_manifest_sha, _ = load_cyber_sft_examples(
+    _, _, train_examples_sha, train_manifest_sha, _ = _resolve_planned_corpora(
         config,
+        plan,
         root=root_path,
     )
     if train_examples_sha != supplied_attestation.corpus_examples_sha256:
         raise ValueError("source TRAIN examples SHA-256 differs from run attestation")
     if train_manifest_sha != supplied_attestation.corpus_manifest_sha256:
         raise ValueError("source TRAIN manifest SHA-256 differs from run attestation")
-    if len(train_rows) != plan.training_examples:
-        raise ValueError("source TRAIN example count differs from training plan")
-
-    validation = load_cyber_sft_validation_examples(config, root=root_path)
-    if plan.explicit_validation:
-        if validation is None:
-            raise ValueError("training plan requires an explicit VALIDATION corpus")
-        validation_rows, validation_examples_sha, validation_manifest_sha, _ = validation
-        if validation_examples_sha != plan.validation_corpus_examples_sha256:
-            raise ValueError("source VALIDATION examples SHA-256 differs from training plan")
-        if validation_manifest_sha != plan.validation_corpus_manifest_sha256:
-            raise ValueError("source VALIDATION manifest SHA-256 differs from training plan")
-        if len(validation_rows) != plan.validation_examples:
-            raise ValueError("source VALIDATION example count differs from training plan")
-    elif validation is not None:
-        raise ValueError("source config has VALIDATION corpus but training plan does not")
 
     run_source = _source_path(
         root_path,
