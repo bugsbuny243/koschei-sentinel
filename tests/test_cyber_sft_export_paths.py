@@ -13,9 +13,13 @@ from koschei_sentinel.cyber_sft_export import _validate_adapter_relative_path
         "adapter\\adapter_model.safetensors",
         "adapter_model.safetensors",
         "/adapter/adapter_model.safetensors",
+        "adapter//adapter_model.safetensors",
+        "adapter/./adapter_model.safetensors",
+        "./adapter/adapter_model.safetensors",
+        "adapter/adapter_model.safetensors/",
     ),
 )
-def test_exporter_rejects_non_portable_adapter_paths(relative: str) -> None:
+def test_exporter_rejects_non_portable_or_noncanonical_adapter_paths(relative: str) -> None:
     with pytest.raises(ValueError):
         _validate_adapter_relative_path(relative)
 
