@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import Field, model_validator
 
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
@@ -44,6 +45,10 @@ class CyberDefensePromotionEvidence(StrictModel):
     gold_holdout_evaluation_report_sha256: str = Field(pattern=_DIGEST)
     gold_holdout_policy_sha256: str = Field(pattern=_DIGEST)
     gold_holdout_source_audit_sha256: str = Field(pattern=_DIGEST)
+    gold_review_signature_audit_sha256: str | None = Field(
+        default=None,
+        pattern=_DIGEST,
+    )
     gold_holdout_inference_verification_sha256: str = Field(pattern=_DIGEST)
     cyber_range_passed: bool
     multi_incident_range_passed: bool
@@ -173,6 +178,7 @@ def build_cyber_defense_promotion_evidence(
             report.report_sha256,
             gold_policy_sha,
             gold_holdout_evidence.source_gold_audit_sha256,
+            gold_holdout_evidence.review_signature_audit_sha256 or "",
             gold_holdout_evidence.inference_verification_sha256,
             str(int(cyber_range_report.passed)),
             str(int(multi_incident_range_report.passed)),
@@ -195,6 +201,9 @@ def build_cyber_defense_promotion_evidence(
         gold_holdout_evaluation_report_sha256=report.report_sha256,
         gold_holdout_policy_sha256=gold_policy_sha,
         gold_holdout_source_audit_sha256=gold_holdout_evidence.source_gold_audit_sha256,
+        gold_review_signature_audit_sha256=(
+            gold_holdout_evidence.review_signature_audit_sha256
+        ),
         gold_holdout_inference_verification_sha256=(
             gold_holdout_evidence.inference_verification_sha256
         ),
@@ -257,6 +266,7 @@ def build_cyber_defense_promotion_evidence_from_sources(
     gold_inference_pack_dir: str | Path,
     gold_inference_output_dir: str | Path,
     gold_candidate_export_dir: str | Path,
+    gold_reviewer_public_key: Ed25519PublicKey,
 ) -> CyberDefensePromotionEvidence:
     fresh_gold_evidence = build_gold_holdout_evaluation_evidence(
         release_dir=gold_release_dir,
@@ -264,7 +274,10 @@ def build_cyber_defense_promotion_evidence_from_sources(
         inference_output_dir=gold_inference_output_dir,
         candidate_export_dir=gold_candidate_export_dir,
         policy=gold_holdout_policy,
+        reviewer_public_key=gold_reviewer_public_key,
     )
+    if fresh_gold_evidence.review_signature_audit_sha256 is None:
+        raise ValueError("Promotion v4 requires signed Gold human-review evidence")
     if (
         supplied_gold_holdout_evidence.model_dump(mode="json")
         != fresh_gold_evidence.model_dump(mode="json")
