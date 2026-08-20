@@ -164,13 +164,8 @@ def _source_fixture(tmp_path: Path, monkeypatch) -> tuple[Path, CyberSFTRunAttes
     )
     monkeypatch.setattr(
         export_builder,
-        "load_cyber_sft_examples",
-        lambda *_args, **_kwargs: ([object()], examples_sha, manifest_sha, False),
-    )
-    monkeypatch.setattr(
-        export_builder,
-        "load_cyber_sft_validation_examples",
-        lambda *_args, **_kwargs: None,
+        "_resolve_planned_corpora",
+        lambda *_args, **_kwargs: ([object()], [], examples_sha, manifest_sha, False),
     )
     monkeypatch.setattr(
         export_builder,
