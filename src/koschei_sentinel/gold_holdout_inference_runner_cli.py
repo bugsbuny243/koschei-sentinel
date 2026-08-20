@@ -65,6 +65,24 @@ def _verify_signed_pack(
     )
 
 
+def _snapshot_signed_pack(
+    *,
+    inference_pack: str,
+    signature_path: str,
+    reviewer_public_key_path: str,
+    destination: Path,
+) -> Path:
+    if destination.exists():
+        raise FileExistsError(f"Gold HOLDOUT pack snapshot already exists: {destination}")
+    shutil.copytree(inference_pack, destination, symlinks=True)
+    _verify_signed_pack(
+        inference_pack=str(destination),
+        signature_path=signature_path,
+        reviewer_public_key_path=reviewer_public_key_path,
+    )
+    return destination
+
+
 def _assert_raw_candidate_export(candidate_export: str) -> None:
     report = verify_cyber_sft_export(candidate_export)
     if not report.valid:
@@ -131,31 +149,40 @@ def main(argv: list[str] | None = None) -> int:
             reviewer_public_key_path=args.reviewer_public_key,
         )
         _assert_raw_candidate_export(args.candidate_export)
-        plan = build_gold_holdout_inference_plan(
-            inference_pack_dir=args.inference_pack,
-            candidate_export_dir=args.candidate_export,
-            model_ref=args.model_ref,
-            generation_policy=selected_policy,
-        )
-        if args.plan_output:
-            destination = Path(args.plan_output)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(
-                json.dumps(plan.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
+
+        with tempfile.TemporaryDirectory(prefix="gold-holdout-pack-snapshot-") as temp_dir:
+            snapshot = _snapshot_signed_pack(
+                inference_pack=args.inference_pack,
+                signature_path=args.inference_pack_signature,
+                reviewer_public_key_path=args.reviewer_public_key,
+                destination=Path(temp_dir) / "pack",
             )
-        if not args.execute:
-            print(json.dumps(plan.model_dump(mode="json"), indent=2, sort_keys=True))
-            return 0
-        if args.output_dir is None:
-            raise ValueError("--output-dir is required with --execute")
-        receipt = _execute_atomic(
-            inference_pack=args.inference_pack,
-            candidate_export=args.candidate_export,
-            model_ref=args.model_ref,
-            output_dir=args.output_dir,
-            generation_policy=selected_policy,
-        )
+            plan = build_gold_holdout_inference_plan(
+                inference_pack_dir=snapshot,
+                candidate_export_dir=args.candidate_export,
+                model_ref=args.model_ref,
+                generation_policy=selected_policy,
+            )
+            if args.plan_output:
+                destination = Path(args.plan_output)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(
+                    json.dumps(plan.model_dump(mode="json"), indent=2, sort_keys=True)
+                    + "\n",
+                    encoding="utf-8",
+                )
+            if not args.execute:
+                print(json.dumps(plan.model_dump(mode="json"), indent=2, sort_keys=True))
+                return 0
+            if args.output_dir is None:
+                raise ValueError("--output-dir is required with --execute")
+            receipt = _execute_atomic(
+                inference_pack=str(snapshot),
+                candidate_export=args.candidate_export,
+                model_ref=args.model_ref,
+                output_dir=args.output_dir,
+                generation_policy=selected_policy,
+            )
         print(json.dumps(receipt.model_dump(mode="json"), indent=2, sort_keys=True))
         return 0
     except (FileExistsError, OSError, RuntimeError, TypeError, ValueError) as exc:
