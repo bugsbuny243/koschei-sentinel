@@ -11,6 +11,7 @@ from koschei_sentinel.cyber_sft_candidate_snapshot import (
     snapshot_verified_cyber_sft_export,
 )
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
+from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
 from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutEvaluationPolicy,
     GoldHoldoutInferenceManifest,
@@ -190,9 +191,17 @@ def _export_signed_inputs(
         )
 
     reviewer_private_key = load_reviewer_private_key(reviewer_private_key_path)
+    reviewer_public_key = reviewer_private_key.public_key()
+    release_audit = audit_gold_defense_release(release_dir)
+    if not release_audit.valid:
+        detail = "; ".join(release_audit.violations[:5])
+        raise ValueError(
+            "Gold HOLDOUT pack export requires a valid Gold release"
+            + (f": {detail}" if detail else "")
+        )
     signature_audit = audit_gold_release_review_signatures(
         release_dir,
-        reviewer_private_key.public_key(),
+        reviewer_public_key,
     )
     if not signature_audit.valid:
         detail = "; ".join(signature_audit.violations[:5])
@@ -212,16 +221,32 @@ def _export_signed_inputs(
     signature_temp: Path | None = None
     signature_published = False
     try:
-        manifest = _export_inputs_atomic(release_dir, str(staged_pack))
+        release_snapshot, release_verification = snapshot_verified_gold_release(
+            release_dir,
+            transaction_root / "release",
+            reviewer_public_key=reviewer_public_key,
+            expected_release_audit_sha256=release_audit.audit_sha256,
+            expected_review_signature_audit_sha256=signature_audit.audit_sha256,
+        )
+        manifest = _export_inputs_atomic(str(release_snapshot), str(staged_pack))
+        if (
+            manifest.source_gold_audit_sha256
+            != release_verification.release_audit.audit_sha256
+        ):
+            raise ValueError(
+                "fresh Gold HOLDOUT pack manifest differs from release snapshot audit"
+            )
         proof = sign_gold_holdout_inference_pack(
             staged_pack / "manifest.json",
             reviewer_private_key,
-            review_signature_audit_sha256=signature_audit.audit_sha256,
+            review_signature_audit_sha256=(
+                release_verification.review_signature_audit.audit_sha256
+            ),
         )
         verify_gold_holdout_inference_pack_signature(
             proof,
             staged_pack / "manifest.json",
-            reviewer_private_key.public_key(),
+            reviewer_public_key,
         )
 
         signature_destination.parent.mkdir(parents=True, exist_ok=True)
