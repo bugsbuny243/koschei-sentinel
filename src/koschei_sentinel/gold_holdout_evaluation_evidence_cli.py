@@ -8,6 +8,9 @@ from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     build_gold_holdout_evaluation_evidence,
 )
+from koschei_sentinel.gold_holdout_pack_signing import (
+    load_gold_holdout_pack_signature,
+)
 from koschei_sentinel.gold_review_signing import load_reviewer_public_key
 
 
@@ -20,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--release-dir", required=True)
     parser.add_argument("--inference-pack", required=True)
+    parser.add_argument("--inference-pack-signature", required=True)
     parser.add_argument("--inference-output", required=True)
     parser.add_argument("--candidate-export", required=True)
     parser.add_argument("--reviewer-public-key", required=True)
@@ -45,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
             candidate_export_dir=args.candidate_export,
             policy=_load_policy(args.policy),
             reviewer_public_key=load_reviewer_public_key(args.reviewer_public_key),
+            inference_pack_signature_proof=load_gold_holdout_pack_signature(
+                args.inference_pack_signature
+            ),
         )
         payload = json.dumps(evidence.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
         destination = Path(args.output)
