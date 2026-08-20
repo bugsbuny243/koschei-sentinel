@@ -42,6 +42,23 @@ class CyberSFTArtifactVerification(StrictModel):
     violations: list[str]
 
 
+def _adapter_file_inventory(run_path: Path) -> list[str]:
+    adapter_root = run_path / "adapter"
+    if adapter_root.is_symlink():
+        raise ValueError("adapter directory must not be a symlink")
+    if not adapter_root.is_dir():
+        raise ValueError("adapter directory is missing")
+
+    observed: list[str] = []
+    for path in adapter_root.rglob("*"):
+        if path.is_symlink():
+            relative = path.relative_to(run_path).as_posix()
+            raise ValueError(f"adapter artifact must not be a symlink: {relative}")
+        if path.is_file():
+            observed.append(path.relative_to(run_path).as_posix())
+    return sorted(observed)
+
+
 def _adapter_digest(run_path: Path, files: list[str]) -> str:
     digest = hashlib.sha256()
     for relative in files:
@@ -168,10 +185,25 @@ def verify_cyber_sft_run(
 
     adapter_verified = False
     try:
-        observed_adapter_digest = _adapter_digest(run_path, manifest.adapter_files)
-        adapter_verified = observed_adapter_digest == manifest.adapter_digest
-        if not adapter_verified:
-            violations.append("adapter directory digest differs from adapter manifest")
+        observed_files = _adapter_file_inventory(run_path)
+        expected_files = sorted(manifest.adapter_files)
+        if observed_files != expected_files:
+            missing = sorted(set(expected_files) - set(observed_files))
+            extra = sorted(set(observed_files) - set(expected_files))
+            detail: list[str] = []
+            if missing:
+                detail.append("missing=" + ",".join(missing[:8]))
+            if extra:
+                detail.append("extra=" + ",".join(extra[:8]))
+            if len(expected_files) != len(set(expected_files)):
+                detail.append("manifest contains duplicate paths")
+            suffix = "; ".join(detail) or "file-set mismatch"
+            violations.append(f"adapter file set differs from adapter manifest: {suffix}")
+        else:
+            observed_adapter_digest = _adapter_digest(run_path, manifest.adapter_files)
+            adapter_verified = observed_adapter_digest == manifest.adapter_digest
+            if not adapter_verified:
+                violations.append("adapter directory digest differs from adapter manifest")
     except ValueError as exc:
         violations.append(str(exc))
 
