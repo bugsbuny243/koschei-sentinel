@@ -29,8 +29,14 @@ jobs:
         run: >-
           pytest -q
           tests/test_cyber_sft_export.py
+          tests/test_cyber_sft_export_cli.py
+          tests/test_cyber_sft_export_paths.py
           tests/test_cyber_sft_export_verify.py
+          tests/test_cyber_sft_export_count_binding.py
           tests/test_cyber_sft_export_promotion_binding.py
+          tests/test_cyber_sft_execution_preflight.py
+          tests/test_cyber_sft_execution_cli_preflight.py
+          tests/test_cyber_sft_trainer_explicit_validation.py
           tests/test_gold_review_signing.py
           tests/test_gold_review_cli_contracts.py
           tests/test_gold_candidate_training_binding.py
