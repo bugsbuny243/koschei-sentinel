@@ -6,6 +6,9 @@ import shutil
 import tempfile
 from pathlib import Path, PurePosixPath
 
+from koschei_sentinel.cyber_sft_execution_preflight import (
+    resolve_planned_cyber_sft_corpora,
+)
 from koschei_sentinel.cyber_sft_export_verify import (
     CyberSFTExportVerification,
     verify_cyber_sft_export,
@@ -14,10 +17,7 @@ from koschei_sentinel.cyber_sft_run_attestation import (
     CyberSFTRunAttestation,
     build_cyber_sft_run_attestation,
 )
-from koschei_sentinel.cyber_sft_trainer import (
-    CyberSFTAdapterManifest,
-    _resolve_planned_corpora,
-)
+from koschei_sentinel.cyber_sft_trainer import CyberSFTAdapterManifest
 from koschei_sentinel.cyber_sft_training import CyberSFTPlan, load_cyber_sft_config
 
 _RUN_METADATA_FILES = (
@@ -136,7 +136,7 @@ def build_cyber_sft_export(
     ):
         raise ValueError("supplied run attestation differs from a fresh source rebuild")
 
-    _, _, train_examples_sha, train_manifest_sha, _ = _resolve_planned_corpora(
+    _, _, train_examples_sha, train_manifest_sha, _ = resolve_planned_cyber_sft_corpora(
         config,
         plan,
         root=root_path,
@@ -158,6 +158,13 @@ def build_cyber_sft_export(
         label="adapter manifest",
     )
     manifest = CyberSFTAdapterManifest.model_validate_json(manifest_source.read_bytes())
+
+    if manifest.training_examples != plan.training_examples:
+        raise ValueError("adapter TRAIN example count differs from training plan")
+    if manifest.validation_examples != plan.validation_examples:
+        raise ValueError("adapter VALIDATION example count differs from training plan")
+    if manifest.training_examples + manifest.validation_examples != plan.example_count:
+        raise ValueError("adapter total example count differs from training plan")
 
     run_files: list[tuple[Path, Path]] = []
     for name in _RUN_METADATA_FILES:
