@@ -31,7 +31,7 @@ from koschei_sentinel.gold_holdout_output_snapshot import (
 )
 from koschei_sentinel.gold_holdout_pack_admission import (
     GoldHoldoutPackAdmission,
-    admit_signed_gold_holdout_pack,
+    admit_owner_trusted_signed_gold_holdout_pack,
     snapshot_admitted_gold_holdout_pack,
 )
 from koschei_sentinel.gold_holdout_pack_preflight import (
@@ -45,10 +45,8 @@ from koschei_sentinel.gold_holdout_zero_prediction import (
     build_zero_prediction_gold_report,
 )
 from koschei_sentinel.gold_release_snapshot import snapshot_verified_gold_release
-from koschei_sentinel.gold_review_signing import (
-    audit_gold_release_review_signatures,
-    load_reviewer_private_key,
-)
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_private_key
+from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,6 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--release-dir", required=True)
     export_parser.add_argument("--output-dir", required=True)
     export_parser.add_argument("--reviewer-private-key", required=True)
+    export_parser.add_argument("--reviewer-trust-policy", required=True)
+    export_parser.add_argument("--owner-public-key", required=True)
     export_parser.add_argument("--signature-output", required=True)
 
     evaluate_parser = subparsers.add_parser("evaluate")
@@ -74,6 +74,8 @@ def build_parser() -> argparse.ArgumentParser:
     output_parser.add_argument("--inference-pack", required=True)
     output_parser.add_argument("--inference-pack-signature", required=True)
     output_parser.add_argument("--reviewer-public-key", required=True)
+    output_parser.add_argument("--reviewer-trust-policy", required=True)
+    output_parser.add_argument("--owner-public-key", required=True)
     output_parser.add_argument("--inference-output", required=True)
     output_parser.add_argument("--candidate-export", required=True)
     output_parser.add_argument("--policy", required=True)
@@ -136,11 +138,15 @@ def _verify_signed_pack(
     inference_pack: str,
     signature_path: str,
     reviewer_public_key_path: str,
+    reviewer_trust_policy_path: str,
+    owner_public_key_path: str,
 ) -> GoldHoldoutPackAdmission:
-    return admit_signed_gold_holdout_pack(
+    return admit_owner_trusted_signed_gold_holdout_pack(
         inference_pack=inference_pack,
         signature_path=signature_path,
         reviewer_public_key_path=reviewer_public_key_path,
+        reviewer_trust_policy_path=reviewer_trust_policy_path,
+        owner_public_key_path=owner_public_key_path,
     )
 
 
@@ -177,6 +183,8 @@ def _export_signed_inputs(
     release_dir: str,
     output_dir: str,
     reviewer_private_key_path: str,
+    reviewer_trust_policy_path: str,
+    owner_public_key_path: str,
     signature_output: str,
 ):
     destination = Path(output_dir)
@@ -190,7 +198,11 @@ def _export_signed_inputs(
             f"Gold HOLDOUT pack signature output already exists: {signature_destination}"
         )
 
-    reviewer_private_key = load_reviewer_private_key(reviewer_private_key_path)
+    reviewer_private_key = load_trusted_reviewer_private_key(
+        reviewer_private_key_path=reviewer_private_key_path,
+        trust_policy_path=reviewer_trust_policy_path,
+        owner_public_key_path=owner_public_key_path,
+    )
     reviewer_public_key = reviewer_private_key.public_key()
     release_audit = audit_gold_defense_release(release_dir)
     if not release_audit.valid:
@@ -286,6 +298,8 @@ def _evaluate_verified_output(args):
         inference_pack=args.inference_pack,
         signature_path=args.inference_pack_signature,
         reviewer_public_key_path=args.reviewer_public_key,
+        reviewer_trust_policy_path=args.reviewer_trust_policy,
+        owner_public_key_path=args.owner_public_key,
     )
     _assert_raw_candidate_export(args.candidate_export)
     with tempfile.TemporaryDirectory(prefix="gold-holdout-eval-snapshot-") as temp_dir:
@@ -372,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
                 release_dir=args.release_dir,
                 output_dir=args.output_dir,
                 reviewer_private_key_path=args.reviewer_private_key,
+                reviewer_trust_policy_path=args.reviewer_trust_policy,
+                owner_public_key_path=args.owner_public_key,
                 signature_output=args.signature_output,
             )
             print(
