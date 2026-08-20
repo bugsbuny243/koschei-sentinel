@@ -131,13 +131,17 @@ def test_raw_candidate_failure_blocks_holdout_plan(monkeypatch, capsys) -> None:
 
 def test_signed_pack_snapshot_is_reverified_after_copy(tmp_path: Path) -> None:
     pack, signature_path, public_key_path, _proof = _signed_pack(tmp_path)
+    admission = cli_module._verify_signed_pack(
+        inference_pack=str(pack),
+        signature_path=str(signature_path),
+        reviewer_public_key_path=str(public_key_path),
+    )
     snapshot = tmp_path / "snapshot" / "pack"
     snapshot.parent.mkdir()
 
     result = cli_module._snapshot_signed_pack(
         inference_pack=str(pack),
-        signature_path=str(signature_path),
-        reviewer_public_key_path=str(public_key_path),
+        admission=admission,
         destination=snapshot,
     )
 
@@ -146,10 +150,16 @@ def test_signed_pack_snapshot_is_reverified_after_copy(tmp_path: Path) -> None:
     assert (snapshot / "manifest.json").read_bytes() == (pack / "manifest.json").read_bytes()
 
 
-def test_signed_pack_snapshot_rejects_manifest_bytes_changed_after_signing(
+def test_signed_pack_snapshot_rejects_manifest_bytes_changed_after_admission(
     tmp_path: Path,
 ) -> None:
     pack, signature_path, public_key_path, _proof = _signed_pack(tmp_path)
+    admission = cli_module._verify_signed_pack(
+        inference_pack=str(pack),
+        signature_path=str(signature_path),
+        reviewer_public_key_path=str(public_key_path),
+    )
+
     manifest_path = pack / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest_path.write_text(
@@ -162,10 +172,11 @@ def test_signed_pack_snapshot_rejects_manifest_bytes_changed_after_signing(
     with pytest.raises(ValueError, match="does not bind this inference manifest"):
         cli_module._snapshot_signed_pack(
             inference_pack=str(pack),
-            signature_path=str(signature_path),
-            reviewer_public_key_path=str(public_key_path),
+            admission=admission,
             destination=snapshot,
         )
+
+    assert not snapshot.exists()
 
 
 def test_atomic_execute_publishes_only_after_offline_verification(
