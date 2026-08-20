@@ -23,8 +23,21 @@ from koschei_sentinel.gold_holdout_inference_runner import (
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
+from koschei_sentinel.gold_holdout_pack_preflight import (
+    preflight_gold_holdout_inference_pack,
+)
+from koschei_sentinel.gold_holdout_pack_signing import (
+    load_gold_holdout_pack_signature,
+    sign_gold_holdout_inference_pack,
+    verify_gold_holdout_inference_pack_signature,
+)
 from koschei_sentinel.gold_holdout_zero_prediction import (
     build_zero_prediction_gold_report,
+)
+from koschei_sentinel.gold_review_signing import (
+    audit_gold_release_review_signatures,
+    load_reviewer_private_key,
+    load_reviewer_public_key,
 )
 
 
@@ -37,6 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export-inputs")
     export_parser.add_argument("--release-dir", required=True)
     export_parser.add_argument("--output-dir", required=True)
+    export_parser.add_argument("--reviewer-private-key", required=True)
+    export_parser.add_argument("--signature-output", required=True)
 
     evaluate_parser = subparsers.add_parser("evaluate")
     evaluate_parser.add_argument("--release-dir", required=True)
@@ -47,6 +62,8 @@ def build_parser() -> argparse.ArgumentParser:
     output_parser = subparsers.add_parser("evaluate-output")
     output_parser.add_argument("--release-dir", required=True)
     output_parser.add_argument("--inference-pack", required=True)
+    output_parser.add_argument("--inference-pack-signature", required=True)
+    output_parser.add_argument("--reviewer-public-key", required=True)
     output_parser.add_argument("--inference-output", required=True)
     output_parser.add_argument("--candidate-export", required=True)
     output_parser.add_argument("--policy", required=True)
@@ -104,6 +121,22 @@ def _assert_raw_candidate_export(candidate_export: str) -> None:
         )
 
 
+def _verify_signed_pack(
+    *,
+    inference_pack: str,
+    signature_path: str,
+    reviewer_public_key_path: str,
+) -> None:
+    preflight_gold_holdout_inference_pack(inference_pack)
+    proof = load_gold_holdout_pack_signature(signature_path)
+    reviewer_public_key = load_reviewer_public_key(reviewer_public_key_path)
+    verify_gold_holdout_inference_pack_signature(
+        proof,
+        Path(inference_pack) / "manifest.json",
+        reviewer_public_key,
+    )
+
+
 def _export_inputs_atomic(release_dir: str, output_dir: str) -> GoldHoldoutInferenceManifest:
     destination = Path(output_dir)
     if destination.exists():
@@ -125,13 +158,86 @@ def _export_inputs_atomic(release_dir: str, output_dir: str) -> GoldHoldoutInfer
             raise ValueError(
                 "fresh Gold HOLDOUT inference pack differs from sealed loader verification"
             )
+        preflight_gold_holdout_inference_pack(staging)
         os.replace(staging, destination)
         return manifest
     finally:
         shutil.rmtree(staging_root, ignore_errors=True)
 
 
+def _export_signed_inputs(
+    *,
+    release_dir: str,
+    output_dir: str,
+    reviewer_private_key_path: str,
+    signature_output: str,
+):
+    destination = Path(output_dir)
+    signature_destination = Path(signature_output)
+    if destination.exists():
+        raise FileExistsError(
+            f"Gold HOLDOUT inference pack output already exists: {destination}"
+        )
+    if signature_destination.exists():
+        raise FileExistsError(
+            f"Gold HOLDOUT pack signature output already exists: {signature_destination}"
+        )
+
+    reviewer_private_key = load_reviewer_private_key(reviewer_private_key_path)
+    signature_audit = audit_gold_release_review_signatures(
+        release_dir,
+        reviewer_private_key.public_key(),
+    )
+    if not signature_audit.valid:
+        detail = "; ".join(signature_audit.violations[:5])
+        raise ValueError(
+            "Gold HOLDOUT pack export requires a valid signed Gold release"
+            + (f": {detail}" if detail else "")
+        )
+
+    manifest = _export_inputs_atomic(release_dir, output_dir)
+    signature_temp: Path | None = None
+    try:
+        proof = sign_gold_holdout_inference_pack(
+            destination / "manifest.json",
+            reviewer_private_key,
+        )
+        verify_gold_holdout_inference_pack_signature(
+            proof,
+            destination / "manifest.json",
+            reviewer_private_key.public_key(),
+        )
+        signature_destination.parent.mkdir(parents=True, exist_ok=True)
+        handle = tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f".{signature_destination.name}.staging-",
+            dir=signature_destination.parent,
+            delete=False,
+        )
+        signature_temp = Path(handle.name)
+        with handle:
+            handle.write(
+                json.dumps(proof.model_dump(mode="json"), indent=2, sort_keys=True)
+                + "\n"
+            )
+        os.replace(signature_temp, signature_destination)
+        signature_temp = None
+        return manifest, proof
+    except Exception:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+    finally:
+        if signature_temp is not None:
+            signature_temp.unlink(missing_ok=True)
+
+
 def _evaluate_verified_output(args):
+    _verify_signed_pack(
+        inference_pack=args.inference_pack,
+        signature_path=args.inference_pack_signature,
+        reviewer_public_key_path=args.reviewer_public_key,
+    )
     _assert_raw_candidate_export(args.candidate_export)
     verification = verify_gold_holdout_inference_output(
         args.inference_output,
@@ -188,11 +294,22 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.command == "export-inputs":
-            result = _export_inputs_atomic(
-                args.release_dir,
-                args.output_dir,
+            result, proof = _export_signed_inputs(
+                release_dir=args.release_dir,
+                output_dir=args.output_dir,
+                reviewer_private_key_path=args.reviewer_private_key,
+                signature_output=args.signature_output,
             )
-            print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
+            print(
+                json.dumps(
+                    {
+                        "manifest": result.model_dump(mode="json"),
+                        "pack_signature": proof.model_dump(mode="json"),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
 
         if args.command == "evaluate-output":
