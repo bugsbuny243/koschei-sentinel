@@ -195,18 +195,28 @@ def _export_signed_inputs(
             + (f": {detail}" if detail else "")
         )
 
-    manifest = _export_inputs_atomic(release_dir, output_dir)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    transaction_root = Path(
+        tempfile.mkdtemp(
+            prefix=f".{destination.name}.signed-staging-",
+            dir=destination.parent,
+        )
+    )
+    staged_pack = transaction_root / "pack"
     signature_temp: Path | None = None
+    signature_published = False
     try:
+        manifest = _export_inputs_atomic(release_dir, str(staged_pack))
         proof = sign_gold_holdout_inference_pack(
-            destination / "manifest.json",
+            staged_pack / "manifest.json",
             reviewer_private_key,
         )
         verify_gold_holdout_inference_pack_signature(
             proof,
-            destination / "manifest.json",
+            staged_pack / "manifest.json",
             reviewer_private_key.public_key(),
         )
+
         signature_destination.parent.mkdir(parents=True, exist_ok=True)
         handle = tempfile.NamedTemporaryFile(
             mode="w",
@@ -223,13 +233,20 @@ def _export_signed_inputs(
             )
         os.replace(signature_temp, signature_destination)
         signature_temp = None
+        signature_published = True
+
+        # Final pack publication is intentionally last: a final pack path is never
+        # visible unless its detached trusted signature has already been published.
+        os.replace(staged_pack, destination)
         return manifest, proof
     except Exception:
-        shutil.rmtree(destination, ignore_errors=True)
+        if signature_published:
+            signature_destination.unlink(missing_ok=True)
         raise
     finally:
         if signature_temp is not None:
             signature_temp.unlink(missing_ok=True)
+        shutil.rmtree(transaction_root, ignore_errors=True)
 
 
 def _evaluate_verified_output(args):
