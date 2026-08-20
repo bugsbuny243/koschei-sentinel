@@ -46,6 +46,7 @@ class CyberDefensePromotionEvidence(StrictModel):
     gold_holdout_policy_sha256: str = Field(pattern=_DIGEST)
     gold_holdout_source_audit_sha256: str = Field(pattern=_DIGEST)
     gold_review_signature_audit_sha256: str = Field(pattern=_DIGEST)
+    gold_candidate_training_binding_sha256: str = Field(pattern=_DIGEST)
     gold_holdout_inference_verification_sha256: str = Field(pattern=_DIGEST)
     cyber_range_passed: bool
     multi_incident_range_passed: bool
@@ -139,6 +140,10 @@ def build_cyber_defense_promotion_evidence(
     verify_gold_holdout_evaluation_evidence(gold_holdout_evidence)
     if gold_holdout_evidence.review_signature_audit_sha256 is None:
         raise ValueError("Promotion v4 requires signed Gold human-review evidence")
+    if gold_holdout_evidence.candidate_training_binding_verification_sha256 is None:
+        raise ValueError(
+            "Promotion v4 requires Gold candidate TRAIN/VALIDATION binding evidence"
+        )
     if gold_holdout_evidence.model_ref != candidate_model_ref:
         raise ValueError("Gold HOLDOUT evidence model_ref differs from promotion candidate")
     if gold_holdout_evidence.model_revision != candidate_model_revision:
@@ -164,6 +169,9 @@ def build_cyber_defense_promotion_evidence(
         and gold_passed
     )
     review_signature_sha = gold_holdout_evidence.review_signature_audit_sha256
+    candidate_training_binding_sha = (
+        gold_holdout_evidence.candidate_training_binding_verification_sha256
+    )
     digest_payload = "|".join(
         [
             promotion_id,
@@ -179,6 +187,7 @@ def build_cyber_defense_promotion_evidence(
             gold_policy_sha,
             gold_holdout_evidence.source_gold_audit_sha256,
             review_signature_sha,
+            candidate_training_binding_sha,
             gold_holdout_evidence.inference_verification_sha256,
             str(int(cyber_range_report.passed)),
             str(int(multi_incident_range_report.passed)),
@@ -202,6 +211,7 @@ def build_cyber_defense_promotion_evidence(
         gold_holdout_policy_sha256=gold_policy_sha,
         gold_holdout_source_audit_sha256=gold_holdout_evidence.source_gold_audit_sha256,
         gold_review_signature_audit_sha256=review_signature_sha,
+        gold_candidate_training_binding_sha256=candidate_training_binding_sha,
         gold_holdout_inference_verification_sha256=(
             gold_holdout_evidence.inference_verification_sha256
         ),
@@ -276,6 +286,10 @@ def build_cyber_defense_promotion_evidence_from_sources(
     )
     if fresh_gold_evidence.review_signature_audit_sha256 is None:
         raise ValueError("Promotion v4 requires signed Gold human-review evidence")
+    if fresh_gold_evidence.candidate_training_binding_verification_sha256 is None:
+        raise ValueError(
+            "Promotion v4 requires Gold candidate TRAIN/VALIDATION binding evidence"
+        )
     if (
         supplied_gold_holdout_evidence.model_dump(mode="json")
         != fresh_gold_evidence.model_dump(mode="json")
