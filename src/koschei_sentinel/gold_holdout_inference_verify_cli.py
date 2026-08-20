@@ -12,6 +12,9 @@ from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
+from koschei_sentinel.gold_holdout_output_snapshot import (
+    copy_gold_holdout_inference_output_snapshot,
+)
 from koschei_sentinel.gold_holdout_pack_admission import (
     GoldHoldoutPackAdmission,
     admit_signed_gold_holdout_pack,
@@ -77,8 +80,12 @@ def main(argv: list[str] | None = None) -> int:
                 args.candidate_export,
                 snapshot_root / "candidate-export",
             )
-            report = verify_gold_holdout_inference_output(
+            output_snapshot = copy_gold_holdout_inference_output_snapshot(
                 args.output_dir,
+                snapshot_root / "output",
+            )
+            report = verify_gold_holdout_inference_output(
+                output_snapshot,
                 inference_snapshot,
                 candidate_snapshot,
             )
