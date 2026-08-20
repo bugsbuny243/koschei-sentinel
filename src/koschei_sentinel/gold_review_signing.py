@@ -21,6 +21,7 @@ from koschei_sentinel.defense_reflex_gold_release import (
     write_gold_defense_release,
 )
 from koschei_sentinel.defense_reflex_gold_review import GoldReviewedPacket
+from koschei_sentinel.gold_model_visible_context import verify_gold_model_visible_context
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
 
@@ -223,10 +224,15 @@ def write_signed_gold_defense_release(
     proof_by_review = {proof.review_sha256: proof for proof in proofs}
     if len(proof_by_review) != len(proofs):
         raise ValueError("Gold signed release signature proof review digests must be unique")
-    for _scenario, _packet, reviewed in rows:
+    for scenario, packet, reviewed in rows:
         proof = proof_by_review.get(reviewed.review_sha256)
         if proof is None:
             raise ValueError("Gold signed release is missing a reviewed-packet signature proof")
+        verify_gold_model_visible_context(
+            scenario=scenario,
+            context=packet.model_visible_context,
+            context_sha256=packet.model_visible_context_sha256,
+        )
         verify_gold_review_signature(reviewed, proof, reviewer_public_key)
 
     manifest = write_gold_defense_release(rows, output_dir)
