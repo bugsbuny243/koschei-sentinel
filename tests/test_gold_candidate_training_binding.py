@@ -37,6 +37,7 @@ def test_gold_candidate_binding_accepts_exact_train_and_validation_splits(
     assert report.stage_verified is True
     assert report.promotion_eligible_verified is True
     assert report.explicit_validation_verified is True
+    assert report.example_counts_verified is True
     assert report.exported_training_bytes_verified is True
     assert report.training_hashes_verified is True
     assert report.validation_hashes_verified is True
@@ -65,6 +66,7 @@ def test_gold_candidate_binding_rejects_generic_promotion_candidate(
 
     assert report.valid is False
     assert report.explicit_validation_verified is False
+    assert report.example_counts_verified is False
     assert report.training_hashes_verified is False
     assert report.validation_hashes_verified is False
 
@@ -102,6 +104,7 @@ def test_gold_candidate_binding_rejects_internally_rehashed_validation_drift(
     report = verify_gold_candidate_training_binding(release, candidate)
 
     assert report.valid is False
+    assert report.example_counts_verified is True
     assert report.training_hashes_verified is True
     assert report.validation_hashes_verified is False
     assert any("Gold VALIDATION split" in row for row in report.violations)
