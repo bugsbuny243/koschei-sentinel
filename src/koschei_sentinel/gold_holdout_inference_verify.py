@@ -28,6 +28,19 @@ from koschei_sentinel.gold_holdout_inference_runner import (
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
 
+_EXPECTED_OUTPUT_FILES = frozenset(
+    {
+        "candidate-export-verification.json",
+        "failures.jsonl",
+        "generation-policy.json",
+        "plan.json",
+        "predictions.jsonl",
+        "receipt.json",
+        "run-attestation.json",
+        "training-config.json",
+    }
+)
+
 
 class GoldHoldoutInferenceVerification(StrictModel):
     schema_version: Literal["sentinel.gold-holdout-inference-verification.v3"] = (
@@ -73,6 +86,19 @@ def _prediction_digest(prediction: GoldHoldoutPrediction) -> str:
     return _digest_without(prediction.model_dump(mode="json"), "prediction_sha256")
 
 
+def _output_inventory(root: Path) -> list[str]:
+    observed: list[str] = []
+    for path in root.rglob("*"):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            raise ValueError(
+                f"Gold HOLDOUT inference output must not contain symlinks: {relative}"
+            )
+        if path.is_file():
+            observed.append(relative)
+    return sorted(observed)
+
+
 def _load_jsonl(path: Path, model_type, label: str):
     try:
         raw = path.read_bytes()
@@ -115,6 +141,27 @@ def verify_gold_holdout_inference_output(
     complete_case_accounting = False
 
     try:
+        if output.is_symlink():
+            raise ValueError("Gold HOLDOUT inference output directory must not be a symlink")
+        if not output.is_dir():
+            raise ValueError("Gold HOLDOUT inference output directory is missing")
+        observed_output_files = _output_inventory(output)
+        expected_output_files = sorted(_EXPECTED_OUTPUT_FILES)
+        if observed_output_files != expected_output_files:
+            missing_files = sorted(
+                set(expected_output_files) - set(observed_output_files)
+            )
+            extra_files = sorted(set(observed_output_files) - set(expected_output_files))
+            detail: list[str] = []
+            if missing_files:
+                detail.append("missing=" + ",".join(missing_files[:8]))
+            if extra_files:
+                detail.append("extra=" + ",".join(extra_files[:8]))
+            violations.append(
+                "Gold HOLDOUT inference output file set differs from sealed contract: "
+                + ("; ".join(detail) or "file-set mismatch")
+            )
+
         cases, inference_manifest, inference_manifest_raw = _load_inference_pack(
             inference_pack_dir
         )
