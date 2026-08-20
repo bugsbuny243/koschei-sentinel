@@ -14,6 +14,7 @@ from koschei_sentinel.gold_holdout_pack_signing import (
     load_gold_holdout_pack_signature,
     verify_gold_holdout_inference_pack_signature,
 )
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 from koschei_sentinel.gold_review_signing import load_reviewer_public_key
 
 
@@ -60,9 +61,32 @@ def admit_signed_gold_holdout_pack(
     signature_path: str | Path,
     reviewer_public_key_path: str | Path,
 ) -> GoldHoldoutPackAdmission:
-    """Load the trust root once, then fail closed before trusting pack contents."""
+    """Low-level admission using an already-trusted reviewer public-key path."""
     proof = load_gold_holdout_pack_signature(signature_path)
     reviewer_public_key = load_reviewer_public_key(reviewer_public_key_path)
+    admission = GoldHoldoutPackAdmission(
+        proof=proof,
+        reviewer_public_key=reviewer_public_key,
+    )
+    verify_admitted_gold_holdout_pack(admission, inference_pack)
+    return admission
+
+
+def admit_owner_trusted_signed_gold_holdout_pack(
+    *,
+    inference_pack: str | Path,
+    signature_path: str | Path,
+    reviewer_public_key_path: str | Path,
+    reviewer_trust_policy_path: str | Path,
+    owner_public_key_path: str | Path,
+) -> GoldHoldoutPackAdmission:
+    """Production admission anchored to an owner-signed reviewer trust policy."""
+    proof = load_gold_holdout_pack_signature(signature_path)
+    reviewer_public_key = load_trusted_reviewer_public_key(
+        reviewer_public_key_path=reviewer_public_key_path,
+        trust_policy_path=reviewer_trust_policy_path,
+        owner_public_key_path=owner_public_key_path,
+    )
     admission = GoldHoldoutPackAdmission(
         proof=proof,
         reviewer_public_key=reviewer_public_key,
