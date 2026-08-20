@@ -29,6 +29,7 @@ jobs:
         run: >-
           pytest -q
           tests/test_cyber_sft_artifact_verify.py
+          tests/test_cyber_sft_candidate_snapshot.py
           tests/test_cyber_sft_export.py
           tests/test_cyber_sft_export_cli.py
           tests/test_cyber_sft_export_paths.py
