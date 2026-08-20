@@ -18,7 +18,9 @@ from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
 from koschei_sentinel.gold_holdout_pack_admission import (
+    GoldHoldoutPackAdmission,
     admit_signed_gold_holdout_pack,
+    verify_admitted_gold_holdout_pack,
 )
 
 
@@ -57,8 +59,8 @@ def _verify_signed_pack(
     inference_pack: str,
     signature_path: str,
     reviewer_public_key_path: str,
-) -> None:
-    admit_signed_gold_holdout_pack(
+) -> GoldHoldoutPackAdmission:
+    return admit_signed_gold_holdout_pack(
         inference_pack=inference_pack,
         signature_path=signature_path,
         reviewer_public_key_path=reviewer_public_key_path,
@@ -68,19 +70,14 @@ def _verify_signed_pack(
 def _snapshot_signed_pack(
     *,
     inference_pack: str,
-    signature_path: str,
-    reviewer_public_key_path: str,
+    admission: GoldHoldoutPackAdmission,
     destination: Path,
 ) -> Path:
     if destination.exists():
         raise FileExistsError(f"Gold HOLDOUT pack snapshot already exists: {destination}")
     try:
         shutil.copytree(inference_pack, destination, symlinks=True)
-        _verify_signed_pack(
-            inference_pack=str(destination),
-            signature_path=signature_path,
-            reviewer_public_key_path=reviewer_public_key_path,
-        )
+        verify_admitted_gold_holdout_pack(admission, destination)
         return destination
     except (OSError, TypeError, ValueError):
         shutil.rmtree(destination, ignore_errors=True)
@@ -147,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         selected_policy = _load_policy(args.generation_policy)
-        _verify_signed_pack(
+        admission = _verify_signed_pack(
             inference_pack=args.inference_pack,
             signature_path=args.inference_pack_signature,
             reviewer_public_key_path=args.reviewer_public_key,
@@ -157,8 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory(prefix="gold-holdout-pack-snapshot-") as temp_dir:
             snapshot = _snapshot_signed_pack(
                 inference_pack=args.inference_pack,
-                signature_path=args.inference_pack_signature,
-                reviewer_public_key_path=args.reviewer_public_key,
+                admission=admission,
                 destination=Path(temp_dir) / "pack",
             )
             plan = build_gold_holdout_inference_plan(
