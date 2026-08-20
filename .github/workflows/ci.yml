@@ -38,6 +38,7 @@ jobs:
           tests/test_cyber_sft_execution_preflight.py
           tests/test_cyber_sft_execution_cli_preflight.py
           tests/test_cyber_sft_trainer_explicit_validation.py
+          tests/test_defense_reflex_gold_review.py
           tests/test_gold_review_signing.py
           tests/test_gold_review_cli_contracts.py
           tests/test_gold_candidate_training_binding.py
@@ -47,6 +48,8 @@ jobs:
           tests/test_gold_holdout_prompt_preflight.py
           tests/test_gold_holdout_inference_verify.py
           tests/test_gold_holdout_inference_verify_cli.py
+          tests/test_gold_holdout_pack_preflight.py
+          tests/test_gold_holdout_pack_signing.py
           tests/test_gold_holdout_path_portability.py
           tests/test_gold_holdout_evaluation.py
           tests/test_gold_holdout_evaluation_cli.py
