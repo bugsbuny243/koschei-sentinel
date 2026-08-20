@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +34,24 @@ def verify_admitted_gold_holdout_pack(
         pack / "manifest.json",
         admission.reviewer_public_key,
     )
+
+
+def snapshot_admitted_gold_holdout_pack(
+    admission: GoldHoldoutPackAdmission,
+    inference_pack: str | Path,
+    destination: str | Path,
+) -> Path:
+    source = Path(inference_pack)
+    snapshot = Path(destination)
+    if snapshot.exists():
+        raise FileExistsError(f"Gold HOLDOUT pack snapshot already exists: {snapshot}")
+    try:
+        shutil.copytree(source, snapshot, symlinks=True)
+        verify_admitted_gold_holdout_pack(admission, snapshot)
+        return snapshot
+    except (OSError, TypeError, ValueError):
+        shutil.rmtree(snapshot, ignore_errors=True)
+        raise
 
 
 def admit_signed_gold_holdout_pack(
