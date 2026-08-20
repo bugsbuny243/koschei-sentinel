@@ -76,6 +76,8 @@ def _runtime_semantics_match(
     observed = model_runtime.get("observed_floating_dtypes_before_kbit_prepare")
     if not isinstance(observed, list) or not observed:
         return False
+    if any(not isinstance(row, str) for row in observed):
+        return False
     competing = "bfloat16" if requested_dtype == "float16" else "float16"
     return (
         model_runtime.get("loader") == "AutoModelForCausalLM"
