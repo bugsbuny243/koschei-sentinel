@@ -66,7 +66,7 @@ def test_gold_release_snapshot_digest_mismatch_removes_copy(
         ),
     )
 
-    with pytest.raises(ValueError, match="structural audit SHA differs"):
+    with pytest.raises(ValueError, match="different release audit"):
         snapshot_module.snapshot_verified_gold_release(
             source,
             destination,
