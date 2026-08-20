@@ -42,6 +42,7 @@ jobs:
           tests/test_defense_reflex_gold_review.py
           tests/test_gold_review_signing.py
           tests/test_gold_review_cli_contracts.py
+          tests/test_gold_release_snapshot.py
           tests/test_gold_candidate_training_binding.py
           tests/test_gold_holdout_candidate_export_gate.py
           tests/test_gold_holdout_inference_runner.py
@@ -49,6 +50,7 @@ jobs:
           tests/test_gold_holdout_prompt_preflight.py
           tests/test_gold_holdout_inference_verify.py
           tests/test_gold_holdout_inference_verify_cli.py
+          tests/test_gold_holdout_output_snapshot.py
           tests/test_gold_holdout_pack_preflight.py
           tests/test_gold_holdout_pack_admission.py
           tests/test_gold_holdout_snapshot_consumers.py
