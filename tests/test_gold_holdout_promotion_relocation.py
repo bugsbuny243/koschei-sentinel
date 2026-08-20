@@ -7,6 +7,7 @@ from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     build_gold_holdout_evaluation_evidence,
 )
+from tests.gold_review_signing_helpers import attach_signed_review_proofs
 from tests.test_cyber_defense_promotion import _bundle, _load, _multi, _single
 from tests.test_gold_holdout_evaluation_evidence import _passing_fixture
 
@@ -19,6 +20,7 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         tmp_path,
         monkeypatch,
     )
+    reviewer_public_key = attach_signed_review_proofs(release)
     policy = GoldHoldoutEvaluationPolicy(minimum_case_count=1)
     supplied = build_gold_holdout_evaluation_evidence(
         release_dir=release,
@@ -26,6 +28,7 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         inference_output_dir=output,
         candidate_export_dir=candidate_export,
         policy=policy,
+        reviewer_public_key=reviewer_public_key,
     )
 
     relocated_root = tmp_path / "promotion-host"
@@ -52,10 +55,12 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         gold_inference_pack_dir=relocated_pack,
         gold_inference_output_dir=relocated_output,
         gold_candidate_export_dir=relocated_candidate,
+        gold_reviewer_public_key=reviewer_public_key,
     )
 
     assert promotion.ready_for_promotion is True
     assert promotion.gold_holdout_passed is True
+    assert promotion.gold_review_signature_audit_sha256 is not None
     assert promotion.gold_holdout_evaluation_evidence_sha256 == supplied.evidence_sha256
     assert (
         promotion.gold_holdout_inference_verification_sha256
