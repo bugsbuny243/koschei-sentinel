@@ -262,3 +262,39 @@ def test_offline_inference_verifier_rejects_missing_case_even_with_rewritten_rec
     assert report.complete_case_accounting is False
     assert any("omits cases" in row for row in report.violations)
     assert plan.case_count == len(cases)
+
+
+def test_offline_inference_verifier_rejects_unlisted_output_file(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    pack, output, _cases, _plan, candidate_export = _fixture(tmp_path, monkeypatch)
+    (output / "holdout-answers.json").write_text(
+        '{"answer_key":"must-not-travel"}\n',
+        encoding="utf-8",
+    )
+
+    report = verify_gold_holdout_inference_output(output, pack, candidate_export)
+
+    assert report.valid is False
+    assert any(
+        "inference output file set differs" in row
+        and "extra=holdout-answers.json" in row
+        for row in report.violations
+    )
+
+
+def test_offline_inference_verifier_rejects_output_symlink(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    pack, output, _cases, _plan, candidate_export = _fixture(tmp_path, monkeypatch)
+    config_path = output / "training-config.json"
+    external = tmp_path / "external-inference-training-config.json"
+    config_path.replace(external)
+    config_path.symlink_to(external)
+
+    report = verify_gold_holdout_inference_output(output, pack, candidate_export)
+
+    assert report.valid is False
+    assert any("must not contain symlinks" in row for row in report.violations)
