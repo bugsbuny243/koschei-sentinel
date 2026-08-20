@@ -170,7 +170,10 @@ def test_atomic_export_rejects_existing_destination_before_build(
     assert called is False
 
 
-def test_signed_export_failure_removes_published_pack(monkeypatch, tmp_path: Path) -> None:
+def test_signed_export_failure_never_publishes_unsigned_pack(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     destination = tmp_path / "holdout-pack"
     signature = tmp_path / "holdout-pack.signature.json"
     private_key = SimpleNamespace(public_key=lambda: object())
@@ -184,7 +187,11 @@ def test_signed_export_failure_removes_published_pack(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(
         cli_module,
         "audit_gold_release_review_signatures",
-        lambda *_args, **_kwargs: SimpleNamespace(valid=True, violations=[]),
+        lambda *_args, **_kwargs: SimpleNamespace(
+            valid=True,
+            violations=[],
+            audit_sha256="a" * 64,
+        ),
     )
 
     def fake_export(_release, output):
@@ -210,6 +217,7 @@ def test_signed_export_failure_removes_published_pack(monkeypatch, tmp_path: Pat
 
     assert not destination.exists()
     assert not signature.exists()
+    assert not list(tmp_path.glob(".holdout-pack.signed-staging-*"))
 
 
 def test_signed_pack_failure_blocks_candidate_and_verified_evaluation(monkeypatch) -> None:
