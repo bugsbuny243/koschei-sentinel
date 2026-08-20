@@ -6,7 +6,7 @@ import pytest
 
 import koschei_sentinel.gold_holdout_inference_runner_cli as cli_module
 from koschei_sentinel.gold_holdout_inference_runner_cli import build_parser
-from tests.test_gold_holdout_pack_admission import _signed_pack
+from tests.test_gold_holdout_pack_admission import _owner_trusted_signed_pack
 
 
 def _base_args():
@@ -17,6 +17,10 @@ def _base_args():
         "pack-signature.json",
         "--reviewer-public-key",
         "reviewer-public.pem",
+        "--reviewer-trust-policy",
+        "reviewer-trust.json",
+        "--owner-public-key",
+        "owner-public.pem",
         "--candidate-export",
         "candidate-export",
         "--model-ref",
@@ -26,36 +30,35 @@ def _base_args():
     ]
 
 
+def _without(argv: list[str], option: str) -> list[str]:
+    result = list(argv)
+    index = result.index(option)
+    del result[index : index + 2]
+    return result
+
+
 def test_gold_holdout_inference_cli_requires_generation_policy() -> None:
-    argv = _base_args()
-    index = argv.index("--generation-policy")
-    del argv[index : index + 2]
-
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(argv)
-
+        build_parser().parse_args(_without(_base_args(), "--generation-policy"))
     assert exc.value.code == 2
 
 
 def test_gold_holdout_inference_cli_requires_candidate_export() -> None:
-    argv = _base_args()
-    index = argv.index("--candidate-export")
-    del argv[index : index + 2]
-
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(argv)
-
+        build_parser().parse_args(_without(_base_args(), "--candidate-export"))
     assert exc.value.code == 2
 
 
 def test_gold_holdout_inference_cli_requires_signed_pack_identity() -> None:
-    argv = _base_args()
-    index = argv.index("--inference-pack-signature")
-    del argv[index : index + 2]
-
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(argv)
+        build_parser().parse_args(_without(_base_args(), "--inference-pack-signature"))
+    assert exc.value.code == 2
 
+
+@pytest.mark.parametrize("missing", ["--reviewer-trust-policy", "--owner-public-key"])
+def test_gold_holdout_inference_cli_requires_owner_pinned_trust(missing: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(_without(_base_args(), missing))
     assert exc.value.code == 2
 
 
@@ -65,6 +68,8 @@ def test_gold_holdout_inference_cli_accepts_explicit_policies_and_export() -> No
     assert args.candidate_export == "candidate-export"
     assert args.inference_pack_signature == "pack-signature.json"
     assert args.reviewer_public_key == "reviewer-public.pem"
+    assert args.reviewer_trust_policy == "reviewer-trust.json"
+    assert args.owner_public_key == "owner-public.pem"
     assert args.generation_policy == (
         "configs/training/gold-holdout-generation-policy.v1.json"
     )
@@ -130,11 +135,20 @@ def test_raw_candidate_failure_blocks_holdout_plan(monkeypatch, capsys) -> None:
 
 
 def test_signed_pack_snapshot_is_reverified_after_copy(tmp_path: Path) -> None:
-    pack, signature_path, public_key_path, _proof = _signed_pack(tmp_path)
+    (
+        pack,
+        signature_path,
+        public_key_path,
+        policy_path,
+        owner_public_key_path,
+        _proof,
+    ) = _owner_trusted_signed_pack(tmp_path)
     admission = cli_module._verify_signed_pack(
         inference_pack=str(pack),
         signature_path=str(signature_path),
         reviewer_public_key_path=str(public_key_path),
+        reviewer_trust_policy_path=str(policy_path),
+        owner_public_key_path=str(owner_public_key_path),
     )
     snapshot = tmp_path / "snapshot" / "pack"
     snapshot.parent.mkdir()
@@ -153,11 +167,20 @@ def test_signed_pack_snapshot_is_reverified_after_copy(tmp_path: Path) -> None:
 def test_signed_pack_snapshot_rejects_manifest_bytes_changed_after_admission(
     tmp_path: Path,
 ) -> None:
-    pack, signature_path, public_key_path, _proof = _signed_pack(tmp_path)
+    (
+        pack,
+        signature_path,
+        public_key_path,
+        policy_path,
+        owner_public_key_path,
+        _proof,
+    ) = _owner_trusted_signed_pack(tmp_path)
     admission = cli_module._verify_signed_pack(
         inference_pack=str(pack),
         signature_path=str(signature_path),
         reviewer_public_key_path=str(public_key_path),
+        reviewer_trust_policy_path=str(policy_path),
+        owner_public_key_path=str(owner_public_key_path),
     )
 
     manifest_path = pack / "manifest.json"
