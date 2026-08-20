@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -5,6 +6,7 @@ import pytest
 
 import koschei_sentinel.gold_holdout_inference_runner_cli as cli_module
 from koschei_sentinel.gold_holdout_inference_runner_cli import build_parser
+from tests.test_gold_holdout_pack_admission import _signed_pack
 
 
 def _base_args():
@@ -125,6 +127,45 @@ def test_raw_candidate_failure_blocks_holdout_plan(monkeypatch, capsys) -> None:
     assert status == 2
     assert planned is False
     assert "must not be a symlink" in capsys.readouterr().out
+
+
+def test_signed_pack_snapshot_is_reverified_after_copy(tmp_path: Path) -> None:
+    pack, signature_path, public_key_path, _proof = _signed_pack(tmp_path)
+    snapshot = tmp_path / "snapshot" / "pack"
+    snapshot.parent.mkdir()
+
+    result = cli_module._snapshot_signed_pack(
+        inference_pack=str(pack),
+        signature_path=str(signature_path),
+        reviewer_public_key_path=str(public_key_path),
+        destination=snapshot,
+    )
+
+    assert result == snapshot
+    assert (snapshot / "inputs.jsonl").read_bytes() == (pack / "inputs.jsonl").read_bytes()
+    assert (snapshot / "manifest.json").read_bytes() == (pack / "manifest.json").read_bytes()
+
+
+def test_signed_pack_snapshot_rejects_manifest_bytes_changed_after_signing(
+    tmp_path: Path,
+) -> None:
+    pack, signature_path, public_key_path, _proof = _signed_pack(tmp_path)
+    manifest_path = pack / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_path.write_text(
+        json.dumps(manifest, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    snapshot = tmp_path / "snapshot" / "pack"
+    snapshot.parent.mkdir()
+
+    with pytest.raises(ValueError, match="does not bind this inference manifest"):
+        cli_module._snapshot_signed_pack(
+            inference_pack=str(pack),
+            signature_path=str(signature_path),
+            reviewer_public_key_path=str(public_key_path),
+            destination=snapshot,
+        )
 
 
 def test_atomic_execute_publishes_only_after_offline_verification(
