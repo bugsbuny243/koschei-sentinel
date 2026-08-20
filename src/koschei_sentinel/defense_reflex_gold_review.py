@@ -15,6 +15,9 @@ from koschei_sentinel.defense_reflex_review import (
     CorrectionReviewDecision,
     ReviewedCorrectionStep,
 )
+from koschei_sentinel.gold_model_visible_context import (
+    verify_gold_model_visible_context,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
 
@@ -134,6 +137,11 @@ def review_gold_packet(
     report_sha = _scenario_report_sha256(scenario)
     if report_sha != packet.source_report_sha256:
         raise ValueError("Gold review scenario drifted after queue assignment")
+    verify_gold_model_visible_context(
+        scenario=scenario,
+        context=packet.model_visible_context,
+        context_sha256=packet.model_visible_context_sha256,
+    )
 
     entity_ids = _scenario_entity_ids(scenario)
     evidence_ids = _scenario_evidence_ids(scenario)
