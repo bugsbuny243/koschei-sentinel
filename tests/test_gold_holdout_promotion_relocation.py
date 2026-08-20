@@ -10,6 +10,7 @@ from koschei_sentinel.gold_holdout_evaluation_evidence import (
 from koschei_sentinel.gold_holdout_pack_signing import (
     sign_gold_holdout_inference_pack,
 )
+from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
 from tests.gold_candidate_binding_helpers import (
     rebind_inference_fixture_to_gold_candidate,
 )
@@ -39,9 +40,15 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         return_private_key=True,
     )
     reviewer_public_key = reviewer_private_key.public_key()
+    signature_audit = audit_gold_release_review_signatures(
+        release,
+        reviewer_public_key,
+    )
+    assert signature_audit.valid is True
     pack_proof = sign_gold_holdout_inference_pack(
         pack / "manifest.json",
         reviewer_private_key,
+        review_signature_audit_sha256=signature_audit.audit_sha256,
     )
     policy = GoldHoldoutEvaluationPolicy(minimum_case_count=1)
     supplied = build_gold_holdout_evaluation_evidence(
@@ -84,7 +91,7 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
 
     assert promotion.ready_for_promotion is True
     assert promotion.gold_holdout_passed is True
-    assert promotion.gold_review_signature_audit_sha256 is not None
+    assert promotion.gold_review_signature_audit_sha256 == signature_audit.audit_sha256
     assert promotion.gold_candidate_training_binding_sha256 is not None
     assert promotion.gold_holdout_pack_signature_proof_sha256 == pack_proof.proof_sha256
     assert promotion.gold_holdout_evaluation_evidence_sha256 == supplied.evidence_sha256
