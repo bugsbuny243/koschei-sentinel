@@ -1,8 +1,12 @@
+import copy
 import hashlib
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from koschei_sentinel.defense_reflex_gold_queue import _packet_digest
+from koschei_sentinel.defense_reflex_gold_review import _review_digest
+from koschei_sentinel.gold_model_visible_context import gold_model_visible_context_sha256
 from koschei_sentinel.gold_review_signing import (
     GoldReviewSignatureProof,
     audit_gold_release_review_signatures,
@@ -66,6 +70,45 @@ def test_gold_review_signature_rejects_rehashed_review_tamper() -> None:
 
     with pytest.raises(ValueError, match="Ed25519 signature verification failed"):
         verify_gold_review_signature_proof(tampered, private_key.public_key())
+
+
+def test_signed_release_rejects_rehashed_context_poison_even_with_valid_signature(
+    tmp_path,
+) -> None:
+    _policy, rows = _release_rows()
+    scenario, packet, reviewed = rows[0]
+    poisoned_context = copy.deepcopy(packet.model_visible_context)
+    poisoned_context["graph_snapshots"][0]["truth"] = "MALICIOUS"
+    poisoned_packet = packet.model_copy(
+        update={
+            "model_visible_context": poisoned_context,
+            "model_visible_context_sha256": gold_model_visible_context_sha256(
+                poisoned_context
+            ),
+        }
+    )
+    poisoned_packet = poisoned_packet.model_copy(
+        update={
+            "packet_sha256": _packet_digest(poisoned_packet.model_dump(mode="json"))
+        }
+    )
+
+    reviewed_payload = reviewed.model_dump(mode="json")
+    reviewed_payload["packet_sha256"] = poisoned_packet.packet_sha256
+    reviewed_payload["review_sha256"] = _review_digest(reviewed_payload)
+    poisoned_reviewed = reviewed.__class__.model_validate(reviewed_payload)
+
+    private_key = Ed25519PrivateKey.generate()
+    proof = sign_gold_reviewed_packet(poisoned_reviewed, private_key)
+    verify_gold_review_signature(poisoned_reviewed, proof, private_key.public_key())
+
+    with pytest.raises(ValueError, match="forbidden answer-key/review fields"):
+        write_signed_gold_defense_release(
+            [(scenario, poisoned_packet, poisoned_reviewed)],
+            [proof],
+            tmp_path / "poisoned-release",
+            private_key.public_key(),
+        )
 
 
 def test_signed_gold_release_audit_requires_exact_signed_review_set(tmp_path) -> None:
