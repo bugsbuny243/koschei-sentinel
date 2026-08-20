@@ -67,11 +67,15 @@ def _copy_exact(source: Path, destination: Path) -> None:
 
 
 def _validate_adapter_relative_path(relative: str) -> Path:
+    if "\\" in relative:
+        raise ValueError(f"adapter file path is not portable: {relative}")
     parsed = PurePosixPath(relative)
     if parsed.is_absolute() or not parsed.parts or ".." in parsed.parts:
         raise ValueError(f"adapter file path is not portable: {relative}")
     if any(part in {"", "."} for part in parsed.parts):
         raise ValueError(f"adapter file path is not canonical: {relative}")
+    if parsed.parts[0] != "adapter":
+        raise ValueError(f"adapter file must remain under adapter/: {relative}")
     return Path(*parsed.parts)
 
 
@@ -180,7 +184,11 @@ def build_cyber_sft_export(
             label=f"run artifact {name}",
         )
         run_files.append((source, Path("run") / name))
+    seen_adapter_files: set[str] = set()
     for relative in manifest.adapter_files:
+        if relative in seen_adapter_files:
+            raise ValueError(f"adapter manifest contains duplicate file path: {relative}")
+        seen_adapter_files.add(relative)
         portable_relative = _validate_adapter_relative_path(relative)
         source = _source_path(
             root_path,
