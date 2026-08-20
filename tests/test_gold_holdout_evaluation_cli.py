@@ -170,15 +170,7 @@ def test_atomic_export_rejects_existing_destination_before_build(
     assert called is False
 
 
-def test_signed_export_failure_never_publishes_unsigned_pack(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    destination = tmp_path / "holdout-pack"
-    signature = tmp_path / "holdout-pack.signature.json"
-    private_key = SimpleNamespace(public_key=lambda: object())
-    manifest = SimpleNamespace(case_count=1)
-
+def _mock_signed_release_admission(monkeypatch, private_key) -> None:
     monkeypatch.setattr(
         cli_module,
         "load_reviewer_private_key",
@@ -186,13 +178,51 @@ def test_signed_export_failure_never_publishes_unsigned_pack(
     )
     monkeypatch.setattr(
         cli_module,
+        "audit_gold_defense_release",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            valid=True,
+            violations=[],
+            audit_sha256="r" * 64,
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
         "audit_gold_release_review_signatures",
         lambda *_args, **_kwargs: SimpleNamespace(
             valid=True,
             violations=[],
-            audit_sha256="a" * 64,
+            audit_sha256="s" * 64,
         ),
     )
+    monkeypatch.setattr(
+        cli_module,
+        "snapshot_verified_gold_release",
+        lambda *args, **kwargs: (
+            Path("release-snapshot"),
+            SimpleNamespace(
+                release_audit=SimpleNamespace(valid=True, audit_sha256="r" * 64),
+                review_signature_audit=SimpleNamespace(
+                    valid=True,
+                    audit_sha256="s" * 64,
+                ),
+            ),
+        ),
+    )
+
+
+def test_signed_export_failure_never_publishes_unsigned_pack(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "holdout-pack"
+    signature = tmp_path / "holdout-pack.signature.json"
+    private_key = SimpleNamespace(public_key=lambda: object())
+    manifest = SimpleNamespace(
+        case_count=1,
+        source_gold_audit_sha256="r" * 64,
+    )
+
+    _mock_signed_release_admission(monkeypatch, private_key)
 
     def fake_export(_release, output):
         output = Path(output)
@@ -218,6 +248,58 @@ def test_signed_export_failure_never_publishes_unsigned_pack(
     assert not destination.exists()
     assert not signature.exists()
     assert not list(tmp_path.glob(".holdout-pack.signed-staging-*"))
+
+
+def test_signed_export_builds_pack_from_reverified_release_snapshot(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "holdout-pack"
+    signature = tmp_path / "holdout-pack.signature.json"
+    private_key = SimpleNamespace(public_key=lambda: object())
+    observed_release = None
+    manifest = SimpleNamespace(
+        case_count=1,
+        source_gold_audit_sha256="r" * 64,
+    )
+    proof = SimpleNamespace(
+        model_dump=lambda **_kwargs: {"proof_sha256": "p" * 64},
+    )
+
+    _mock_signed_release_admission(monkeypatch, private_key)
+
+    def fake_export(release, output):
+        nonlocal observed_release
+        observed_release = Path(release)
+        output = Path(output)
+        output.mkdir()
+        (output / "manifest.json").write_text("{}\n", encoding="utf-8")
+        return manifest
+
+    monkeypatch.setattr(cli_module, "_export_inputs_atomic", fake_export)
+    monkeypatch.setattr(
+        cli_module,
+        "sign_gold_holdout_inference_pack",
+        lambda *_args, **_kwargs: proof,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "verify_gold_holdout_inference_pack_signature",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result, returned_proof = cli_module._export_signed_inputs(
+        release_dir="release",
+        output_dir=str(destination),
+        reviewer_private_key_path="reviewer.pem",
+        signature_output=str(signature),
+    )
+
+    assert result is manifest
+    assert returned_proof is proof
+    assert observed_release == Path("release-snapshot")
+    assert destination.is_dir()
+    assert signature.is_file()
 
 
 def test_signed_pack_failure_blocks_candidate_and_verified_evaluation(monkeypatch) -> None:
