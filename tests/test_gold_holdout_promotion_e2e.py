@@ -8,6 +8,7 @@ from koschei_sentinel.gold_holdout_evaluation_evidence import (
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
+from tests.gold_review_signing_helpers import attach_signed_review_proofs
 from tests.test_cyber_defense_promotion import _bundle, _load, _multi, _single
 from tests.test_gold_holdout_evaluation_evidence import _passing_fixture
 
@@ -17,6 +18,7 @@ def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path, monkeypatch) -> None:
         tmp_path,
         monkeypatch,
     )
+    reviewer_public_key = attach_signed_review_proofs(release)
 
     verification = verify_gold_holdout_inference_output(
         output,
@@ -34,8 +36,10 @@ def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path, monkeypatch) -> None:
         inference_output_dir=output,
         candidate_export_dir=candidate_export,
         policy=policy,
+        reviewer_public_key=reviewer_public_key,
     )
     assert evidence.passed is True
+    assert evidence.review_signature_audit_sha256 is not None
     assert evidence.inference_verification_sha256 == verification.verification_sha256
     assert evidence.inference_plan_sha256 == plan.plan_sha256
     assert evidence.adapter_digest == plan.adapter_digest
@@ -54,12 +58,14 @@ def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path, monkeypatch) -> None:
         gold_inference_pack_dir=pack,
         gold_inference_output_dir=output,
         gold_candidate_export_dir=candidate_export,
+        gold_reviewer_public_key=reviewer_public_key,
     )
 
     assert promotion.schema_version == "sentinel.cyber-defense-promotion-evidence.v4"
     assert promotion.gold_holdout_passed is True
     assert promotion.ready_for_promotion is True
     assert promotion.candidate_model_revision == plan.adapter_digest
+    assert promotion.gold_review_signature_audit_sha256 == evidence.review_signature_audit_sha256
     assert promotion.gold_holdout_evaluation_evidence_sha256 == evidence.evidence_sha256
     assert promotion.gold_holdout_evaluation_report_sha256 == evidence.report.report_sha256
     assert (
