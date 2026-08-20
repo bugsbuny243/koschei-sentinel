@@ -23,11 +23,13 @@ from koschei_sentinel.gold_holdout_inference_runner import (
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
+from koschei_sentinel.gold_holdout_pack_admission import (
+    admit_signed_gold_holdout_pack,
+)
 from koschei_sentinel.gold_holdout_pack_preflight import (
     preflight_gold_holdout_inference_pack,
 )
 from koschei_sentinel.gold_holdout_pack_signing import (
-    load_gold_holdout_pack_signature,
     sign_gold_holdout_inference_pack,
     verify_gold_holdout_inference_pack_signature,
 )
@@ -37,7 +39,6 @@ from koschei_sentinel.gold_holdout_zero_prediction import (
 from koschei_sentinel.gold_review_signing import (
     audit_gold_release_review_signatures,
     load_reviewer_private_key,
-    load_reviewer_public_key,
 )
 
 
@@ -127,13 +128,10 @@ def _verify_signed_pack(
     signature_path: str,
     reviewer_public_key_path: str,
 ) -> None:
-    preflight_gold_holdout_inference_pack(inference_pack)
-    proof = load_gold_holdout_pack_signature(signature_path)
-    reviewer_public_key = load_reviewer_public_key(reviewer_public_key_path)
-    verify_gold_holdout_inference_pack_signature(
-        proof,
-        Path(inference_pack) / "manifest.json",
-        reviewer_public_key,
+    admit_signed_gold_holdout_pack(
+        inference_pack=inference_pack,
+        signature_path=signature_path,
+        reviewer_public_key_path=reviewer_public_key_path,
     )
 
 
