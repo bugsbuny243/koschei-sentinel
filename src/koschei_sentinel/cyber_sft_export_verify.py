@@ -76,8 +76,6 @@ def _runtime_semantics_match(
     observed = model_runtime.get("observed_floating_dtypes_before_kbit_prepare")
     if not isinstance(observed, list) or not observed:
         return False
-    if any(not isinstance(row, str) for row in observed):
-        return False
     competing = "bfloat16" if requested_dtype == "float16" else "float16"
     return (
         model_runtime.get("loader") == "AutoModelForCausalLM"
@@ -272,6 +270,14 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
     if not promotion_binding_verified:
         violations.append("promotion eligibility differs across plan/manifest/attestation")
 
+    example_count_bindings = (
+        manifest.training_examples == plan.training_examples
+        and manifest.validation_examples == plan.validation_examples
+        and manifest.training_examples + manifest.validation_examples == plan.example_count
+    )
+    if not example_count_bindings:
+        violations.append("adapter TRAIN/VALIDATION example counts differ from execution plan")
+
     examples_verified = (
         _sha256(required_files["corpus_examples"])
         == attestation.corpus_examples_sha256
@@ -375,6 +381,7 @@ def verify_cyber_sft_export(export_dir: str | Path) -> CyberSFTExportVerificatio
         and receipt_binding_verified
         and adapter_verified
         and promotion_binding_verified
+        and example_count_bindings
         and examples_verified
         and corpus_manifest_verified
         and profile_verified
