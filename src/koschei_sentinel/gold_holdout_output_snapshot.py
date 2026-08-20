@@ -9,6 +9,22 @@ from koschei_sentinel.gold_holdout_inference_verify import (
 )
 
 
+def copy_gold_holdout_inference_output_snapshot(
+    output_dir: str | Path,
+    destination: str | Path,
+) -> Path:
+    source = Path(output_dir)
+    snapshot = Path(destination)
+    if snapshot.exists():
+        raise FileExistsError(f"Gold HOLDOUT output snapshot already exists: {snapshot}")
+    try:
+        shutil.copytree(source, snapshot, symlinks=True)
+        return snapshot
+    except (OSError, TypeError, ValueError):
+        shutil.rmtree(snapshot, ignore_errors=True)
+        raise
+
+
 def snapshot_verified_gold_holdout_inference_output(
     output_dir: str | Path,
     destination: str | Path,
@@ -16,12 +32,8 @@ def snapshot_verified_gold_holdout_inference_output(
     inference_pack_dir: str | Path,
     candidate_export_dir: str | Path,
 ) -> tuple[Path, GoldHoldoutInferenceVerification]:
-    source = Path(output_dir)
-    snapshot = Path(destination)
-    if snapshot.exists():
-        raise FileExistsError(f"Gold HOLDOUT output snapshot already exists: {snapshot}")
+    snapshot = copy_gold_holdout_inference_output_snapshot(output_dir, destination)
     try:
-        shutil.copytree(source, snapshot, symlinks=True)
         verification = verify_gold_holdout_inference_output(
             snapshot,
             inference_pack_dir,
