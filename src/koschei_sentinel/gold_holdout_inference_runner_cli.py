@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
 from koschei_sentinel.gold_holdout_inference_runner import (
     GoldHoldoutGenerationPolicy,
     build_gold_holdout_inference_plan,
@@ -39,10 +40,21 @@ def _load_policy(path: str) -> GoldHoldoutGenerationPolicy:
         raise ValueError(f"invalid Gold HOLDOUT generation policy: {path}") from exc
 
 
+def _assert_raw_candidate_export(candidate_export: str) -> None:
+    report = verify_cyber_sft_export(candidate_export)
+    if not report.valid:
+        detail = "; ".join(report.violations[:5])
+        raise ValueError(
+            "Gold HOLDOUT candidate export failed raw-path verification"
+            + (f": {detail}" if detail else "")
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         selected_policy = _load_policy(args.generation_policy)
+        _assert_raw_candidate_export(args.candidate_export)
         plan = build_gold_holdout_inference_plan(
             inference_pack_dir=args.inference_pack,
             candidate_export_dir=args.candidate_export,
