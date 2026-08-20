@@ -6,6 +6,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import koschei_sentinel.cyber_defense_promotion as promotion_module
 import koschei_sentinel.cyber_defense_promotion_cli as promotion_cli
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
+from koschei_sentinel.gold_reviewer_trust import build_gold_reviewer_trust_policy
 from koschei_sentinel.training import canonical_json
 from tests.test_cyber_defense_promotion import (
     ADAPTER_DIGEST,
@@ -110,7 +111,13 @@ def _signed_evidence(evidence):
 
 
 def _source_builder_kwargs(policy, supplied):
-    reviewer_public_key = Ed25519PrivateKey.generate().public_key()
+    reviewer_private_key = Ed25519PrivateKey.generate()
+    owner_private_key = Ed25519PrivateKey.generate()
+    reviewer_trust_policy = build_gold_reviewer_trust_policy(
+        reviewer_private_key.public_key(),
+        owner_private_key,
+        policy_id="gold-reviewer-v1",
+    )
     return {
         "promotion_id": "promotion:test",
         "candidate_model_ref": "sentinel:candidate",
@@ -125,9 +132,35 @@ def _source_builder_kwargs(policy, supplied):
         "gold_inference_pack_dir": "pack",
         "gold_inference_output_dir": "inference-output",
         "gold_candidate_export_dir": "candidate-export",
-        "gold_reviewer_public_key": reviewer_public_key,
+        "gold_reviewer_public_key": reviewer_private_key.public_key(),
+        "gold_reviewer_trust_policy": reviewer_trust_policy,
+        "gold_owner_public_key": owner_private_key.public_key(),
         "gold_inference_pack_signature_proof": object(),
     }
+
+
+def test_promotion_rejects_wrong_owner_root_before_gold_rebuild(monkeypatch) -> None:
+    policy = GoldHoldoutEvaluationPolicy()
+    supplied = _signed_evidence(_gold_evidence(policy=policy))
+    kwargs = _source_builder_kwargs(policy, supplied)
+    kwargs["gold_owner_public_key"] = Ed25519PrivateKey.generate().public_key()
+    rebuilt = False
+
+    def forbidden_rebuild(**_kwargs):
+        nonlocal rebuilt
+        rebuilt = True
+        raise AssertionError("Gold evidence rebuild must not run under an untrusted owner root")
+
+    monkeypatch.setattr(
+        promotion_module,
+        "build_gold_holdout_evaluation_evidence",
+        forbidden_rebuild,
+    )
+
+    with pytest.raises(ValueError, match="owner public key does not match"):
+        promotion_module.build_cyber_defense_promotion_evidence_from_sources(**kwargs)
+
+    assert rebuilt is False
 
 
 def test_promotion_rejects_supplied_gold_evidence_that_differs_from_fresh_rebuild(
