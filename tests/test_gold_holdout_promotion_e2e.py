@@ -5,7 +5,7 @@ from koschei_sentinel.cyber_defense_promotion import (
 )
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
-    build_gold_holdout_evaluation_evidence,
+    build_owner_trusted_gold_holdout_evaluation_evidence,
 )
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
@@ -68,13 +68,15 @@ def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path, monkeypatch) -> None:
     assert verification.failure_count == 0
 
     policy = GoldHoldoutEvaluationPolicy(minimum_case_count=1)
-    evidence = build_gold_holdout_evaluation_evidence(
+    evidence = build_owner_trusted_gold_holdout_evaluation_evidence(
         release_dir=release,
         inference_pack_dir=pack,
         inference_output_dir=output,
         candidate_export_dir=candidate_export,
         policy=policy,
         reviewer_public_key=reviewer_public_key,
+        reviewer_trust_policy=reviewer_trust_policy,
+        owner_public_key=owner_private_key.public_key(),
         inference_pack_signature_proof=pack_proof,
     )
     assert evidence.passed is True
@@ -82,6 +84,8 @@ def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path, monkeypatch) -> None:
     assert evidence.review_signature_audit_sha256 == pack_proof.review_signature_audit_sha256
     assert evidence.candidate_training_binding_verification_sha256 is not None
     assert evidence.inference_pack_signature_proof_sha256 == pack_proof.proof_sha256
+    assert evidence.reviewer_trust_policy_sha256 == reviewer_trust_policy.policy_digest
+    assert evidence.owner_key_fingerprint == reviewer_trust_policy.owner_key_fingerprint
     assert evidence.inference_verification_sha256 == verification.verification_sha256
     assert evidence.inference_plan_sha256 == plan.plan_sha256
     assert evidence.adapter_digest == plan.adapter_digest
