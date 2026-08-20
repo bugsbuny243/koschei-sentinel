@@ -1,5 +1,4 @@
 import hashlib
-import json
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
