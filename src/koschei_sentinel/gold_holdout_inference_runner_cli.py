@@ -7,6 +7,9 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from koschei_sentinel.cyber_sft_candidate_snapshot import (
+    snapshot_verified_cyber_sft_export,
+)
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
 from koschei_sentinel.gold_holdout_inference_runner import (
     GoldHoldoutGenerationPolicy,
@@ -147,15 +150,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         _assert_raw_candidate_export(args.candidate_export)
 
-        with tempfile.TemporaryDirectory(prefix="gold-holdout-pack-snapshot-") as temp_dir:
-            snapshot = _snapshot_signed_pack(
+        with tempfile.TemporaryDirectory(prefix="gold-holdout-runtime-snapshot-") as temp_dir:
+            snapshot_root = Path(temp_dir)
+            inference_snapshot = _snapshot_signed_pack(
                 inference_pack=args.inference_pack,
                 admission=admission,
-                destination=Path(temp_dir) / "pack",
+                destination=snapshot_root / "pack",
+            )
+            candidate_snapshot = snapshot_verified_cyber_sft_export(
+                args.candidate_export,
+                snapshot_root / "candidate-export",
             )
             plan = build_gold_holdout_inference_plan(
-                inference_pack_dir=snapshot,
-                candidate_export_dir=args.candidate_export,
+                inference_pack_dir=inference_snapshot,
+                candidate_export_dir=candidate_snapshot,
                 model_ref=args.model_ref,
                 generation_policy=selected_policy,
             )
@@ -173,8 +181,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.output_dir is None:
                 raise ValueError("--output-dir is required with --execute")
             receipt = _execute_atomic(
-                inference_pack=str(snapshot),
-                candidate_export=args.candidate_export,
+                inference_pack=str(inference_snapshot),
+                candidate_export=str(candidate_snapshot),
                 model_ref=args.model_ref,
                 output_dir=args.output_dir,
                 generation_policy=selected_policy,
