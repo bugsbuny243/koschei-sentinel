@@ -5,6 +5,9 @@ import json
 import tempfile
 from pathlib import Path
 
+from koschei_sentinel.cyber_sft_candidate_snapshot import (
+    snapshot_verified_cyber_sft_export,
+)
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
@@ -63,16 +66,21 @@ def main(argv: list[str] | None = None) -> int:
             reviewer_public_key_path=args.reviewer_public_key,
         )
         _assert_raw_candidate_export(args.candidate_export)
-        with tempfile.TemporaryDirectory(prefix="gold-holdout-pack-snapshot-") as temp_dir:
-            snapshot = snapshot_admitted_gold_holdout_pack(
+        with tempfile.TemporaryDirectory(prefix="gold-holdout-verify-snapshot-") as temp_dir:
+            snapshot_root = Path(temp_dir)
+            inference_snapshot = snapshot_admitted_gold_holdout_pack(
                 admission,
                 args.inference_pack,
-                Path(temp_dir) / "pack",
+                snapshot_root / "pack",
+            )
+            candidate_snapshot = snapshot_verified_cyber_sft_export(
+                args.candidate_export,
+                snapshot_root / "candidate-export",
             )
             report = verify_gold_holdout_inference_output(
                 args.output_dir,
-                snapshot,
-                args.candidate_export,
+                inference_snapshot,
+                candidate_snapshot,
             )
         print(json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True))
         return 0 if report.valid else 1
