@@ -5,6 +5,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import koschei_sentinel.cyber_defense_promotion as promotion_module
 import koschei_sentinel.cyber_defense_promotion_cli as promotion_cli
+import koschei_sentinel.gold_holdout_evaluation_evidence as evidence_module
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_reviewer_trust import build_gold_reviewer_trust_policy
 from koschei_sentinel.training import canonical_json
@@ -102,15 +103,7 @@ def test_promotion_cli_accepts_all_gold_source_artifacts() -> None:
     assert args.gold_owner_public_key == "owner-public.pem"
 
 
-def _signed_evidence(evidence):
-    payload = evidence.model_dump(mode="json")
-    payload.pop("evidence_sha256", None)
-    payload["review_signature_audit_sha256"] = "a" * 64
-    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
-    return evidence.__class__.model_validate({**payload, "evidence_sha256": digest})
-
-
-def _source_builder_kwargs(policy, supplied):
+def _trust_context():
     reviewer_private_key = Ed25519PrivateKey.generate()
     owner_private_key = Ed25519PrivateKey.generate()
     reviewer_trust_policy = build_gold_reviewer_trust_policy(
@@ -118,6 +111,25 @@ def _source_builder_kwargs(policy, supplied):
         owner_private_key,
         policy_id="gold-reviewer-v1",
     )
+    return (
+        reviewer_private_key.public_key(),
+        reviewer_trust_policy,
+        owner_private_key.public_key(),
+    )
+
+
+def _signed_evidence(evidence, reviewer_trust_policy):
+    payload = evidence.model_dump(mode="json")
+    payload.pop("evidence_sha256", None)
+    payload["review_signature_audit_sha256"] = "a" * 64
+    payload["reviewer_trust_policy_sha256"] = reviewer_trust_policy.policy_digest
+    payload["owner_key_fingerprint"] = reviewer_trust_policy.owner_key_fingerprint
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return evidence.__class__.model_validate({**payload, "evidence_sha256": digest})
+
+
+def _source_builder_kwargs(policy, supplied, trust_context):
+    reviewer_public_key, reviewer_trust_policy, owner_public_key = trust_context
     return {
         "promotion_id": "promotion:test",
         "candidate_model_ref": "sentinel:candidate",
@@ -132,17 +144,18 @@ def _source_builder_kwargs(policy, supplied):
         "gold_inference_pack_dir": "pack",
         "gold_inference_output_dir": "inference-output",
         "gold_candidate_export_dir": "candidate-export",
-        "gold_reviewer_public_key": reviewer_private_key.public_key(),
+        "gold_reviewer_public_key": reviewer_public_key,
         "gold_reviewer_trust_policy": reviewer_trust_policy,
-        "gold_owner_public_key": owner_private_key.public_key(),
+        "gold_owner_public_key": owner_public_key,
         "gold_inference_pack_signature_proof": object(),
     }
 
 
 def test_promotion_rejects_wrong_owner_root_before_gold_rebuild(monkeypatch) -> None:
     policy = GoldHoldoutEvaluationPolicy()
-    supplied = _signed_evidence(_gold_evidence(policy=policy))
-    kwargs = _source_builder_kwargs(policy, supplied)
+    trust_context = _trust_context()
+    supplied = _signed_evidence(_gold_evidence(policy=policy), trust_context[1])
+    kwargs = _source_builder_kwargs(policy, supplied, trust_context)
     kwargs["gold_owner_public_key"] = Ed25519PrivateKey.generate().public_key()
     rebuilt = False
 
@@ -152,7 +165,7 @@ def test_promotion_rejects_wrong_owner_root_before_gold_rebuild(monkeypatch) -> 
         raise AssertionError("Gold evidence rebuild must not run under an untrusted owner root")
 
     monkeypatch.setattr(
-        promotion_module,
+        evidence_module,
         "build_gold_holdout_evaluation_evidence",
         forbidden_rebuild,
     )
@@ -167,17 +180,21 @@ def test_promotion_rejects_supplied_gold_evidence_that_differs_from_fresh_rebuil
     monkeypatch,
 ) -> None:
     policy = GoldHoldoutEvaluationPolicy()
-    supplied = _signed_evidence(_gold_evidence(policy=policy))
-    rebuilt = _signed_evidence(_gold_evidence(revision="8" * 64, policy=policy))
+    trust_context = _trust_context()
+    supplied = _signed_evidence(_gold_evidence(policy=policy), trust_context[1])
+    rebuilt = _signed_evidence(
+        _gold_evidence(revision="8" * 64, policy=policy),
+        trust_context[1],
+    )
     monkeypatch.setattr(
         promotion_module,
-        "build_gold_holdout_evaluation_evidence",
+        "build_owner_trusted_gold_holdout_evaluation_evidence",
         lambda **_kwargs: rebuilt,
     )
 
     with pytest.raises(ValueError, match="differs from fresh source-artifact rebuild"):
         promotion_module.build_cyber_defense_promotion_evidence_from_sources(
-            **_source_builder_kwargs(policy, supplied)
+            **_source_builder_kwargs(policy, supplied, trust_context)
         )
 
 
@@ -185,15 +202,16 @@ def test_promotion_accepts_supplied_gold_evidence_only_when_fresh_rebuild_matche
     monkeypatch,
 ) -> None:
     policy = GoldHoldoutEvaluationPolicy()
-    supplied = _signed_evidence(_gold_evidence(policy=policy))
+    trust_context = _trust_context()
+    supplied = _signed_evidence(_gold_evidence(policy=policy), trust_context[1])
     monkeypatch.setattr(
         promotion_module,
-        "build_gold_holdout_evaluation_evidence",
+        "build_owner_trusted_gold_holdout_evaluation_evidence",
         lambda **_kwargs: supplied,
     )
 
     promotion = promotion_module.build_cyber_defense_promotion_evidence_from_sources(
-        **_source_builder_kwargs(policy, supplied)
+        **_source_builder_kwargs(policy, supplied, trust_context)
     )
 
     assert promotion.ready_for_promotion is True
