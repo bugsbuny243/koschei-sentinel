@@ -183,7 +183,6 @@ def build_gold_holdout_evaluation_evidence(
             pack / "manifest.json",
             reviewer_public_key,
         )
-        inference_pack_signature_sha = inference_pack_signature_proof.proof_sha256
 
         signature_audit = audit_gold_release_review_signatures(
             release_dir,
@@ -195,7 +194,15 @@ def build_gold_holdout_evaluation_evidence(
                 "Gold HOLDOUT review signature audit failed"
                 + (f": {detail}" if detail else "")
             )
+        if (
+            inference_pack_signature_proof.review_signature_audit_sha256
+            != signature_audit.audit_sha256
+        ):
+            raise ValueError(
+                "Gold HOLDOUT pack signature proof binds a different signed-review audit"
+            )
         review_signature_audit_sha = signature_audit.audit_sha256
+        inference_pack_signature_sha = inference_pack_signature_proof.proof_sha256
 
         candidate_binding = verify_gold_candidate_training_binding(
             release_dir,
