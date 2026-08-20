@@ -46,6 +46,10 @@ from koschei_sentinel.gold_holdout_zero_prediction import (
     build_zero_prediction_gold_report,
 )
 from koschei_sentinel.gold_release_snapshot import snapshot_verified_gold_release
+from koschei_sentinel.gold_reviewer_trust import (
+    GoldReviewerTrustPolicy,
+    verify_gold_reviewer_trust_policy,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
 
@@ -349,6 +353,35 @@ def build_gold_holdout_evaluation_evidence(
     }
     payload["evidence_sha256"] = _digest_without(payload, "evidence_sha256")
     return GoldHoldoutEvaluationEvidence.model_validate(payload)
+
+
+def build_owner_trusted_gold_holdout_evaluation_evidence(
+    *,
+    release_dir: str | Path,
+    inference_pack_dir: str | Path,
+    inference_output_dir: str | Path,
+    candidate_export_dir: str | Path,
+    policy: GoldHoldoutEvaluationPolicy,
+    reviewer_public_key: Ed25519PublicKey,
+    reviewer_trust_policy: GoldReviewerTrustPolicy,
+    owner_public_key: Ed25519PublicKey,
+    inference_pack_signature_proof: GoldHoldoutPackSignatureProof,
+) -> GoldHoldoutEvaluationEvidence:
+    """Production evidence path anchored to the external owner public-key trust root."""
+    verify_gold_reviewer_trust_policy(
+        reviewer_trust_policy,
+        reviewer_public_key,
+        owner_public_key,
+    )
+    return build_gold_holdout_evaluation_evidence(
+        release_dir=release_dir,
+        inference_pack_dir=inference_pack_dir,
+        inference_output_dir=inference_output_dir,
+        candidate_export_dir=candidate_export_dir,
+        policy=policy,
+        reviewer_public_key=reviewer_public_key,
+        inference_pack_signature_proof=inference_pack_signature_proof,
+    )
 
 
 def verify_gold_holdout_evaluation_evidence(
