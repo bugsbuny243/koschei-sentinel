@@ -145,3 +145,38 @@ def test_atomic_export_rejects_existing_destination_before_build(
         cli_module._export_inputs_atomic("release", str(destination))
 
     assert called is False
+
+
+def test_raw_candidate_failure_blocks_verified_evaluation(monkeypatch) -> None:
+    verified = False
+    args = SimpleNamespace(
+        candidate_export="candidate-export-link",
+        inference_output="output",
+        inference_pack="pack",
+        release_dir="release",
+        policy="policy.json",
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "verify_cyber_sft_export",
+        lambda path: SimpleNamespace(
+            valid=False,
+            violations=["candidate export directory must not be a symlink"],
+        ),
+    )
+
+    def forbidden_verify(*_args, **_kwargs):
+        nonlocal verified
+        verified = True
+        raise AssertionError("inference verifier must not run after raw candidate failure")
+
+    monkeypatch.setattr(
+        cli_module,
+        "verify_gold_holdout_inference_output",
+        forbidden_verify,
+    )
+
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        cli_module._evaluate_verified_output(args)
+
+    assert verified is False
