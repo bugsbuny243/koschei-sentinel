@@ -58,6 +58,7 @@ jobs:
           tests/test_gold_holdout_path_portability.py
           tests/test_gold_holdout_evaluation.py
           tests/test_gold_holdout_evaluation_cli.py
+          tests/test_gold_holdout_signed_export_snapshot.py
           tests/test_gold_holdout_evaluation_evidence.py
           tests/test_gold_holdout_evaluation_evidence_cli.py
           tests/test_gold_holdout_evidence_snapshot.py
