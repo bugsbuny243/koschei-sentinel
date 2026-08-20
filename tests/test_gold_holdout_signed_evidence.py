@@ -5,6 +5,9 @@ from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     build_gold_holdout_evaluation_evidence,
 )
+from koschei_sentinel.gold_holdout_pack_signing import (
+    sign_gold_holdout_inference_pack,
+)
 from tests.gold_candidate_binding_helpers import (
     rebind_inference_fixture_to_gold_candidate,
 )
@@ -28,6 +31,18 @@ def _gold_bound_fixture(tmp_path, monkeypatch):
     return release, pack, output, plan, candidate_export
 
 
+def _signed_release_and_pack(release, pack):
+    reviewer_private_key = attach_signed_review_proofs(
+        release,
+        return_private_key=True,
+    )
+    pack_proof = sign_gold_holdout_inference_pack(
+        pack / "manifest.json",
+        reviewer_private_key,
+    )
+    return reviewer_private_key, pack_proof
+
+
 def test_gold_evidence_binds_valid_reviewer_signature_and_training_audits(
     tmp_path,
     monkeypatch,
@@ -36,7 +51,7 @@ def test_gold_evidence_binds_valid_reviewer_signature_and_training_audits(
         tmp_path,
         monkeypatch,
     )
-    reviewer_public_key = attach_signed_review_proofs(release)
+    reviewer_private_key, pack_proof = _signed_release_and_pack(release, pack)
 
     evidence = build_gold_holdout_evaluation_evidence(
         release_dir=release,
@@ -44,12 +59,14 @@ def test_gold_evidence_binds_valid_reviewer_signature_and_training_audits(
         inference_output_dir=output,
         candidate_export_dir=candidate_export,
         policy=GoldHoldoutEvaluationPolicy(minimum_case_count=1),
-        reviewer_public_key=reviewer_public_key,
+        reviewer_public_key=reviewer_private_key.public_key(),
+        inference_pack_signature_proof=pack_proof,
     )
 
     assert evidence.passed is True
     assert evidence.review_signature_audit_sha256 is not None
     assert evidence.candidate_training_binding_verification_sha256 is not None
+    assert evidence.inference_pack_signature_proof_sha256 == pack_proof.proof_sha256
 
 
 def test_gold_evidence_rejects_untrusted_reviewer_key(
@@ -60,10 +77,10 @@ def test_gold_evidence_rejects_untrusted_reviewer_key(
         tmp_path,
         monkeypatch,
     )
-    attach_signed_review_proofs(release)
+    _reviewer_private_key, pack_proof = _signed_release_and_pack(release, pack)
     wrong_key = Ed25519PrivateKey.generate().public_key()
 
-    with pytest.raises(ValueError, match="review signature audit failed"):
+    with pytest.raises(ValueError, match="untrusted reviewer key"):
         build_gold_holdout_evaluation_evidence(
             release_dir=release,
             inference_pack_dir=pack,
@@ -71,6 +88,31 @@ def test_gold_evidence_rejects_untrusted_reviewer_key(
             candidate_export_dir=candidate_export,
             policy=GoldHoldoutEvaluationPolicy(minimum_case_count=1),
             reviewer_public_key=wrong_key,
+            inference_pack_signature_proof=pack_proof,
+        )
+
+
+def test_gold_evidence_rejects_missing_pack_signature_in_production_path(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    release, pack, output, _plan, candidate_export = _gold_bound_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    reviewer_private_key = attach_signed_review_proofs(
+        release,
+        return_private_key=True,
+    )
+
+    with pytest.raises(ValueError, match="requires a signed inference-pack proof"):
+        build_gold_holdout_evaluation_evidence(
+            release_dir=release,
+            inference_pack_dir=pack,
+            inference_output_dir=output,
+            candidate_export_dir=candidate_export,
+            policy=GoldHoldoutEvaluationPolicy(minimum_case_count=1),
+            reviewer_public_key=reviewer_private_key.public_key(),
         )
 
 
@@ -82,7 +124,7 @@ def test_gold_evidence_rejects_signed_release_with_unrelated_candidate_corpus(
         tmp_path,
         monkeypatch,
     )
-    reviewer_public_key = attach_signed_review_proofs(release)
+    reviewer_private_key, pack_proof = _signed_release_and_pack(release, pack)
 
     with pytest.raises(ValueError, match="candidate training binding failed"):
         build_gold_holdout_evaluation_evidence(
@@ -91,5 +133,6 @@ def test_gold_evidence_rejects_signed_release_with_unrelated_candidate_corpus(
             inference_output_dir=output,
             candidate_export_dir=candidate_export,
             policy=GoldHoldoutEvaluationPolicy(minimum_case_count=1),
-            reviewer_public_key=reviewer_public_key,
+            reviewer_public_key=reviewer_private_key.public_key(),
+            inference_pack_signature_proof=pack_proof,
         )
