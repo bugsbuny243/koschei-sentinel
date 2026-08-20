@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -93,3 +94,98 @@ def test_raw_candidate_failure_blocks_holdout_plan(monkeypatch, capsys) -> None:
     assert status == 2
     assert planned is False
     assert "must not be a symlink" in capsys.readouterr().out
+
+
+def test_atomic_execute_publishes_only_after_offline_verification(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "inference-output"
+    receipt = SimpleNamespace(run_id="fixture")
+
+    def fake_execute(**kwargs):
+        staging = Path(kwargs["output_dir"])
+        staging.mkdir()
+        (staging / "receipt.json").write_text("fixture\n", encoding="utf-8")
+        return receipt
+
+    monkeypatch.setattr(cli_module, "execute_gold_holdout_inference", fake_execute)
+    monkeypatch.setattr(
+        cli_module,
+        "verify_gold_holdout_inference_output",
+        lambda *_args, **_kwargs: SimpleNamespace(valid=True, violations=[]),
+    )
+
+    result = cli_module._execute_atomic(
+        inference_pack="pack",
+        candidate_export="candidate-export",
+        model_ref="sentinel:test",
+        output_dir=str(destination),
+        generation_policy=object(),
+    )
+
+    assert result is receipt
+    assert (destination / "receipt.json").read_text(encoding="utf-8") == "fixture\n"
+    assert not list(tmp_path.glob(".inference-output.staging-*"))
+
+
+def test_atomic_execute_failure_never_publishes_unverified_output(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "inference-output"
+
+    def fake_execute(**kwargs):
+        staging = Path(kwargs["output_dir"])
+        staging.mkdir()
+        (staging / "partial.json").write_text("partial\n", encoding="utf-8")
+        return SimpleNamespace(run_id="fixture")
+
+    monkeypatch.setattr(cli_module, "execute_gold_holdout_inference", fake_execute)
+    monkeypatch.setattr(
+        cli_module,
+        "verify_gold_holdout_inference_output",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            valid=False,
+            violations=["sealed output mismatch"],
+        ),
+    )
+
+    with pytest.raises(ValueError, match="sealed output mismatch"):
+        cli_module._execute_atomic(
+            inference_pack="pack",
+            candidate_export="candidate-export",
+            model_ref="sentinel:test",
+            output_dir=str(destination),
+            generation_policy=object(),
+        )
+
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".inference-output.staging-*"))
+
+
+def test_atomic_execute_rejects_existing_destination_before_gpu_work(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "inference-output"
+    destination.mkdir()
+    executed = False
+
+    def forbidden_execute(**_kwargs):
+        nonlocal executed
+        executed = True
+        raise AssertionError("GPU inference must not run for an existing destination")
+
+    monkeypatch.setattr(cli_module, "execute_gold_holdout_inference", forbidden_execute)
+
+    with pytest.raises(FileExistsError, match="output already exists"):
+        cli_module._execute_atomic(
+            inference_pack="pack",
+            candidate_export="candidate-export",
+            model_ref="sentinel:test",
+            output_dir=str(destination),
+            generation_policy=object(),
+        )
+
+    assert executed is False
