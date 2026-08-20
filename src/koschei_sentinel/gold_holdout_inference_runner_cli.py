@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -132,8 +133,6 @@ def _execute_atomic(
         os.replace(staging, destination)
         return receipt
     finally:
-        import shutil
-
         shutil.rmtree(staging_root, ignore_errors=True)
 
 
