@@ -43,31 +43,53 @@ def _required_args() -> list[str]:
     ]
 
 
+def _gold_source_args() -> list[str]:
+    return [
+        "--gold-release-dir",
+        "release",
+        "--gold-inference-pack",
+        "pack",
+        "--gold-inference-pack-signature",
+        "pack-signature.json",
+        "--gold-inference-output",
+        "inference-output",
+        "--gold-candidate-export",
+        "candidate-export",
+        "--gold-reviewer-public-key",
+        "reviewer-public.pem",
+        "--gold-reviewer-trust-policy",
+        "reviewer-trust.json",
+        "--gold-owner-public-key",
+        "owner-public.pem",
+    ]
+
+
+def _without(argv: list[str], option: str) -> list[str]:
+    result = list(argv)
+    index = result.index(option)
+    del result[index : index + 2]
+    return result
+
+
 def test_promotion_cli_requires_gold_source_artifacts() -> None:
     with pytest.raises(SystemExit) as exc:
         promotion_cli.build_parser().parse_args(_required_args())
+    assert exc.value.code == 2
 
+
+@pytest.mark.parametrize(
+    "missing",
+    ["--gold-reviewer-trust-policy", "--gold-owner-public-key"],
+)
+def test_promotion_cli_requires_owner_pinned_gold_trust(missing: str) -> None:
+    argv = _required_args() + _gold_source_args()
+    with pytest.raises(SystemExit) as exc:
+        promotion_cli.build_parser().parse_args(_without(argv, missing))
     assert exc.value.code == 2
 
 
 def test_promotion_cli_accepts_all_gold_source_artifacts() -> None:
-    args = promotion_cli.build_parser().parse_args(
-        _required_args()
-        + [
-            "--gold-release-dir",
-            "release",
-            "--gold-inference-pack",
-            "pack",
-            "--gold-inference-pack-signature",
-            "pack-signature.json",
-            "--gold-inference-output",
-            "inference-output",
-            "--gold-candidate-export",
-            "candidate-export",
-            "--gold-reviewer-public-key",
-            "reviewer-public.pem",
-        ]
-    )
+    args = promotion_cli.build_parser().parse_args(_required_args() + _gold_source_args())
 
     assert args.gold_release_dir == "release"
     assert args.gold_inference_pack == "pack"
@@ -75,6 +97,8 @@ def test_promotion_cli_accepts_all_gold_source_artifacts() -> None:
     assert args.gold_inference_output == "inference-output"
     assert args.gold_candidate_export == "candidate-export"
     assert args.gold_reviewer_public_key == "reviewer-public.pem"
+    assert args.gold_reviewer_trust_policy == "reviewer-trust.json"
+    assert args.gold_owner_public_key == "owner-public.pem"
 
 
 def _signed_evidence(evidence):
