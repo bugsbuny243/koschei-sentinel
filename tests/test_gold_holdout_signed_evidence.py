@@ -8,6 +8,7 @@ from koschei_sentinel.gold_holdout_evaluation_evidence import (
 from koschei_sentinel.gold_holdout_pack_signing import (
     sign_gold_holdout_inference_pack,
 )
+from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
 from tests.gold_candidate_binding_helpers import (
     rebind_inference_fixture_to_gold_candidate,
 )
@@ -36,9 +37,15 @@ def _signed_release_and_pack(release, pack):
         release,
         return_private_key=True,
     )
+    signature_audit = audit_gold_release_review_signatures(
+        release,
+        reviewer_private_key.public_key(),
+    )
+    assert signature_audit.valid is True
     pack_proof = sign_gold_holdout_inference_pack(
         pack / "manifest.json",
         reviewer_private_key,
+        review_signature_audit_sha256=signature_audit.audit_sha256,
     )
     return reviewer_private_key, pack_proof
 
@@ -65,6 +72,7 @@ def test_gold_evidence_binds_valid_reviewer_signature_and_training_audits(
 
     assert evidence.passed is True
     assert evidence.review_signature_audit_sha256 is not None
+    assert evidence.review_signature_audit_sha256 == pack_proof.review_signature_audit_sha256
     assert evidence.candidate_training_binding_verification_sha256 is not None
     assert evidence.inference_pack_signature_proof_sha256 == pack_proof.proof_sha256
 
