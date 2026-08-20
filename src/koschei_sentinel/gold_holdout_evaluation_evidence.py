@@ -30,6 +30,9 @@ from koschei_sentinel.gold_holdout_inference_verify import (
     GoldHoldoutInferenceVerification,
     verify_gold_holdout_inference_output,
 )
+from koschei_sentinel.gold_holdout_output_snapshot import (
+    snapshot_verified_gold_holdout_inference_output,
+)
 from koschei_sentinel.gold_holdout_pack_admission import (
     GoldHoldoutPackAdmission,
     snapshot_admitted_gold_holdout_pack,
@@ -42,7 +45,7 @@ from koschei_sentinel.gold_holdout_pack_signing import GoldHoldoutPackSignatureP
 from koschei_sentinel.gold_holdout_zero_prediction import (
     build_zero_prediction_gold_report,
 )
-from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
+from koschei_sentinel.gold_release_snapshot import snapshot_verified_gold_release
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
 
@@ -177,6 +180,36 @@ def _load_pack_evaluation_state(
     return inference_manifest, verification
 
 
+def _build_report(
+    *,
+    release_dir: str | Path,
+    output_dir: str | Path,
+    policy: GoldHoldoutEvaluationPolicy,
+) -> tuple[GoldHoldoutInferencePlan, GoldHoldoutInferenceRunReceipt, GoldHoldoutEvaluationReport]:
+    output = Path(output_dir)
+    plan = GoldHoldoutInferencePlan.model_validate_json((output / "plan.json").read_bytes())
+    receipt = GoldHoldoutInferenceRunReceipt.model_validate_json(
+        (output / "receipt.json").read_bytes()
+    )
+    predictions = _load_predictions(output / "predictions.jsonl")
+    if predictions:
+        report = evaluate_gold_holdout_predictions(
+            release_dir,
+            predictions,
+            policy=policy,
+        )
+    else:
+        report = build_zero_prediction_gold_report(
+            release_dir,
+            model_ref=receipt.model_ref,
+            model_revision=receipt.model_revision,
+            adapter_digest=receipt.adapter_digest,
+            policy=policy,
+        )
+    _verify_evaluation_report_digest(report)
+    return plan, receipt, report
+
+
 def build_gold_holdout_evaluation_evidence(
     *,
     release_dir: str | Path,
@@ -188,10 +221,6 @@ def build_gold_holdout_evaluation_evidence(
     inference_pack_signature_proof: GoldHoldoutPackSignatureProof | None = None,
 ) -> GoldHoldoutEvaluationEvidence:
     selected_policy = policy or GoldHoldoutEvaluationPolicy()
-    release_audit = audit_gold_defense_release(release_dir)
-    if not release_audit.valid:
-        raise ValueError("cannot build Gold HOLDOUT evidence from an invalid Gold release")
-
     review_signature_audit_sha: str | None = None
     candidate_training_binding_sha: str | None = None
     inference_pack_signature_sha: str | None = None
@@ -208,28 +237,24 @@ def build_gold_holdout_evaluation_evidence(
         )
         verify_admitted_gold_holdout_pack(admission, pack)
 
-        signature_audit = audit_gold_release_review_signatures(
-            release_dir,
-            reviewer_public_key,
-        )
-        if not signature_audit.valid:
-            detail = "; ".join(signature_audit.violations[:5])
-            raise ValueError(
-                "Gold HOLDOUT review signature audit failed"
-                + (f": {detail}" if detail else "")
-            )
-        if (
-            inference_pack_signature_proof.review_signature_audit_sha256
-            != signature_audit.audit_sha256
-        ):
-            raise ValueError(
-                "Gold HOLDOUT pack signature proof binds a different signed-review audit"
-            )
-        review_signature_audit_sha = signature_audit.audit_sha256
-        inference_pack_signature_sha = inference_pack_signature_proof.proof_sha256
-
         with tempfile.TemporaryDirectory(prefix="gold-holdout-evidence-snapshot-") as temp_dir:
             snapshot_root = Path(temp_dir)
+            release_snapshot, release_verification = snapshot_verified_gold_release(
+                release_dir,
+                snapshot_root / "release",
+                reviewer_public_key=reviewer_public_key,
+                expected_release_audit_sha256=(
+                    inference_pack_signature_proof.source_gold_audit_sha256
+                ),
+                expected_review_signature_audit_sha256=(
+                    inference_pack_signature_proof.review_signature_audit_sha256
+                ),
+            )
+            release_audit = release_verification.release_audit
+            signature_audit = release_verification.review_signature_audit
+            review_signature_audit_sha = signature_audit.audit_sha256
+            inference_pack_signature_sha = inference_pack_signature_proof.proof_sha256
+
             inference_snapshot = snapshot_admitted_gold_holdout_pack(
                 admission,
                 pack,
@@ -239,14 +264,21 @@ def build_gold_holdout_evaluation_evidence(
                 candidate_export_dir,
                 snapshot_root / "candidate-export",
             )
-            inference_manifest, verification = _load_pack_evaluation_state(
-                pack=inference_snapshot,
-                inference_output_dir=inference_output_dir,
+            output_snapshot, verification = snapshot_verified_gold_holdout_inference_output(
+                inference_output_dir,
+                snapshot_root / "output",
+                inference_pack_dir=inference_snapshot,
                 candidate_export_dir=candidate_snapshot,
-                source_gold_audit_sha256=release_audit.audit_sha256,
             )
+            preflight_gold_holdout_inference_pack(inference_snapshot)
+            inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
+                (inference_snapshot / "manifest.json").read_bytes()
+            )
+            if inference_manifest.source_gold_audit_sha256 != release_audit.audit_sha256:
+                raise ValueError("Gold HOLDOUT inference pack belongs to a different release audit")
+
             candidate_binding = verify_gold_candidate_training_binding(
-                release_dir,
+                release_snapshot,
                 candidate_snapshot,
             )
             if not candidate_binding.valid:
@@ -256,7 +288,15 @@ def build_gold_holdout_evaluation_evidence(
                     + (f": {detail}" if detail else "")
                 )
             candidate_training_binding_sha = candidate_binding.verification_sha256
+            plan, receipt, report = _build_report(
+                release_dir=release_snapshot,
+                output_dir=output_snapshot,
+                policy=selected_policy,
+            )
     else:
+        release_audit = audit_gold_defense_release(release_dir)
+        if not release_audit.valid:
+            raise ValueError("cannot build Gold HOLDOUT evidence from an invalid Gold release")
         with tempfile.TemporaryDirectory(prefix="gold-holdout-evidence-snapshot-") as temp_dir:
             candidate_snapshot = snapshot_verified_cyber_sft_export(
                 candidate_export_dir,
@@ -268,28 +308,11 @@ def build_gold_holdout_evaluation_evidence(
                 candidate_export_dir=candidate_snapshot,
                 source_gold_audit_sha256=release_audit.audit_sha256,
             )
-
-    output = Path(inference_output_dir)
-    plan = GoldHoldoutInferencePlan.model_validate_json((output / "plan.json").read_bytes())
-    receipt = GoldHoldoutInferenceRunReceipt.model_validate_json(
-        (output / "receipt.json").read_bytes()
-    )
-    predictions = _load_predictions(output / "predictions.jsonl")
-    if predictions:
-        report = evaluate_gold_holdout_predictions(
-            release_dir,
-            predictions,
+        plan, receipt, report = _build_report(
+            release_dir=release_dir,
+            output_dir=inference_output_dir,
             policy=selected_policy,
         )
-    else:
-        report = build_zero_prediction_gold_report(
-            release_dir,
-            model_ref=receipt.model_ref,
-            model_revision=receipt.model_revision,
-            adapter_digest=receipt.adapter_digest,
-            policy=selected_policy,
-        )
-    _verify_evaluation_report_digest(report)
 
     identity = (report.model_ref, report.model_revision, report.adapter_digest)
     receipt_identity = (receipt.model_ref, receipt.model_revision, receipt.adapter_digest)
