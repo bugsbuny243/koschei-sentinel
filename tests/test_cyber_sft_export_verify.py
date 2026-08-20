@@ -35,6 +35,8 @@ def _build_export(
     corpus_manifest_raw: bytes | None = None,
     validation_examples_sha256: str | None = None,
     validation_manifest_sha256: str | None = None,
+    training_examples: int = 9,
+    validation_examples: int = 1,
 ) -> Path:
     root = tmp_path / "export"
     root.mkdir()
@@ -98,9 +100,9 @@ def _build_export(
             "validation_corpus_examples_sha256": validation_examples_sha256,
             "validation_corpus_manifest_sha256": validation_manifest_sha256,
             "explicit_validation": explicit_validation,
-            "example_count": 10,
-            "training_examples": 9,
-            "validation_examples": 1,
+            "example_count": training_examples + validation_examples,
+            "training_examples": training_examples,
+            "validation_examples": validation_examples,
             "effective_batch_size": config.effective_batch_size,
             "estimated_optimizer_steps": 1,
             "input_adapter_dir": None,
@@ -179,8 +181,8 @@ def _build_export(
             "adapter_files": [],
             "trainable_target_module_count": 1,
             "trainable_target_modules_sha256": "1" * 64,
-            "training_examples": 9,
-            "validation_examples": 1,
+            "training_examples": training_examples,
+            "validation_examples": validation_examples,
             "gradient_checkpointing": True,
             "optimizer": "paged_adamw_8bit",
             "output_dir": config.output_dir,
