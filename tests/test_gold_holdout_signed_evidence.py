@@ -1,13 +1,16 @@
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+import koschei_sentinel.gold_holdout_evaluation_evidence as evidence_module
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     build_gold_holdout_evaluation_evidence,
+    build_owner_trusted_gold_holdout_evaluation_evidence,
 )
 from koschei_sentinel.gold_holdout_pack_signing import (
     sign_gold_holdout_inference_pack,
 )
+from koschei_sentinel.gold_reviewer_trust import build_gold_reviewer_trust_policy
 from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
 from tests.gold_candidate_binding_helpers import (
     rebind_inference_fixture_to_gold_candidate,
@@ -48,6 +51,45 @@ def _signed_release_and_pack(release, pack):
         review_signature_audit_sha256=signature_audit.audit_sha256,
     )
     return reviewer_private_key, pack_proof
+
+
+def test_owner_trusted_evidence_rejects_wrong_owner_before_artifact_rebuild(
+    monkeypatch,
+) -> None:
+    reviewer = Ed25519PrivateKey.generate()
+    owner = Ed25519PrivateKey.generate()
+    trust_policy = build_gold_reviewer_trust_policy(
+        reviewer.public_key(),
+        owner,
+        policy_id="gold-reviewer-v1",
+    )
+    rebuilt = False
+
+    def forbidden_rebuild(**_kwargs):
+        nonlocal rebuilt
+        rebuilt = True
+        raise AssertionError("artifact rebuild must not start under an untrusted owner root")
+
+    monkeypatch.setattr(
+        evidence_module,
+        "build_gold_holdout_evaluation_evidence",
+        forbidden_rebuild,
+    )
+
+    with pytest.raises(ValueError, match="owner public key does not match"):
+        build_owner_trusted_gold_holdout_evaluation_evidence(
+            release_dir="release",
+            inference_pack_dir="pack",
+            inference_output_dir="output",
+            candidate_export_dir="candidate",
+            policy=GoldHoldoutEvaluationPolicy(minimum_case_count=1),
+            reviewer_public_key=reviewer.public_key(),
+            reviewer_trust_policy=trust_policy,
+            owner_public_key=Ed25519PrivateKey.generate().public_key(),
+            inference_pack_signature_proof=object(),
+        )
+
+    assert rebuilt is False
 
 
 def test_gold_evidence_binds_valid_reviewer_signature_and_training_audits(
