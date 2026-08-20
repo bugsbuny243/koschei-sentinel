@@ -30,6 +30,7 @@ jobs:
           pytest -q
           tests/test_cyber_sft_export_promotion_binding.py
           tests/test_gold_review_signing.py
+          tests/test_gold_review_cli_contracts.py
           tests/test_gold_holdout_candidate_export_gate.py
           tests/test_gold_holdout_inference_runner.py
           tests/test_gold_holdout_inference_runner_cli.py
