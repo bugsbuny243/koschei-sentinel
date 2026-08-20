@@ -17,17 +17,25 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _jsonl_count(path: Path) -> int:
+    return sum(bool(line.strip()) for line in path.read_text(encoding="utf-8").splitlines())
+
+
 def build_gold_bound_candidate_export(tmp_path, monkeypatch, release: Path) -> Path:
     fixture_root = tmp_path / "gold-bound-candidate"
     fixture_root.mkdir()
+    train_examples = release / "train" / "examples.jsonl"
+    validation_examples = release / "validation" / "examples.jsonl"
     return _build_export(
         fixture_root,
         monkeypatch,
         promotion_eligible=True,
-        corpus_examples_raw=(release / "train" / "examples.jsonl").read_bytes(),
+        corpus_examples_raw=train_examples.read_bytes(),
         corpus_manifest_raw=(release / "train" / "manifest.json").read_bytes(),
-        validation_examples_sha256=_sha(release / "validation" / "examples.jsonl"),
+        validation_examples_sha256=_sha(validation_examples),
         validation_manifest_sha256=_sha(release / "validation" / "manifest.json"),
+        training_examples=_jsonl_count(train_examples),
+        validation_examples=_jsonl_count(validation_examples),
     )
 
 
