@@ -11,7 +11,6 @@ from koschei_sentinel.cyber_sft_candidate_snapshot import (
     snapshot_verified_cyber_sft_export,
 )
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
-from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
 from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutEvaluationPolicy,
     GoldHoldoutInferenceManifest,
@@ -25,6 +24,9 @@ from koschei_sentinel.gold_holdout_inference_runner import (
 )
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
+)
+from koschei_sentinel.gold_holdout_output_snapshot import (
+    copy_gold_holdout_inference_output_snapshot,
 )
 from koschei_sentinel.gold_holdout_pack_admission import (
     GoldHoldoutPackAdmission,
@@ -41,6 +43,7 @@ from koschei_sentinel.gold_holdout_pack_signing import (
 from koschei_sentinel.gold_holdout_zero_prediction import (
     build_zero_prediction_gold_report,
 )
+from koschei_sentinel.gold_release_snapshot import snapshot_verified_gold_release
 from koschei_sentinel.gold_review_signing import (
     audit_gold_release_review_signatures,
     load_reviewer_private_key,
@@ -271,8 +274,21 @@ def _evaluate_verified_output(args):
             args.candidate_export,
             snapshot_root / "candidate-export",
         )
-        verification = verify_gold_holdout_inference_output(
+        release_snapshot, release_verification = snapshot_verified_gold_release(
+            args.release_dir,
+            snapshot_root / "release",
+            reviewer_public_key=admission.reviewer_public_key,
+            expected_release_audit_sha256=admission.proof.source_gold_audit_sha256,
+            expected_review_signature_audit_sha256=(
+                admission.proof.review_signature_audit_sha256
+            ),
+        )
+        output_snapshot = copy_gold_holdout_inference_output_snapshot(
             args.inference_output,
+            snapshot_root / "output",
+        )
+        verification = verify_gold_holdout_inference_output(
+            output_snapshot,
             inference_snapshot,
             candidate_snapshot,
         )
@@ -281,45 +297,46 @@ def _evaluate_verified_output(args):
         inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
             (inference_snapshot / "manifest.json").read_bytes()
         )
+        if (
+            inference_manifest.source_gold_audit_sha256
+            != release_verification.release_audit.audit_sha256
+        ):
+            raise ValueError("inference pack was exported from a different Gold release audit")
 
-    release_audit = audit_gold_defense_release(args.release_dir)
-    if not release_audit.valid:
-        raise ValueError("Gold HOLDOUT release audit is invalid")
-    if inference_manifest.source_gold_audit_sha256 != release_audit.audit_sha256:
-        raise ValueError("inference pack was exported from a different Gold release audit")
-
-    receipt = GoldHoldoutInferenceRunReceipt.model_validate_json(
-        (Path(args.inference_output) / "receipt.json").read_bytes()
-    )
-    selected_policy = _load_policy(args.policy)
-    predictions = _load_predictions(
-        str(Path(args.inference_output) / "predictions.jsonl"),
-        allow_empty=True,
-    )
-    if predictions:
-        report = evaluate_gold_holdout_predictions(
-            args.release_dir,
-            predictions,
-            policy=selected_policy,
+        receipt = GoldHoldoutInferenceRunReceipt.model_validate_json(
+            (output_snapshot / "receipt.json").read_bytes()
         )
-    else:
-        report = build_zero_prediction_gold_report(
-            args.release_dir,
-            model_ref=receipt.model_ref,
-            model_revision=receipt.model_revision,
-            adapter_digest=receipt.adapter_digest,
-            policy=selected_policy,
+        selected_policy = _load_policy(args.policy)
+        predictions = _load_predictions(
+            str(output_snapshot / "predictions.jsonl"),
+            allow_empty=True,
         )
+        if predictions:
+            report = evaluate_gold_holdout_predictions(
+                release_snapshot,
+                predictions,
+                policy=selected_policy,
+            )
+        else:
+            report = build_zero_prediction_gold_report(
+                release_snapshot,
+                model_ref=receipt.model_ref,
+                model_revision=receipt.model_revision,
+                adapter_digest=receipt.adapter_digest,
+                policy=selected_policy,
+            )
 
-    identity = (report.model_ref, report.model_revision, report.adapter_digest)
-    expected_identity = (receipt.model_ref, receipt.model_revision, receipt.adapter_digest)
-    if identity != expected_identity:
-        raise ValueError("Gold HOLDOUT evaluation identity differs from inference receipt")
-    if report.case_count != verification.case_count:
-        raise ValueError("Gold HOLDOUT evaluation case count differs from inference verification")
-    if report.prediction_count != verification.prediction_count:
-        raise ValueError("Gold HOLDOUT evaluation prediction count differs from inference verification")
-    return report
+        identity = (report.model_ref, report.model_revision, report.adapter_digest)
+        expected_identity = (receipt.model_ref, receipt.model_revision, receipt.adapter_digest)
+        if identity != expected_identity:
+            raise ValueError("Gold HOLDOUT evaluation identity differs from inference receipt")
+        if report.case_count != verification.case_count:
+            raise ValueError("Gold HOLDOUT evaluation case count differs from inference verification")
+        if report.prediction_count != verification.prediction_count:
+            raise ValueError(
+                "Gold HOLDOUT evaluation prediction count differs from inference verification"
+            )
+        return report
 
 
 def main(argv: list[str] | None = None) -> int:
