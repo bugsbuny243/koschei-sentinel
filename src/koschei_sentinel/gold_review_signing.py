@@ -52,6 +52,7 @@ class GoldReviewSignatureAudit(StrictModel):
     reviewer_key_fingerprint: str = Field(pattern=_DIGEST)
     expected_review_count: int = Field(ge=0)
     proof_count: int = Field(ge=0)
+    proof_set_sha256: str = Field(pattern=_DIGEST)
     exact_review_set_verified: bool
     signatures_verified: bool
     valid: bool
@@ -184,10 +185,31 @@ def _serialize_proofs(proofs: list[GoldReviewSignatureProof]) -> str:
         key=lambda row: (row.split.value, row.scenario_id, row.review_sha256),
     )
     return "".join(
-        json.dumps(row.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            row.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         + "\n"
         for row in ordered
     )
+
+
+def _proof_set_sha256(proofs: list[GoldReviewSignatureProof]) -> str:
+    bindings = [
+        {
+            "split": proof.split.value,
+            "scenario_id": proof.scenario_id,
+            "reviewer_id": proof.reviewer_id,
+            "review_sha256": proof.review_sha256,
+            "proof_sha256": proof.proof_sha256,
+        }
+        for proof in sorted(
+            proofs,
+            key=lambda row: (row.split.value, row.scenario_id, row.review_sha256),
+        )
+    ]
+    return _sha256_text(canonical_json(bindings))
 
 
 def write_signed_gold_defense_release(
@@ -288,6 +310,7 @@ def audit_gold_release_review_signatures(
         "reviewer_key_fingerprint": fingerprint,
         "expected_review_count": len(expected),
         "proof_count": len(proofs),
+        "proof_set_sha256": _proof_set_sha256(proofs),
         "exact_review_set_verified": exact_set_verified,
         "signatures_verified": signatures_verified,
         "valid": valid,
