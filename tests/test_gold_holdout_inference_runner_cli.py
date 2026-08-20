@@ -7,107 +7,101 @@ import koschei_sentinel.gold_holdout_inference_runner_cli as cli_module
 from koschei_sentinel.gold_holdout_inference_runner_cli import build_parser
 
 
+def _base_args():
+    return [
+        "--inference-pack",
+        "pack",
+        "--inference-pack-signature",
+        "pack-signature.json",
+        "--reviewer-public-key",
+        "reviewer-public.pem",
+        "--candidate-export",
+        "candidate-export",
+        "--model-ref",
+        "sentinel:test",
+        "--generation-policy",
+        "configs/training/gold-holdout-generation-policy.v1.json",
+    ]
+
+
 def test_gold_holdout_inference_cli_requires_generation_policy() -> None:
+    argv = _base_args()
+    index = argv.index("--generation-policy")
+    del argv[index : index + 2]
+
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(
-            [
-                "--inference-pack",
-                "pack",
-                "--candidate-export",
-                "candidate-export",
-                "--model-ref",
-                "sentinel:test",
-            ]
-        )
+        build_parser().parse_args(argv)
 
     assert exc.value.code == 2
 
 
 def test_gold_holdout_inference_cli_requires_candidate_export() -> None:
+    argv = _base_args()
+    index = argv.index("--candidate-export")
+    del argv[index : index + 2]
+
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(
-            [
-                "--inference-pack",
-                "pack",
-                "--model-ref",
-                "sentinel:test",
-                "--generation-policy",
-                "configs/training/gold-holdout-generation-policy.v1.json",
-            ]
-        )
+        build_parser().parse_args(argv)
+
+    assert exc.value.code == 2
+
+
+def test_gold_holdout_inference_cli_requires_signed_pack_identity() -> None:
+    argv = _base_args()
+    index = argv.index("--inference-pack-signature")
+    del argv[index : index + 2]
+
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(argv)
 
     assert exc.value.code == 2
 
 
 def test_gold_holdout_inference_cli_accepts_explicit_policies_and_export() -> None:
-    args = build_parser().parse_args(
-        [
-            "--inference-pack",
-            "pack",
-            "--candidate-export",
-            "candidate-export",
-            "--model-ref",
-            "sentinel:test",
-            "--generation-policy",
-            "configs/training/gold-holdout-generation-policy.v1.json",
-        ]
-    )
+    args = build_parser().parse_args(_base_args())
 
     assert args.candidate_export == "candidate-export"
+    assert args.inference_pack_signature == "pack-signature.json"
+    assert args.reviewer_public_key == "reviewer-public.pem"
     assert args.generation_policy == (
         "configs/training/gold-holdout-generation-policy.v1.json"
     )
 
 
-def test_pack_preflight_failure_blocks_candidate_and_plan(monkeypatch, capsys) -> None:
+def test_signed_pack_failure_blocks_candidate_and_plan(monkeypatch, capsys) -> None:
     candidate_checked = False
     planned = False
     monkeypatch.setattr(cli_module, "_load_policy", lambda *_args: object())
 
-    def fail_preflight(_path):
-        raise ValueError("forbidden answer-key/review fields")
+    def fail_signed_pack(**_kwargs):
+        raise ValueError("Gold HOLDOUT pack signature proof does not bind this inference manifest")
 
     def forbidden_candidate(_path):
         nonlocal candidate_checked
         candidate_checked = True
-        raise AssertionError("candidate verification must not run after pack preflight failure")
+        raise AssertionError("candidate verification must not run after pack signature failure")
 
     def forbidden_plan(**_kwargs):
         nonlocal planned
         planned = True
-        raise AssertionError("HOLDOUT plan must not run after pack preflight failure")
+        raise AssertionError("HOLDOUT plan must not run after pack signature failure")
 
-    monkeypatch.setattr(cli_module, "preflight_gold_holdout_inference_pack", fail_preflight)
+    monkeypatch.setattr(cli_module, "_verify_signed_pack", fail_signed_pack)
     monkeypatch.setattr(cli_module, "verify_cyber_sft_export", forbidden_candidate)
     monkeypatch.setattr(cli_module, "build_gold_holdout_inference_plan", forbidden_plan)
 
-    status = cli_module.main(
-        [
-            "--inference-pack",
-            "poisoned-pack",
-            "--candidate-export",
-            "candidate-export",
-            "--model-ref",
-            "sentinel:test",
-            "--generation-policy",
-            "policy.json",
-        ]
-    )
+    status = cli_module.main(_base_args())
 
     assert status == 2
     assert candidate_checked is False
     assert planned is False
-    assert "forbidden answer-key/review fields" in capsys.readouterr().out
+    assert "does not bind this inference manifest" in capsys.readouterr().out
 
 
 def test_raw_candidate_failure_blocks_holdout_plan(monkeypatch, capsys) -> None:
     planned = False
     monkeypatch.setattr(cli_module, "_load_policy", lambda *_args: object())
-    monkeypatch.setattr(
-        cli_module,
-        "preflight_gold_holdout_inference_pack",
-        lambda *_args: None,
-    )
+    monkeypatch.setattr(cli_module, "_verify_signed_pack", lambda **_kwargs: None)
     monkeypatch.setattr(
         cli_module,
         "verify_cyber_sft_export",
@@ -124,18 +118,9 @@ def test_raw_candidate_failure_blocks_holdout_plan(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(cli_module, "build_gold_holdout_inference_plan", forbidden_plan)
 
-    status = cli_module.main(
-        [
-            "--inference-pack",
-            "pack",
-            "--candidate-export",
-            "candidate-export-link",
-            "--model-ref",
-            "sentinel:test",
-            "--generation-policy",
-            "policy.json",
-        ]
-    )
+    argv = _base_args()
+    argv[argv.index("candidate-export")] = "candidate-export-link"
+    status = cli_module.main(argv)
 
     assert status == 2
     assert planned is False
