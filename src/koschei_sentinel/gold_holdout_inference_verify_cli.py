@@ -2,20 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
 )
-from koschei_sentinel.gold_holdout_pack_preflight import (
-    preflight_gold_holdout_inference_pack,
+from koschei_sentinel.gold_holdout_pack_admission import (
+    admit_signed_gold_holdout_pack,
 )
-from koschei_sentinel.gold_holdout_pack_signing import (
-    load_gold_holdout_pack_signature,
-    verify_gold_holdout_inference_pack_signature,
-)
-from koschei_sentinel.gold_review_signing import load_reviewer_public_key
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,13 +33,10 @@ def _verify_signed_pack(
     signature_path: str,
     reviewer_public_key_path: str,
 ) -> None:
-    preflight_gold_holdout_inference_pack(inference_pack)
-    proof = load_gold_holdout_pack_signature(signature_path)
-    reviewer_public_key = load_reviewer_public_key(reviewer_public_key_path)
-    verify_gold_holdout_inference_pack_signature(
-        proof,
-        Path(inference_pack) / "manifest.json",
-        reviewer_public_key,
+    admit_signed_gold_holdout_pack(
+        inference_pack=inference_pack,
+        signature_path=signature_path,
+        reviewer_public_key_path=reviewer_public_key_path,
     )
 
 
