@@ -133,6 +133,36 @@ def test_adapter_tamper_is_detected(tmp_path) -> None:
     assert report.adapter_digest_verified is False
 
 
+def test_unlisted_adapter_file_is_detected(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    (run / "adapter" / "adapter_config.json").write_text(
+        '{"tampered": true}\n',
+        encoding="utf-8",
+    )
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+
+    assert report.valid is False
+    assert report.adapter_digest_verified is False
+    assert any(
+        "adapter file set differs" in row and "extra=adapter/adapter_config.json" in row
+        for row in report.violations
+    )
+
+
+def test_adapter_symlink_is_detected(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    target = run / "unexpected-adapter-config.json"
+    target.write_text('{"tampered": true}\n', encoding="utf-8")
+    (run / "adapter" / "adapter_config.json").symlink_to(target)
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+
+    assert report.valid is False
+    assert report.adapter_digest_verified is False
+    assert any("must not be a symlink" in row for row in report.violations)
+
+
 def test_receipt_tamper_is_detected(tmp_path) -> None:
     run = _write_run(tmp_path)
     receipt_path = run / "training-receipt.json"
