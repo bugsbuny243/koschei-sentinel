@@ -115,7 +115,9 @@ def verify_gold_holdout_inference_pack_signature(
         reviewer_key_fingerprint_value=fingerprint,
     )
     if _digest(binding) != proof.binding_sha256:
-        raise ValueError("Gold HOLDOUT pack signature binding digest does not verify")
+        raise ValueError(
+            "Gold HOLDOUT pack signature proof does not bind this inference manifest"
+        )
 
     observed = {
         "reviewer_key_fingerprint": proof.reviewer_key_fingerprint,
