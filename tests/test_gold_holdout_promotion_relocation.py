@@ -7,7 +7,7 @@ from koschei_sentinel.cyber_defense_promotion import (
 )
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
-    build_gold_holdout_evaluation_evidence,
+    build_owner_trusted_gold_holdout_evaluation_evidence,
 )
 from koschei_sentinel.gold_holdout_pack_signing import (
     sign_gold_holdout_inference_pack,
@@ -60,13 +60,15 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
         review_signature_audit_sha256=signature_audit.audit_sha256,
     )
     policy = GoldHoldoutEvaluationPolicy(minimum_case_count=1)
-    supplied = build_gold_holdout_evaluation_evidence(
+    supplied = build_owner_trusted_gold_holdout_evaluation_evidence(
         release_dir=release,
         inference_pack_dir=pack,
         inference_output_dir=output,
         candidate_export_dir=candidate_export,
         policy=policy,
         reviewer_public_key=reviewer_public_key,
+        reviewer_trust_policy=reviewer_trust_policy,
+        owner_public_key=owner_private_key.public_key(),
         inference_pack_signature_proof=pack_proof,
     )
 
@@ -106,6 +108,8 @@ def test_source_reverified_promotion_survives_full_artifact_relocation(
     assert promotion.gold_candidate_training_binding_sha256 is not None
     assert promotion.gold_holdout_pack_signature_proof_sha256 == pack_proof.proof_sha256
     assert promotion.gold_holdout_evaluation_evidence_sha256 == supplied.evidence_sha256
+    assert supplied.reviewer_trust_policy_sha256 == reviewer_trust_policy.policy_digest
+    assert supplied.owner_key_fingerprint == reviewer_trust_policy.owner_key_fingerprint
     assert (
         promotion.gold_candidate_training_binding_sha256
         == supplied.candidate_training_binding_verification_sha256
