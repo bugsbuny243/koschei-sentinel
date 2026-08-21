@@ -169,7 +169,10 @@ def build_cyber_defense_promotion_evidence(
         != gold_reviewer_trust_policy.policy_digest
     ):
         raise ValueError("Gold HOLDOUT evidence reviewer trust policy digest differs")
-    if gold_holdout_evidence.owner_key_fingerprint != gold_reviewer_trust_policy.owner_key_fingerprint:
+    if (
+        gold_holdout_evidence.owner_key_fingerprint
+        != gold_reviewer_trust_policy.owner_key_fingerprint
+    ):
         raise ValueError("Gold HOLDOUT evidence owner trust-root fingerprint differs")
     if gold_holdout_evidence.model_ref != candidate_model_ref:
         raise ValueError("Gold HOLDOUT evidence model_ref differs from promotion candidate")
