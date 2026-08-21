@@ -149,6 +149,10 @@ def build_cyber_defense_promotion_evidence(
         )
     if gold_holdout_evidence.inference_pack_signature_proof_sha256 is None:
         raise ValueError("Promotion v4 requires signed Gold HOLDOUT inference-pack evidence")
+    if gold_holdout_evidence.reviewer_trust_policy_sha256 is None:
+        raise ValueError("Promotion v4 requires owner-signed Gold reviewer trust evidence")
+    if gold_holdout_evidence.owner_key_fingerprint is None:
+        raise ValueError("Promotion v4 requires the Gold owner trust-root fingerprint")
     if gold_holdout_evidence.model_ref != candidate_model_ref:
         raise ValueError("Gold HOLDOUT evidence model_ref differs from promotion candidate")
     if gold_holdout_evidence.model_revision != candidate_model_revision:
