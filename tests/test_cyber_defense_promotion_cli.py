@@ -5,7 +5,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import koschei_sentinel.cyber_defense_promotion as promotion_module
 import koschei_sentinel.cyber_defense_promotion_cli as promotion_cli
-import koschei_sentinel.gold_holdout_evaluation_evidence as evidence_module
 from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_reviewer_trust import build_gold_reviewer_trust_policy
 from koschei_sentinel.training import canonical_json
@@ -165,8 +164,8 @@ def test_promotion_rejects_wrong_owner_root_before_gold_rebuild(monkeypatch) -> 
         raise AssertionError("Gold evidence rebuild must not run under an untrusted owner root")
 
     monkeypatch.setattr(
-        evidence_module,
-        "build_gold_holdout_evaluation_evidence",
+        promotion_module,
+        "build_owner_trusted_gold_holdout_evaluation_evidence",
         forbidden_rebuild,
     )
 
