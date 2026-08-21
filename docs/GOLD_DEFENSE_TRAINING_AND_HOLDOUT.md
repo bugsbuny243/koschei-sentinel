@@ -342,7 +342,9 @@ sentinel-cyber-defense-promotion \
   --output build/cyber-defense-promotion-v4.json
 ```
 
-Promotion v4 fails closed if owner-trust provenance is absent even when a caller imports the low-level Python builder directly. The source-rebuild path additionally verifies the owner-signed policy against the supplied owner public key before rebuilding Gold evidence.
+Promotion v4 fails closed even when a caller imports the low-level Python builder directly. The low-level builder requires the reviewer public key, owner-signed reviewer trust policy, and owner public key; it cryptographically verifies the policy's domain-separated owner signature, owner/reviewer fingerprints, active state, and restricted authority. It then requires the Gold evidence `reviewer_trust_policy_sha256` and `owner_key_fingerprint` to match that verified policy exactly. Self-hashing forged trust fields therefore cannot authorize Promotion v4.
+
+The source-rebuild path performs the same owner-policy verification **before** rebuilding Gold evidence from release, pack, candidate, or inference artifacts. A wrong owner root fails before the trusted source rebuild begins. Fresh rebuilt evidence must still match the supplied evidence exactly.
 
 The Promotion receipt binds Gold evidence SHA, so the owner policy digest and owner-key fingerprint are transitively part of Promotion identity together with structural audit, review-signature audit, candidate TRAIN/VALIDATION binding, HOLDOUT pack proof, inference verification, evaluation policy/report, and the independent range gates.
 
