@@ -38,6 +38,8 @@ ADAPTER_DIGEST = "9" * 64
 REVIEW_SIGNATURE_AUDIT_DIGEST = "7" * 64
 CANDIDATE_TRAINING_BINDING_DIGEST = "8" * 64
 PACK_SIGNATURE_PROOF_DIGEST = "a" * 64
+REVIEWER_TRUST_POLICY_DIGEST = "b" * 64
+OWNER_KEY_FINGERPRINT = "c" * 64
 
 
 def _bundle() -> CyberTrainingBundle:
@@ -183,6 +185,8 @@ def _gold_evidence(
             CANDIDATE_TRAINING_BINDING_DIGEST
         ),
         "inference_pack_signature_proof_sha256": PACK_SIGNATURE_PROOF_DIGEST,
+        "reviewer_trust_policy_sha256": REVIEWER_TRUST_POLICY_DIGEST,
+        "owner_key_fingerprint": OWNER_KEY_FINGERPRINT,
         "inference_inputs_sha256": "2" * 64,
         "inference_plan_sha256": "3" * 64,
         "inference_receipt_sha256": "4" * 64,
@@ -226,6 +230,16 @@ def _gold_unsigned_pack_evidence() -> GoldHoldoutEvaluationEvidence:
     payload = bound.model_dump(mode="json")
     payload.pop("evidence_sha256")
     payload.pop("inference_pack_signature_proof_sha256")
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
+
+
+def _gold_untrusted_owner_evidence() -> GoldHoldoutEvaluationEvidence:
+    bound = _gold_evidence()
+    payload = bound.model_dump(mode="json")
+    payload.pop("evidence_sha256")
+    payload.pop("reviewer_trust_policy_sha256")
+    payload.pop("owner_key_fingerprint")
     digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
     return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
 
@@ -315,6 +329,21 @@ def test_promotion_rejects_gold_evidence_without_signed_pack_binding() -> None:
             multi_incident_range_report=_multi(),
             defense_load_range_report=_load(),
             gold_holdout_evidence=_gold_unsigned_pack_evidence(),
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+        )
+
+
+def test_promotion_rejects_gold_evidence_without_owner_trust_provenance() -> None:
+    with pytest.raises(ValueError, match="owner-signed Gold reviewer trust evidence"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:untrusted-reviewer",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision=ADAPTER_DIGEST,
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_evidence=_gold_untrusted_owner_evidence(),
             gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
         )
 
