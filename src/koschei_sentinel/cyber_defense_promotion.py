@@ -312,6 +312,11 @@ def build_cyber_defense_promotion_evidence_from_sources(
     gold_owner_public_key: Ed25519PublicKey,
     gold_inference_pack_signature_proof: GoldHoldoutPackSignatureProof,
 ) -> CyberDefensePromotionEvidence:
+    verify_gold_reviewer_trust_policy(
+        gold_reviewer_trust_policy,
+        gold_reviewer_public_key,
+        gold_owner_public_key,
+    )
     fresh_gold_evidence = build_owner_trusted_gold_holdout_evaluation_evidence(
         release_dir=gold_release_dir,
         inference_pack_dir=gold_inference_pack_dir,
