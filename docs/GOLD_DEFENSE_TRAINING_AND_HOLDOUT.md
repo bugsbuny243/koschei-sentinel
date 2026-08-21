@@ -30,7 +30,34 @@ Human review and signed-release construction both re-check this canonical view. 
 
 A recursive fail-closed guard also rejects answer-key or review-only fields anywhere inside model-visible data, including nested graph objects. Examples include `truth`, `expected_sequence`, `expected_interpretation`, `range_report`, simulated outcomes, failure candidates, review results, and authorization fields.
 
-## 3. Signed human review
+## 3. Owner-rooted reviewer trust
+
+The external production trust root is the **Gold owner public key**, not a loose reviewer public key. A reviewer key is accepted for production only when an owner-signed `GoldReviewerTrustPolicy` delegates the narrow `gold_review_signing_only` authority to that exact reviewer-key fingerprint.
+
+Issue the policy on isolated owner/admin infrastructure:
+
+```bash
+sentinel-gold-reviewer-trust issue \
+  --policy-id gold-reviewer-primary-v1 \
+  --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --owner-private-key /secure/keys/gold-owner-private.pem \
+  --output /secure/policies/gold-reviewer-trust.json
+```
+
+Verify it independently before use:
+
+```bash
+sentinel-gold-reviewer-trust verify \
+  --policy /secure/policies/gold-reviewer-trust.json \
+  --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --owner-public-key /secure/keys/gold-owner-public.pem
+```
+
+The owner private key is only needed to issue trust policy and must stay off review, training, inference, and GPU hosts. The reviewer private key is restricted to trusted review/export infrastructure. The owner public key, reviewer public key, and owner-signed reviewer policy are verification artifacts and may be distributed to production verifiers.
+
+The policy is fail-closed: its digest, owner fingerprint, reviewer fingerprint, domain-separated Ed25519 owner signature, and restricted authority all verify before a reviewer key is admitted.
+
+## 4. Signed human review
 
 Human review is fail-closed. Reviewed targets and supporting evidence must exist in the scenario graph. `HOLDOUT` can never receive training authorization.
 
@@ -40,7 +67,7 @@ VALIDATION  → human-approved + training-authorized
 HOLDOUT     → human-approved + evaluation-authorized only
 ```
 
-Production reviews are Ed25519-signed with a domain-separated Gold-review message. The proof binds reviewer identity, trusted key fingerprint, packet SHA, scenario ID, assigned split, and final review SHA.
+Production review signing requires both the reviewer private key and the owner-rooted trust policy:
 
 ```bash
 sentinel-defense-reflex-gold-review \
@@ -48,15 +75,17 @@ sentinel-defense-reflex-gold-review \
   --scenario build/cyber-range/case-001.json \
   --review-spec /secure/gold-reviews/case-001.review.json \
   --reviewer-private-key /secure/keys/gold-reviewer-private.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --output build/gold-reviewed/case-001.json \
   --signature-output build/gold-reviewed/case-001.signature.json
 ```
 
-The private key must stay outside Git and model/GPU artifacts. The public key is the external trust root.
+The human-review proof binds reviewer identity, reviewer-key fingerprint, packet SHA, scenario ID, assigned split, and final review SHA. The reviewer private key is not considered trusted merely because it is present; its public half must match the owner-signed policy.
 
-## 4. Split-safe signed Gold release
+## 5. Split-safe signed Gold release
 
-The production release requires one trusted signature proof for every reviewed packet.
+The production release requires one valid trusted signature proof for every reviewed packet.
 
 ```bash
 sentinel-defense-reflex-gold-release \
@@ -65,6 +94,8 @@ sentinel-defense-reflex-gold-release \
   --reviewed build/gold-reviewed/case-001.json \
   --review-signature build/gold-reviewed/case-001.signature.json \
   --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --output-dir build/gold-defense-release
 ```
 
@@ -85,24 +116,24 @@ gold-defense-release/
   release-manifest.json
 ```
 
-The signed-release builder re-checks canonical model-visible context even if the reviewed packet and its Ed25519 signature are otherwise cryptographically valid. The exact signature-proof set must match the exact release review set.
+The signed-release builder re-checks canonical model-visible context even when the reviewed packet and signature are otherwise internally consistent. The exact signature-proof set must match the exact release review set.
 
-## 5. Gold release audit
+## 6. Gold release audit
 
-Production verification uses both structural and signature audits:
+Production verification uses both structural and trusted-signature audits:
 
 ```bash
 sentinel-defense-reflex-gold-audit \
   --release-dir build/gold-defense-release \
   --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --output build/gold-defense-release-audit.json
 ```
 
-The structural audit checks split isolation, hashes, release identity, human-review-only status and HOLDOUT training exclusion. The signature audit verifies every Ed25519 proof against the external reviewer public key and computes an audit SHA for the exact signed-review proof set.
+The structural audit checks split isolation, hashes, release identity, human-review-only status, and HOLDOUT training exclusion. The signature audit verifies every review proof with the reviewer key **after** that key has been admitted through the owner-signed trust policy. The exact review-signature proof-set audit SHA becomes downstream HOLDOUT identity.
 
-That review-signature-audit SHA becomes part of downstream HOLDOUT pack identity.
-
-## 6. Explicit TRAIN and VALIDATION
+## 7. Explicit TRAIN and VALIDATION
 
 Promotion-eligible Defense Reflex training uses explicit TRAIN and VALIDATION directories. The trainer does not re-split them.
 
@@ -112,9 +143,9 @@ validation_corpus_dir = build/gold-defense-release/validation
 validation_ratio      = 0.0
 ```
 
-TRAIN/VALIDATION hashes and counts are bound through the training plan, source binding, run attestation and adapter metadata. `sentinel-cyber-sft --execute` revalidates those sources before entering the GPU executor, and the trainer independently re-checks them again.
+TRAIN/VALIDATION hashes and counts are bound through the training plan, source binding, run attestation, adapter metadata, and candidate export. `sentinel-cyber-sft --execute` revalidates those sources before entering the GPU executor, and the trainer independently re-checks them again.
 
-## 7. Portable candidate export
+## 8. Portable candidate export
 
 A real HOLDOUT never consumes a loose run directory. First build the promotion-eligible portable candidate export:
 
@@ -129,7 +160,7 @@ sentinel-cyber-sft-export \
   --output-dir build/cyber-training/exports/qwen35-9b-gold-defense-v1
 ```
 
-The export is staged and independently verified before atomic publication. It rejects stale provenance, source drift, count drift, symlinks, unexpected files, duplicate/non-portable adapter paths, empty adapters and incomplete PEFT adapters.
+The export is staged and independently verified before atomic publication. It rejects stale provenance, source drift, count drift, symlinks, unexpected files, duplicate/non-portable adapter paths, empty adapters, and incomplete PEFT adapters.
 
 A real adapter must include the PEFT core artifacts:
 
@@ -145,21 +176,23 @@ sentinel-cyber-sft-export-verify \
   --export-dir build/cyber-training/exports/qwen35-9b-gold-defense-v1
 ```
 
-## 8. Export and sign answer-key-isolated HOLDOUT inputs
+## 9. Export and sign answer-key-isolated HOLDOUT inputs
 
 Never mount `holdout/cases.jsonl` on the inference host. Export only the model-visible HOLDOUT input pack.
 
-Production export requires the trusted reviewer private key because the detached pack proof is signed under a separate domain from human-review signatures:
+Production export requires an owner-trusted reviewer private key because the detached pack proof is signed under a separate domain from human-review signatures:
 
 ```bash
 sentinel-gold-holdout-eval export-inputs \
   --release-dir build/gold-defense-release \
   --output-dir build/gold-holdout-inference \
   --reviewer-private-key /secure/keys/gold-reviewer-private.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --signature-output build/gold-holdout-inference.signature.json
 ```
 
-The pack directory is sealed and contains exactly two files:
+The pack directory is sealed and contains exactly:
 
 ```text
 gold-holdout-inference/
@@ -167,35 +200,21 @@ gold-holdout-inference/
   manifest.json
 ```
 
-The detached signature stays outside the pack so the pack inventory remains exact.
+The detached signature stays outside the pack. The exporter snapshots and re-audits the Gold release, rejects answer-key/review-only fields recursively, binds the exact inputs SHA, raw manifest SHA, source Gold structural-audit SHA, and signed-review proof-set audit SHA, signs that identity, verifies it, publishes the detached proof first, and publishes the final pack directory last.
 
-The exporter:
+The reviewer private key must never be copied to the GPU host.
 
-- audits the signed Gold release;
-- creates the pack in staging;
-- requires the exact two-file inventory with no symlinks;
-- recursively rejects answer-key/review-only fields;
-- binds the exact `inputs.jsonl` SHA and raw manifest SHA;
-- binds the source Gold structural-audit SHA;
-- binds the exact signed-review proof-set audit SHA;
-- signs that identity with domain-separated Ed25519;
-- verifies the new proof;
-- publishes the detached proof first;
-- publishes the final pack directory last.
+## 10. Run the trained adapter against signed HOLDOUT
 
-Therefore a final pack path is never intentionally exposed without an already-published trusted detached proof.
-
-The reviewer private key belongs only on trusted review/export infrastructure. It must never be copied to the GPU host. The reviewer **public** key is safe and required there.
-
-## 9. Run the trained adapter against signed HOLDOUT
-
-Both planning and execution require the detached pack proof and trusted reviewer public key.
+Planning and execution require the detached pack proof plus the complete owner-rooted reviewer trust chain.
 
 ```bash
 sentinel-gold-holdout-infer \
   --inference-pack build/gold-holdout-inference \
   --inference-pack-signature build/gold-holdout-inference.signature.json \
   --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
   --model-ref koschei-sentinel:qwen35-9b-gold-defense-v1 \
   --generation-policy configs/training/gold-holdout-generation-policy.v1.json \
@@ -209,6 +228,8 @@ sentinel-gold-holdout-infer \
   --inference-pack build/gold-holdout-inference \
   --inference-pack-signature build/gold-holdout-inference.signature.json \
   --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
   --model-ref koschei-sentinel:qwen35-9b-gold-defense-v1 \
   --generation-policy configs/training/gold-holdout-generation-policy.v1.json \
@@ -216,30 +237,28 @@ sentinel-gold-holdout-infer \
   --execute
 ```
 
-Before candidate admission or model loading, the CLI recursively preflights the pack and verifies its detached Ed25519 proof. Rewriting `inputs.jsonl`, the manifest, or every internal SHA cannot produce a valid proof without the trusted private key.
+Before candidate admission or model loading, the CLI preflights the pack and verifies the detached proof through the owner-trusted reviewer key. Rewriting inputs, manifest, proof metadata, or internal SHA values cannot authorize a different reviewer without a valid owner-signed trust policy.
 
-Generation is deterministic. Sampling is disabled. The model must emit exactly one JSON object with `interpretation` and `defense_sequence`; malformed output is recorded as an inference failure rather than repaired.
+Generation is deterministic. Sampling is disabled. Malformed model output is recorded as failure rather than repaired. The inference result is written to hidden staging, independently offline-verified, and published atomically only when valid.
 
-The inference result is written to a hidden staging directory, independently offline-verified, and published atomically only when valid.
-
-## 10. Offline verification
+## 11. Offline verification
 
 ```bash
 sentinel-gold-holdout-infer-verify \
   --inference-pack build/gold-holdout-inference \
   --inference-pack-signature build/gold-holdout-inference.signature.json \
   --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --output-dir build/gold-holdout-inference-output \
   --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1
 ```
 
-Verification re-checks the signed pack, candidate export, plan, receipt, generation policy, training config, run attestation, candidate-export verification snapshot, prediction hashes, model/adapter identity and complete case accounting.
+Verification re-checks the owner-rooted signed pack, candidate export, plan, receipt, generation policy, training config, run attestation, candidate-export verification snapshot, prediction hashes, model/adapter identity, and complete case accounting. Extra files or symlinks fail closed.
 
-The inference output itself also has an exact file inventory. Extra files or symlinks fail closed.
+## 12. Evaluate and build production evidence
 
-## 11. Evaluate and build signed evidence
-
-Production evaluation requires the same detached pack proof:
+The `sentinel-gold-holdout-eval evaluate` subcommand is a direct/research evaluation utility. It can score supplied predictions, but by itself it does **not** establish the owner-rooted pack/candidate/inference provenance required by Promotion v4. Production flow uses `evaluate-output` and then source-rebuilt evidence.
 
 ```bash
 sentinel-gold-holdout-eval evaluate-output \
@@ -247,13 +266,15 @@ sentinel-gold-holdout-eval evaluate-output \
   --inference-pack build/gold-holdout-inference \
   --inference-pack-signature build/gold-holdout-inference.signature.json \
   --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --inference-output build/gold-holdout-inference-output \
   --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
   --policy configs/training/gold-holdout-evaluation-policy.v1.json \
   --output build/gold-holdout-report.json
 ```
 
-Evidence creation re-runs the source checks and requires the detached proof explicitly:
+Production evidence creation re-runs the source checks and requires the complete trust chain:
 
 ```bash
 sentinel-gold-holdout-evidence \
@@ -263,6 +284,8 @@ sentinel-gold-holdout-evidence \
   --inference-output build/gold-holdout-inference-output \
   --candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
   --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --policy configs/training/gold-holdout-evaluation-policy.v1.json \
   --output build/gold-holdout-evidence.json
 ```
@@ -270,16 +293,16 @@ sentinel-gold-holdout-evidence \
 Production Gold evidence requires all of these to agree:
 
 - structural Gold release audit;
-- fresh exact signed-review audit;
-- the review-signature-audit SHA signed inside the HOLDOUT pack proof;
-- detached pack proof SHA;
+- exact signed-review audit;
+- detached HOLDOUT pack proof and its bound review-audit SHA;
 - candidate TRAIN/VALIDATION binding;
-- inference verification;
-- evaluation policy and evaluation report.
+- offline inference verification and complete case accounting;
+- exact evaluation policy/report identity;
+- owner-signed reviewer trust-policy verification.
 
-A pack proof signed by the trusted key but issued against a different signed-review audit is rejected.
+Its self-hash binds `reviewer_trust_policy_sha256` and `owner_key_fingerprint` alongside the review, pack, candidate, inference, and evaluation identities. Changing the delegated policy therefore changes Gold evidence identity even when the reviewer key is unchanged.
 
-## 12. Promotion v4
+## 13. Promotion v4
 
 Promotion v4 requires four independent gate families:
 
@@ -314,31 +337,23 @@ sentinel-cyber-defense-promotion \
   --gold-inference-output build/gold-holdout-inference-output \
   --gold-candidate-export build/cyber-training/exports/qwen35-9b-gold-defense-v1 \
   --gold-reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --gold-reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --gold-owner-public-key /secure/keys/gold-owner-public.pem \
   --output build/cyber-defense-promotion-v4.json
 ```
 
-The Promotion v4 receipt binds:
+Promotion v4 fails closed if owner-trust provenance is absent even when a caller imports the low-level Python builder directly. The source-rebuild path additionally verifies the owner-signed policy against the supplied owner public key before rebuilding Gold evidence.
 
-- source Gold structural-audit SHA;
-- exact review-signature-audit SHA;
-- candidate TRAIN/VALIDATION binding SHA;
-- detached HOLDOUT pack proof SHA;
-- inference-verification SHA;
-- evaluation policy/report/evidence identities;
-- all independent range gates.
+The Promotion receipt binds Gold evidence SHA, so the owner policy digest and owner-key fingerprint are transitively part of Promotion identity together with structural audit, review-signature audit, candidate TRAIN/VALIDATION binding, HOLDOUT pack proof, inference verification, evaluation policy/report, and the independent range gates.
 
 The repository production Gold policy requires at least 50 unseen HOLDOUT cases. Smaller policies are test-only plumbing policies.
 
-## 13. Portability and migration
+## 14. Portability, migration, and real GPU boundary
 
-Artifact identity is content-based rather than host-path-based. Sealed release, candidate export, HOLDOUT pack, detached proof and inference output may be relocated without changing their content identities.
+Artifact identity is content-based rather than host-path-based. Sealed release, candidate export, HOLDOUT pack, detached proof, inference output, reviewer trust policy, and owner public trust root may be supplied again after relocation without weakening verification.
 
-The detached pack proof remains valid after relocation because it binds content hashes, not mount paths. The same external reviewer public key must be supplied again.
-
-Legacy artifacts produced before canonical visible-context revalidation, exact file inventories, signed-review audit binding, detached HOLDOUT pack signing, candidate-training binding or current Promotion v4 contracts must be regenerated. Do not mix legacy artifacts with a real promotion attempt.
-
-## 14. Real GPU boundary
+Legacy artifacts produced before canonical visible-context revalidation, exact file inventories, signed-review audit binding, detached HOLDOUT signing, candidate-training binding, or owner-rooted reviewer trust must be regenerated. Do not mix legacy artifacts with a real Promotion v4 attempt.
 
 CPU fixture tests may synthesize deterministic inference artifacts solely to exercise plumbing. A real HOLDOUT must use actual inference from the verified trained adapter. Synthetic predictions must never be used as real promotion evidence.
 
-No real GPU HOLDOUT and no Promotion v4 should run until the complete repository CI and named Gold fail-closed regression gate execute successfully.
+No real GPU HOLDOUT and no Promotion v4 should run until the complete repository suite and named Gold fail-closed regression gate actually execute successfully.
