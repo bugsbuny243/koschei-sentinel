@@ -342,9 +342,9 @@ sentinel-cyber-defense-promotion \
   --output build/cyber-defense-promotion-v4.json
 ```
 
-Promotion v4 fails closed even when a caller imports the low-level Python builder directly. The low-level builder requires the reviewer public key, owner-signed reviewer trust policy, and owner public key; it cryptographically verifies the policy's domain-separated owner signature, owner/reviewer fingerprints, active state, and restricted authority. It then requires the Gold evidence `reviewer_trust_policy_sha256` and `owner_key_fingerprint` to match that verified policy exactly. Self-hashing forged trust fields therefore cannot authorize Promotion v4.
+`build_cyber_defense_promotion_evidence_from_sources` is the authoritative production trust boundary. It verifies the owner-signed reviewer policy before rebuilding Gold evidence from release, pack, candidate, and inference artifacts, then requires the rebuilt evidence to match the supplied evidence exactly. A wrong owner root fails before the trusted source rebuild begins.
 
-The source-rebuild path performs the same owner-policy verification **before** rebuilding Gold evidence from release, pack, candidate, or inference artifacts. A wrong owner root fails before the trusted source rebuild begins. Fresh rebuilt evidence must still match the supplied evidence exactly.
+`build_cyber_defense_promotion_evidence` is only a low-level assembly primitive for evidence that has already been verified. It still requires recorded review, candidate-binding, pack-signature, owner-policy, and owner-fingerprint provenance. Callers may optionally pass reviewer/owner trust objects to recheck those recorded trust fields during assembly, but this helper is not a substitute for source revalidation.
 
 The Promotion receipt binds Gold evidence SHA, so the owner policy digest and owner-key fingerprint are transitively part of Promotion identity together with structural audit, review-signature audit, candidate TRAIN/VALIDATION binding, HOLDOUT pack proof, inference verification, evaluation policy/report, and the independent range gates.
 
