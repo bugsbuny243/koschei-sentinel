@@ -140,16 +140,41 @@ def build_cyber_defense_promotion_evidence(
     defense_load_range_report: DefenseLoadRangeReport,
     gold_holdout_evidence: GoldHoldoutEvaluationEvidence,
     gold_holdout_policy: GoldHoldoutEvaluationPolicy,
+    gold_reviewer_public_key: Ed25519PublicKey | None = None,
+    gold_reviewer_trust_policy: GoldReviewerTrustPolicy | None = None,
+    gold_owner_public_key: Ed25519PublicKey | None = None,
 ) -> CyberDefensePromotionEvidence:
     """Assemble Promotion v4 from already-verified evidence.
 
     This is a low-level assembly primitive, not the production trust boundary. Production
     callers must use ``build_cyber_defense_promotion_evidence_from_sources`` so reviewer
-    delegation and Gold source artifacts are cryptographically reverified first.
+    delegation and Gold source artifacts are cryptographically reverified first. Low-level
+    callers may optionally supply all three trust objects to recheck the recorded trust
+    provenance while assembling the receipt.
     """
     if not training_bundle.ready_for_training:
         raise ValueError("cyber training bundle is not ready")
     verify_gold_holdout_evaluation_evidence(gold_holdout_evidence)
+
+    trust_inputs = (
+        gold_reviewer_public_key,
+        gold_reviewer_trust_policy,
+        gold_owner_public_key,
+    )
+    if any(value is not None for value in trust_inputs) and not all(
+        value is not None for value in trust_inputs
+    ):
+        raise ValueError("low-level Promotion trust inputs must be supplied together")
+    if all(value is not None for value in trust_inputs):
+        assert gold_reviewer_public_key is not None
+        assert gold_reviewer_trust_policy is not None
+        assert gold_owner_public_key is not None
+        verify_gold_reviewer_trust_policy(
+            gold_reviewer_trust_policy,
+            gold_reviewer_public_key,
+            gold_owner_public_key,
+        )
+
     if gold_holdout_evidence.review_signature_audit_sha256 is None:
         raise ValueError("Promotion v4 requires signed Gold human-review evidence")
     if gold_holdout_evidence.candidate_training_binding_verification_sha256 is None:
@@ -159,9 +184,22 @@ def build_cyber_defense_promotion_evidence(
     if gold_holdout_evidence.inference_pack_signature_proof_sha256 is None:
         raise ValueError("Promotion v4 requires signed Gold HOLDOUT inference-pack evidence")
     if gold_holdout_evidence.reviewer_trust_policy_sha256 is None:
-        raise ValueError("Promotion v4 requires recorded owner-signed reviewer trust provenance")
+        raise ValueError("Promotion v4 requires owner-signed Gold reviewer trust evidence")
     if gold_holdout_evidence.owner_key_fingerprint is None:
-        raise ValueError("Promotion v4 requires the recorded Gold owner trust-root fingerprint")
+        raise ValueError("Promotion v4 requires the Gold owner trust-root fingerprint")
+
+    if gold_reviewer_trust_policy is not None:
+        if (
+            gold_holdout_evidence.reviewer_trust_policy_sha256
+            != gold_reviewer_trust_policy.policy_digest
+        ):
+            raise ValueError("Gold HOLDOUT evidence reviewer trust policy digest differs")
+        if (
+            gold_holdout_evidence.owner_key_fingerprint
+            != gold_reviewer_trust_policy.owner_key_fingerprint
+        ):
+            raise ValueError("Gold HOLDOUT evidence owner trust-root fingerprint differs")
+
     if gold_holdout_evidence.model_ref != candidate_model_ref:
         raise ValueError("Gold HOLDOUT evidence model_ref differs from promotion candidate")
     if gold_holdout_evidence.model_revision != candidate_model_revision:
