@@ -69,10 +69,10 @@ Promotion-eligible `sentinel-cyber-training-readiness` automatically runs this a
 
 ## 5. Explicit TRAIN and VALIDATION
 
-The promotion-eligible Qwen3.5 9B example config is:
+The promotion-eligible single-model 397B example config is:
 
 ```text
-configs/training/cyber-sft.qwen3.5-9b.gold.example.json
+configs/training/cyber-sft.qwen3.5-397b-a17b.gold.example.json
 ```
 
 It uses:
@@ -83,7 +83,8 @@ validation_corpus_dir = build/gold-defense-release/validation
 validation_ratio      = 0.0
 ```
 
-The trainer never re-splits these datasets. Validation hashes are included in the training plan, resume binding, source binding, and run attestation.
+The Megatron dataset renderer never re-splits these datasets. Validation hashes are included in
+the rendered-dataset manifest and static launch plan.
 
 ## 6. Export answer-key-isolated HOLDOUT inputs
 
@@ -107,7 +108,15 @@ It does not contain the expected interpretation, expected defense sequence, rang
 
 The GPU inference host should receive only the answer-key-isolated inference pack plus the verified adapter and its training config. The full Gold release, especially `holdout/cases.jsonl`, belongs on the evaluation side and should not be mounted into the model-inference environment.
 
-## 7. Run the trained adapter against HOLDOUT
+## 7. Run the trained model against HOLDOUT
+
+The legacy `sentinel-gold-holdout-infer` adapter loader accepts dense PEFT run artifacts and must
+not be used to claim evaluation of a 397B Megatron checkpoint. A dedicated 397B inference-artifact
+binding is required before promotion. Until that binding exists, 397B training outputs are
+promotion-blocked even when training itself succeeds.
+
+The commands below are retained only as the answer-key-isolation contract that the 397B runner must
+preserve; their old 9B paths are historical examples.
 
 First create a CPU-side inference plan. The plan re-verifies the Cyber SFT run and binds the candidate identity to the adapter digest.
 
