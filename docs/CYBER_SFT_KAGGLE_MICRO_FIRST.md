@@ -1,5 +1,8 @@
 # Koschei Sentinel Cyber SFT — Kaggle Micro-First Progression
 
+> Historical regression workflow. The active training target is now only
+> `Qwen/Qwen3.5-397B-A17B`; see `docs/CYBER_SFT_397B_MEGATRON.md`.
+
 The free-GPU path is intentionally staged so that a large model is never the first proof of the training stack.
 
 ## Stage 1 — Qwen3.5-0.8B micro-smoke
