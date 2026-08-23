@@ -1,0 +1,106 @@
+# Qwen3.5-397B-A17B Megatron-SWIFT runbook
+
+This runbook prepares and launches the only active Koschei Sentinel model-training target.
+
+## 1. Build or mount the corpus
+
+For a deterministic smoke-only source:
+
+```bash
+sentinel-cyber-seed-curriculum --output-root build/cyber-training
+```
+
+For a promotion-eligible run, mount a valid Gold release and use
+`configs/training/cyber-sft.qwen3.5-397b-a17b.gold.example.json` instead.
+
+## 2. Render and seal the ms-swift dataset
+
+```bash
+sentinel-cyber-megatron-sft \
+  --config configs/training/cyber-sft.qwen3.5-397b-a17b.megatron.json \
+  --materialize-dataset \
+  --plan-output build/cyber-training/megatron/397b-plan.json
+```
+
+The renderer writes `train.jsonl`, `validation.jsonl`, and `manifest.json`. The manifest binds the
+source corpus hashes, split seed, model ID, model revision, row counts, and both rendered JSONL
+hashes. Planning fails when any byte changes.
+
+## 3. Validate the candidate cluster
+
+The checked-in candidate topology is 4 nodes × 8 GPUs with TP=8, PP=4, CP=1, and EP=8. Before
+spending budget, verify at minimum:
+
+- every node exposes eight GPUs with at least the configured 80 GiB each;
+- the full model snapshot and checkpoints fit shared storage;
+- all ranks can read the sealed dataset and write the output directory;
+- NCCL all-reduce, all-to-all, and point-to-point tests pass across nodes;
+- checkpoint save and restore throughput meets the recovery objective; and
+- the approved cost cap covers the measured wall-time estimate.
+
+Do not infer feasibility from the 17B active-parameter count. The checkpoint contains 397B total
+parameters.
+
+## 4. Review the generated command
+
+Without `--execute`, the CLI only prints a plan. Confirm that it contains the exact model and
+revision plus:
+
+```text
+--tuner_type lora
+--language_model_only true
+--freeze_vit true
+--freeze_aligner true
+--moe_aux_loss_coeff 1e-06
+--no_save_optim false
+--no_save_rng false
+```
+
+## 5. Launch on every node
+
+The scheduler must provide a consistent distributed environment. For the checked-in topology:
+
+```bash
+export NNODES=4
+export NPROC_PER_NODE=8
+export NODE_RANK=<0..3>
+export MASTER_ADDR=<rank-0-host>
+export MASTER_PORT=<approved-port>
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export KOSCHEI_397B_LAUNCH_APPROVED=sentinel-cyber-sft-qwen3p5-397b-a17b-001
+
+sentinel-cyber-megatron-sft \
+  --config configs/training/cyber-sft.qwen3.5-397b-a17b.megatron.json \
+  --execute
+```
+
+The approval value must exactly equal the config `run_id`. A missing or stale value blocks the
+process before Megatron starts.
+
+## 6. Resume a failed run
+
+Optimizer and RNG state are retained. Resume with both MCore paths; supplying only one is rejected.
+
+```bash
+sentinel-cyber-megatron-sft \
+  --config configs/training/cyber-sft.qwen3.5-397b-a17b.megatron.json \
+  --resume-mcore-model <shared-mcore-model-checkpoint> \
+  --resume-mcore-adapter <shared-mcore-lora-checkpoint> \
+  --execute
+```
+
+Resume sets `--finetune false`, `--no_load_optim false`, and `--no_load_rng false` so iteration,
+optimizer, RNG, and dataset position are restored rather than silently restarting.
+
+## 7. Promotion
+
+No checkpoint is promoted from loss alone. First verify the training artifact, then run the Gold
+HOLDOUT and Cyber Range gates defined by the repository. The model remains advisory behind
+deterministic Sentinel authority.
+
+## Upstream references
+
+- [Qwen3.5-397B-A17B model card](https://huggingface.co/Qwen/Qwen3.5-397B-A17B)
+- [Qwen3.5 Megatron-SWIFT best practices](https://swift.readthedocs.io/en/latest/BestPractices/Qwen3_8-Best-Practice.html)
+- [Megatron-SWIFT command-line parameters](https://swift.readthedocs.io/en/latest/Megatron-SWIFT/Command-line-parameters.html)
+
