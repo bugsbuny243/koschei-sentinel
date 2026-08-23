@@ -1,28 +1,19 @@
 {
   "schema_version": "sentinel.cyber-foundation-plan.v3",
-  "status": "architecture_selected_training_not_started",
-  "primary_expert": {
+  "status": "single_target_distributed_training_contract_ready",
+  "active_training_target": {
     "model": "Qwen/Qwen3.5-397B-A17B",
-    "role": "primary_security_center_expert_teacher",
-    "open_weights": true,
-    "license": "apache-2.0",
-    "training_mode": "self_hosted_distributed_only",
-    "managed_finetuning_assumed": false
+    "revision": "8472618112abcbd45acbcdc58436aff4233c23f7",
+    "total_parameters": "397B",
+    "activated_parameters_per_token": "17B",
+    "role": "koschei_sentinel_security_model",
+    "training_backend": "megatron-swift",
+    "training_config": "configs/training/cyber-sft.qwen3.5-397b-a17b.megatron.json"
   },
-  "development_specialization_tier": {
-    "model": "Qwen/Qwen3.5-35B-A3B-Base",
-    "role": "recipe_and_corpus_validation_before_397b",
-    "open_weights": true,
-    "license": "apache-2.0"
-  },
-  "legacy_baseline": {
-    "model": "Qwen/Qwen2.5-Coder-7B",
-    "adapter": "koschei-sentinel-blockchain-run-001",
-    "role": "baseline_edge_and_distillation_target",
-    "heldout_base_loss": 1.2602,
-    "heldout_adapter_loss": 1.188669,
-    "behavior_base_mean": 0.7,
-    "behavior_adapter_mean": 0.6833
+  "single_model_policy": {
+    "additional_active_models_allowed": false,
+    "development_tier_allowed": false,
+    "small_model_scale_gate_active": false
   },
   "training_stages": [
     "security_domain_continued_pretraining",
@@ -50,15 +41,11 @@
     "privacy_gate_required": true,
     "adversarial_gate_required": true
   },
-  "infrastructure": {
-    "kaggle_t4_role": [
-      "dataset_building",
-      "small_model_experiments",
-      "eval_smoke_tests"
-    ],
-    "kaggle_t4_allowed_for_primary_397b_training": false,
-    "distributed_training_plan_required_before_397b": true,
-    "cost_budget_required_before_397b": true,
-    "checkpoint_recovery_plan_required_before_397b": true
+  "launch_policy": {
+    "paid_cluster_approval_required": true,
+    "runtime_version_check_required": true,
+    "distributed_topology_check_required": true,
+    "checkpoint_resume_state_required": true,
+    "dataset_digest_verification_required": true
   }
 }
