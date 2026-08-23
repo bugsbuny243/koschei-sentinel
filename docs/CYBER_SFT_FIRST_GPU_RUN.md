@@ -1,5 +1,9 @@
 # Koschei Sentinel — First Verified Cyber SFT GPU Run
 
+> Historical 9B regression record. It is not an active training target or a prerequisite.
+> The only active target is `Qwen/Qwen3.5-397B-A17B`; see
+> `docs/CYBER_SFT_397B_MEGATRON.md`.
+
 This document describes the first real model-weight update in the Cyber SFT line.
 
 ## Scope
