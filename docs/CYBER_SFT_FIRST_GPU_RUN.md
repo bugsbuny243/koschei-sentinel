@@ -134,5 +134,5 @@ merely because training loss decreases or artifact verification passes.
 Production promotion still requires human-reviewed training material plus the versioned
 single-incident, multi-incident/world-line, resource-load and authority/grounding safety gates.
 
-The 35B-A3B MoE development tier remains `MOE_DISTRIBUTED_REQUIRED` and is intentionally blocked
-from this single-GPU trainer.
+Historical 35B-A3B material is likewise not an active training target and cannot be used to
+bypass the single-model Qwen3.5-397B-A17B contract.
