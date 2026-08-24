@@ -91,4 +91,5 @@ Execution remains fail-closed until all of the following are true:
 3. `NNODES`, `NPROC_PER_NODE`, `NODE_RANK`, `MASTER_ADDR`, `MASTER_PORT`, and visible GPUs match;
 4. optimizer and RNG checkpoint state will be saved for recovery;
 5. an operator explicitly approves the paid run with the run-ID and unique-session variables;
-6. every node publishes a matching final-plan readiness receipt before any rank starts Megatron.
+6. every node publishes a readiness receipt bound to the same final plan and rendezvous endpoint
+   before any rank starts Megatron.

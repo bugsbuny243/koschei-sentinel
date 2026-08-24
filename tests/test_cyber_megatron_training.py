@@ -23,6 +23,9 @@ from koschei_sentinel.cyber_megatron_training import (
 )
 from koschei_sentinel.cyber_seed_curriculum import write_seed_curriculum
 
+TEST_MASTER_ADDR = "127.0.0.1"
+TEST_MASTER_PORT = 29_500
+
 
 class _FakeTokenizer:
     def apply_chat_template(
@@ -321,6 +324,8 @@ def test_shared_output_waits_for_fresh_resume_session(
         root=tmp_path,
         node_rank=0,
         launch_session=session,
+        master_addr=TEST_MASTER_ADDR,
+        master_port=TEST_MASTER_PORT,
         resume=None,
     )
     megatron_training._coordinate_launch(
@@ -329,6 +334,8 @@ def test_shared_output_waits_for_fresh_resume_session(
         root=tmp_path,
         node_rank=1,
         launch_session=session,
+        master_addr=TEST_MASTER_ADDR,
+        master_port=TEST_MASTER_PORT,
         resume=None,
     )
     plan = plan_cyber_megatron_sft(
@@ -356,6 +363,8 @@ def test_shared_output_waits_for_fresh_resume_session(
                 output,
                 identity=identity,
                 launch_session=fresh_session,
+                master_addr=TEST_MASTER_ADDR,
+                master_port=TEST_MASTER_PORT,
                 nodes=config.topology.nodes,
                 state="launching",
             )
@@ -368,6 +377,8 @@ def test_shared_output_waits_for_fresh_resume_session(
         root=tmp_path,
         node_rank=1,
         launch_session=fresh_session,
+        master_addr=TEST_MASTER_ADDR,
+        master_port=TEST_MASTER_PORT,
         resume=resume,
     )
     assert sleep_calls
@@ -378,6 +389,8 @@ def test_shared_output_waits_for_fresh_resume_session(
             root=tmp_path,
             node_rank=0,
             launch_session=fresh_session,
+            master_addr=TEST_MASTER_ADDR,
+            master_port=TEST_MASTER_PORT,
             resume=resume,
         )
 
@@ -398,6 +411,8 @@ def test_all_nodes_must_pass_the_same_final_plan_before_launch(
         root=tmp_path,
         node_rank=0,
         launch_session=session,
+        master_addr=TEST_MASTER_ADDR,
+        master_port=TEST_MASTER_PORT,
         resume=None,
     )
     plan = plan_cyber_megatron_sft(
@@ -420,6 +435,8 @@ def test_all_nodes_must_pass_the_same_final_plan_before_launch(
             root=tmp_path,
             node_rank=0,
             launch_session=session,
+            master_addr=TEST_MASTER_ADDR,
+            master_port=TEST_MASTER_PORT,
         )
 
     monkeypatch.setattr(
@@ -432,9 +449,40 @@ def test_all_nodes_must_pass_the_same_final_plan_before_launch(
             output,
             identity=identity,
             launch_session=session,
+            master_addr=TEST_MASTER_ADDR,
+            master_port=TEST_MASTER_PORT,
             plan=plan,
             node_rank=node_rank,
         )
+    megatron_training._write_node_readiness(
+        output,
+        identity=identity,
+        launch_session=session,
+        master_addr="127.0.0.2",
+        master_port=TEST_MASTER_PORT,
+        plan=plan,
+        node_rank=1,
+    )
+    with pytest.raises(RuntimeError, match="different rendezvous endpoint"):
+        megatron_training._wait_for_all_nodes_ready(
+            config,
+            identity,
+            plan,
+            root=tmp_path,
+            node_rank=0,
+            launch_session=session,
+            master_addr=TEST_MASTER_ADDR,
+            master_port=TEST_MASTER_PORT,
+        )
+    megatron_training._write_node_readiness(
+        output,
+        identity=identity,
+        launch_session=session,
+        master_addr=TEST_MASTER_ADDR,
+        master_port=TEST_MASTER_PORT,
+        plan=plan,
+        node_rank=1,
+    )
     megatron_training._wait_for_all_nodes_ready(
         config,
         identity,
@@ -442,6 +490,8 @@ def test_all_nodes_must_pass_the_same_final_plan_before_launch(
         root=tmp_path,
         node_rank=0,
         launch_session=session,
+        master_addr=TEST_MASTER_ADDR,
+        master_port=TEST_MASTER_PORT,
     )
     state = megatron_training.CyberMegatronLaunchState.model_validate_json(
         (output / megatron_training.LAUNCH_STATE_FILENAME).read_bytes()
@@ -454,6 +504,8 @@ def test_all_nodes_must_pass_the_same_final_plan_before_launch(
         root=tmp_path,
         node_rank=1,
         launch_session=session,
+        master_addr=TEST_MASTER_ADDR,
+        master_port=TEST_MASTER_PORT,
     )
 
 

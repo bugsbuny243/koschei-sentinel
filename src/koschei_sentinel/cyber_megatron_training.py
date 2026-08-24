@@ -269,21 +269,23 @@ class CyberMegatronRunIdentity(StrictModel):
 
 
 class CyberMegatronLaunchState(StrictModel):
-    schema_version: Literal["sentinel.cyber-megatron-launch-state.v1"] = (
-        "sentinel.cyber-megatron-launch-state.v1"
+    schema_version: Literal["sentinel.cyber-megatron-launch-state.v2"] = (
+        "sentinel.cyber-megatron-launch-state.v2"
     )
     run_identity_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     launch_session_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    rendezvous_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     state: Literal["launching", "ready", "completed", "failed"]
     nodes: int = Field(gt=0)
 
 
 class CyberMegatronNodeReadiness(StrictModel):
-    schema_version: Literal["sentinel.cyber-megatron-node-readiness.v1"] = (
-        "sentinel.cyber-megatron-node-readiness.v1"
+    schema_version: Literal["sentinel.cyber-megatron-node-readiness.v2"] = (
+        "sentinel.cyber-megatron-node-readiness.v2"
     )
     run_identity_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     launch_session_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    rendezvous_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     node_rank: int = Field(ge=0)
 
@@ -747,17 +749,26 @@ def _launch_session_sha256(launch_session: str) -> str:
     return hashlib.sha256(launch_session.encode("utf-8")).hexdigest()
 
 
+def _rendezvous_sha256(master_addr: str, master_port: int) -> str:
+    return _sha256_canonical(
+        {"master_addr": master_addr, "master_port": master_port}
+    )
+
+
 def _write_launch_state(
     output: Path,
     *,
     identity: CyberMegatronRunIdentity,
     launch_session: str,
+    master_addr: str,
+    master_port: int,
     nodes: int,
     state: Literal["launching", "ready", "completed", "failed"],
 ) -> None:
     payload = CyberMegatronLaunchState(
         run_identity_sha256=identity.identity_sha256,
         launch_session_sha256=_launch_session_sha256(launch_session),
+        rendezvous_sha256=_rendezvous_sha256(master_addr, master_port),
         state=state,
         nodes=nodes,
     )
@@ -774,6 +785,8 @@ def _coordinate_launch(
     root: Path,
     node_rank: int,
     launch_session: str,
+    master_addr: str,
+    master_port: int,
     resume: CyberMegatronResume | None,
 ) -> None:
     output = resolve_under_root(root, config.output_dir)
@@ -807,6 +820,12 @@ def _coordinate_launch(
                     raise RuntimeError(
                         "existing launch state does not match the configured topology"
                     )
+                if previous_state.rendezvous_sha256 != _rendezvous_sha256(
+                    master_addr, master_port
+                ):
+                    raise RuntimeError(
+                        "existing launch state does not match the rendezvous endpoint"
+                    )
                 if previous_state.launch_session_sha256 == _launch_session_sha256(
                     launch_session
                 ):
@@ -817,6 +836,8 @@ def _coordinate_launch(
             output,
             identity=identity,
             launch_session=launch_session,
+            master_addr=master_addr,
+            master_port=master_port,
             nodes=config.topology.nodes,
             state="launching",
         )
@@ -842,6 +863,10 @@ def _coordinate_launch(
                 raise RuntimeError("shared launch state has a different run identity")
             if state.nodes != config.topology.nodes:
                 raise RuntimeError("shared launch state has a different node topology")
+            if state.rendezvous_sha256 != _rendezvous_sha256(
+                master_addr, master_port
+            ):
+                raise RuntimeError("shared launch state has a different rendezvous endpoint")
             if state.launch_session_sha256 != expected_session_sha:
                 time.sleep(LAUNCH_COORDINATION_POLL_SECONDS)
                 continue
@@ -863,12 +888,15 @@ def _node_readiness(
     *,
     identity: CyberMegatronRunIdentity,
     launch_session: str,
+    master_addr: str,
+    master_port: int,
     plan: CyberMegatronPlan,
     node_rank: int,
 ) -> CyberMegatronNodeReadiness:
     return CyberMegatronNodeReadiness(
         run_identity_sha256=identity.identity_sha256,
         launch_session_sha256=_launch_session_sha256(launch_session),
+        rendezvous_sha256=_rendezvous_sha256(master_addr, master_port),
         plan_sha256=_plan_sha256(plan),
         node_rank=node_rank,
     )
@@ -883,12 +911,16 @@ def _write_node_readiness(
     *,
     identity: CyberMegatronRunIdentity,
     launch_session: str,
+    master_addr: str,
+    master_port: int,
     plan: CyberMegatronPlan,
     node_rank: int,
 ) -> None:
     readiness = _node_readiness(
         identity=identity,
         launch_session=launch_session,
+        master_addr=master_addr,
+        master_port=master_port,
         plan=plan,
         node_rank=node_rank,
     )
@@ -906,6 +938,8 @@ def _wait_for_all_nodes_ready(
     root: Path,
     node_rank: int,
     launch_session: str,
+    master_addr: str,
+    master_port: int,
 ) -> None:
     output = resolve_under_root(root, config.output_dir)
     state_path = output / LAUNCH_STATE_FILENAME
@@ -914,6 +948,8 @@ def _wait_for_all_nodes_ready(
         output,
         identity=identity,
         launch_session=launch_session,
+        master_addr=master_addr,
+        master_port=master_port,
         plan=plan,
         node_rank=node_rank,
     )
@@ -938,9 +974,15 @@ def _wait_for_all_nodes_ready(
                 expected = _node_readiness(
                     identity=identity,
                     launch_session=launch_session,
+                    master_addr=master_addr,
+                    master_port=master_port,
                     plan=plan,
                     node_rank=expected_rank,
                 )
+                if observed.rendezvous_sha256 != expected.rendezvous_sha256:
+                    raise RuntimeError(
+                        f"node {expected_rank} readiness has a different rendezvous endpoint"
+                    )
                 if observed != expected:
                     raise RuntimeError(
                         f"node {expected_rank} readiness does not match the final launch plan"
@@ -950,6 +992,8 @@ def _wait_for_all_nodes_ready(
                     output,
                     identity=identity,
                     launch_session=launch_session,
+                    master_addr=master_addr,
+                    master_port=master_port,
                     nodes=config.topology.nodes,
                     state="ready",
                 )
@@ -958,6 +1002,7 @@ def _wait_for_all_nodes_ready(
         raise RuntimeError("timed out waiting for every node to pass launch preflight")
 
     expected_session_sha = _launch_session_sha256(launch_session)
+    expected_rendezvous_sha = _rendezvous_sha256(master_addr, master_port)
     while time.monotonic() < deadline:
         try:
             state = CyberMegatronLaunchState.model_validate_json(state_path.read_bytes())
@@ -968,6 +1013,8 @@ def _wait_for_all_nodes_ready(
             raise RuntimeError("readiness barrier has a different run identity")
         if state.launch_session_sha256 != expected_session_sha:
             raise RuntimeError("readiness barrier has a different launch session")
+        if state.rendezvous_sha256 != expected_rendezvous_sha:
+            raise RuntimeError("readiness barrier has a different rendezvous endpoint")
         if state.nodes != config.topology.nodes:
             raise RuntimeError("readiness barrier has a different node topology")
         if state.state == "failed":
@@ -1258,7 +1305,9 @@ def plan_cyber_megatron_sft(
     )
 
 
-def _assert_runtime_contract(config: CyberMegatronSFTConfig) -> tuple[int, str]:
+def _assert_runtime_contract(
+    config: CyberMegatronSFTConfig,
+) -> tuple[int, str, str, int]:
     if os.environ.get(config.launch_approval_env) != config.run_id:
         raise RuntimeError(
             f"paid 397B launch requires {config.launch_approval_env}={config.run_id}"
@@ -1301,8 +1350,15 @@ def _assert_runtime_contract(config: CyberMegatronSFTConfig) -> tuple[int, str]:
         raise RuntimeError("distributed launch requires integer NODE_RANK") from exc
     if not 0 <= node_rank < config.topology.nodes:
         raise RuntimeError("NODE_RANK is outside the configured cluster topology")
-    if not os.environ.get("MASTER_ADDR") or not os.environ.get("MASTER_PORT"):
+    master_addr = os.environ.get("MASTER_ADDR", "")
+    if not master_addr or not os.environ.get("MASTER_PORT"):
         raise RuntimeError("distributed launch requires MASTER_ADDR and MASTER_PORT")
+    if (
+        len(master_addr) > 255
+        or master_addr != master_addr.strip()
+        or any(char.isspace() for char in master_addr)
+    ):
+        raise RuntimeError("MASTER_ADDR must be a 1-255 character address without whitespace")
     try:
         master_port = int(os.environ["MASTER_PORT"])
     except ValueError as exc:
@@ -1348,7 +1404,7 @@ def _assert_runtime_contract(config: CyberMegatronSFTConfig) -> tuple[int, str]:
             "visible GPUs below minimum_gpu_memory_gib: "
             + ", ".join(str(index) for index in undersized)
         )
-    return node_rank, launch_session
+    return node_rank, launch_session, master_addr, master_port
 
 
 def execute_cyber_megatron_sft(
@@ -1366,7 +1422,7 @@ def execute_cyber_megatron_sft(
     if dataset.manifest is None or dataset.manifest.validation_examples == 0:
         raise RuntimeError("Cyber Megatron training requires a non-empty validation dataset")
     identity = _run_identity(config, dataset)
-    node_rank, launch_session = _assert_runtime_contract(config)
+    node_rank, launch_session, master_addr, master_port = _assert_runtime_contract(config)
     if resume is not None:
         try:
             _validate_resume_binding(
@@ -1383,6 +1439,8 @@ def execute_cyber_megatron_sft(
         root=root_path,
         node_rank=node_rank,
         launch_session=launch_session,
+        master_addr=master_addr,
+        master_port=master_port,
         resume=resume,
     )
     plan = plan_cyber_megatron_sft(
@@ -1397,6 +1455,8 @@ def execute_cyber_megatron_sft(
                 resolve_under_root(root_path, config.output_dir),
                 identity=identity,
                 launch_session=launch_session,
+                master_addr=master_addr,
+                master_port=master_port,
                 nodes=config.topology.nodes,
                 state="failed",
             )
@@ -1409,6 +1469,8 @@ def execute_cyber_megatron_sft(
             root=root_path,
             node_rank=node_rank,
             launch_session=launch_session,
+            master_addr=master_addr,
+            master_port=master_port,
         )
     except (OSError, RuntimeError):
         if node_rank == 0:
@@ -1416,6 +1478,8 @@ def execute_cyber_megatron_sft(
                 resolve_under_root(root_path, config.output_dir),
                 identity=identity,
                 launch_session=launch_session,
+                master_addr=master_addr,
+                master_port=master_port,
                 nodes=config.topology.nodes,
                 state="failed",
             )
@@ -1428,6 +1492,8 @@ def execute_cyber_megatron_sft(
                 resolve_under_root(root_path, config.output_dir),
                 identity=identity,
                 launch_session=launch_session,
+                master_addr=master_addr,
+                master_port=master_port,
                 nodes=config.topology.nodes,
                 state="failed",
             )
@@ -1437,6 +1503,8 @@ def execute_cyber_megatron_sft(
             resolve_under_root(root_path, config.output_dir),
             identity=identity,
             launch_session=launch_session,
+            master_addr=master_addr,
+            master_port=master_port,
             nodes=config.topology.nodes,
             state="completed",
         )

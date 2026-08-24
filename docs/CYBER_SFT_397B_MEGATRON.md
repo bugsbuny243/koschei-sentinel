@@ -87,8 +87,11 @@ sentinel-cyber-megatron-sft \
 The approval value must exactly equal the config `run_id`. Node 0 exclusively creates and binds
 the output directory to the run/config/dataset digests. Other nodes wait for that exact identity
 and launch session instead of racing to create the directory. After the final plan, every node
-publishes a plan-digest-bound readiness receipt; node 0 opens the barrier only after all configured
-nodes match. A missing, stale, or mismatched value blocks Megatron before training starts.
+publishes a readiness receipt bound to both the plan digest and a canonical hash of
+`MASTER_ADDR:MASTER_PORT`; node 0 opens the barrier only after all configured nodes match. The
+shared launch state carries the same rendezvous hash, so late or resumed nodes cannot accept a
+barrier created for another endpoint. A missing, stale, or mismatched value blocks Megatron before
+training starts.
 
 ## 6. Resume a failed run
 
