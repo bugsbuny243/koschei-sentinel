@@ -230,7 +230,7 @@ def test_397b_holdout_plan_verification_detects_checkpoint_mutation(tmp_path) ->
     )
 
     checkpoint = tmp_path / str(kwargs["checkpoint_dir"])
-    (checkpoint / "model" / "weights.safetensors").write_bytes(b"tampered-after-plan")
+    (checkpoint / "model.safetensors").write_bytes(b"tampered-after-plan")
     verification = verify_cyber_megatron_holdout_plan(
         **kwargs,
         plan_path=_relative(tmp_path, plan_path),
