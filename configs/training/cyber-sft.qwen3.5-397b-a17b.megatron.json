@@ -15,8 +15,8 @@
     "nodes": 4,
     "gpus_per_node": 8,
     "minimum_gpu_memory_gib": 80,
-    "tensor_model_parallel_size": 8,
-    "pipeline_model_parallel_size": 4,
+    "tensor_model_parallel_size": 4,
+    "pipeline_model_parallel_size": 1,
     "context_parallel_size": 1,
     "expert_model_parallel_size": 8,
     "sequence_parallel": true
@@ -58,5 +58,6 @@
     "save_safetensors": true,
     "merge_lora": true
   },
-  "launch_approval_env": "KOSCHEI_397B_LAUNCH_APPROVED"
+  "launch_approval_env": "KOSCHEI_397B_LAUNCH_APPROVED",
+  "launch_session_env": "KOSCHEI_397B_LAUNCH_SESSION"
 }

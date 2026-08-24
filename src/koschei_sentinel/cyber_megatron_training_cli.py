@@ -28,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--resume-mcore-model")
     parser.add_argument("--resume-mcore-adapter")
     parser.add_argument(
+        "--resume-binding-manifest",
+        help="Bound koschei-run-identity.json from the existing output directory",
+    )
+    parser.add_argument(
         "--execute",
         action="store_true",
         help="Launch Megatron-SWIFT after dataset, runtime and paid-run approval checks",
@@ -36,13 +40,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _resume(args: argparse.Namespace) -> CyberMegatronResume | None:
-    if bool(args.resume_mcore_model) != bool(args.resume_mcore_adapter):
-        raise ValueError("resume requires both --resume-mcore-model and --resume-mcore-adapter")
-    if not args.resume_mcore_model:
+    values = (
+        args.resume_mcore_model,
+        args.resume_mcore_adapter,
+        args.resume_binding_manifest,
+    )
+    if any(values) and not all(values):
+        raise ValueError(
+            "resume requires --resume-mcore-model, --resume-mcore-adapter and "
+            "--resume-binding-manifest"
+        )
+    if not any(values):
         return None
     return CyberMegatronResume(
         mcore_model=args.resume_mcore_model,
         mcore_adapter=args.resume_mcore_adapter,
+        binding_manifest=args.resume_binding_manifest,
     )
 
 
