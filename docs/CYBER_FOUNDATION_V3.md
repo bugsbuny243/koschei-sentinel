@@ -28,10 +28,11 @@ The active executor is Megatron-SWIFT, pinned to `ms-swift==4.5.2`. The checked-
 a candidate 32-GPU topology:
 
 - 4 nodes × 8 GPUs
-- TP 8
-- PP 4
+- TP 4
+- PP 1
 - CP 1
 - EP 8
+- DP 8
 - sequence parallelism enabled
 
 This topology is a starting contract, not a claim that an untested provider cluster will fit the
@@ -89,5 +90,5 @@ Execution remains fail-closed until all of the following are true:
 2. the exact `ms-swift` version and `megatron` executable are present;
 3. `NNODES`, `NPROC_PER_NODE`, `NODE_RANK`, `MASTER_ADDR`, `MASTER_PORT`, and visible GPUs match;
 4. optimizer and RNG checkpoint state will be saved for recovery;
-5. an operator explicitly approves the paid run by setting the run-ID-bound launch variable.
-
+5. an operator explicitly approves the paid run with the run-ID and unique-session variables;
+6. every node publishes a matching final-plan readiness receipt before any rank starts Megatron.

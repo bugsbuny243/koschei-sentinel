@@ -35,6 +35,10 @@ LAUNCH_APPROVAL_ENV = "KOSCHEI_397B_LAUNCH_APPROVED"
 LAUNCH_SESSION_ENV = "KOSCHEI_397B_LAUNCH_SESSION"
 RUN_IDENTITY_FILENAME = "koschei-run-identity.json"
 LAUNCH_STATE_FILENAME = "koschei-launch-state.json"
+READINESS_DIRNAME = ".koschei-readiness"
+LAUNCH_COORDINATION_TIMEOUT_SECONDS = 120.0
+ALL_NODE_READINESS_TIMEOUT_SECONDS = 1800.0
+LAUNCH_COORDINATION_POLL_SECONDS = 0.25
 
 
 def _relative_path(value: str, field_name: str) -> None:
@@ -270,8 +274,18 @@ class CyberMegatronLaunchState(StrictModel):
     )
     run_identity_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     launch_session_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    state: Literal["launching", "completed", "failed"]
+    state: Literal["launching", "ready", "completed", "failed"]
     nodes: int = Field(gt=0)
+
+
+class CyberMegatronNodeReadiness(StrictModel):
+    schema_version: Literal["sentinel.cyber-megatron-node-readiness.v1"] = (
+        "sentinel.cyber-megatron-node-readiness.v1"
+    )
+    run_identity_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    launch_session_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    node_rank: int = Field(ge=0)
 
 
 class CyberMegatronPlan(StrictModel):
@@ -729,17 +743,21 @@ def _write_run_identity(path: Path, identity: CyberMegatronRunIdentity) -> None:
     )
 
 
+def _launch_session_sha256(launch_session: str) -> str:
+    return hashlib.sha256(launch_session.encode("utf-8")).hexdigest()
+
+
 def _write_launch_state(
     output: Path,
     *,
     identity: CyberMegatronRunIdentity,
     launch_session: str,
     nodes: int,
-    state: Literal["launching", "completed", "failed"],
+    state: Literal["launching", "ready", "completed", "failed"],
 ) -> None:
     payload = CyberMegatronLaunchState(
         run_identity_sha256=identity.identity_sha256,
-        launch_session_sha256=hashlib.sha256(launch_session.encode("utf-8")).hexdigest(),
+        launch_session_sha256=_launch_session_sha256(launch_session),
         state=state,
         nodes=nodes,
     )
@@ -772,6 +790,29 @@ def _coordinate_launch(
             _write_run_identity(identity_path, identity)
         else:
             _validate_resume_binding(config, resume, identity, root=root)
+            if state_path.is_file():
+                try:
+                    previous_state = CyberMegatronLaunchState.model_validate_json(
+                        state_path.read_bytes()
+                    )
+                except (OSError, ValueError) as exc:
+                    raise RuntimeError(
+                        "existing Cyber Megatron launch state cannot be verified"
+                    ) from exc
+                if previous_state.run_identity_sha256 != identity.identity_sha256:
+                    raise RuntimeError(
+                        "existing launch state does not match the bound run identity"
+                    )
+                if previous_state.nodes != config.topology.nodes:
+                    raise RuntimeError(
+                        "existing launch state does not match the configured topology"
+                    )
+                if previous_state.launch_session_sha256 == _launch_session_sha256(
+                    launch_session
+                ):
+                    raise RuntimeError(
+                        f"resume requires a new unique {config.launch_session_env}"
+                    )
         _write_launch_state(
             output,
             identity=identity,
@@ -781,7 +822,7 @@ def _coordinate_launch(
         )
         return
 
-    deadline = time.monotonic() + 120.0
+    deadline = time.monotonic() + LAUNCH_COORDINATION_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         if identity_path.is_file() and state_path.is_file():
             try:
@@ -790,24 +831,151 @@ def _coordinate_launch(
                     state_path.read_bytes()
                 )
             except (OSError, ValueError):
-                time.sleep(0.25)
+                time.sleep(LAUNCH_COORDINATION_POLL_SECONDS)
                 continue
-            expected_session_sha = hashlib.sha256(
-                launch_session.encode("utf-8")
-            ).hexdigest()
+            expected_session_sha = _launch_session_sha256(launch_session)
             if observed_identity != identity:
                 raise RuntimeError(
                     "shared output belongs to a different 397B run identity"
                 )
             if state.run_identity_sha256 != identity.identity_sha256:
                 raise RuntimeError("shared launch state has a different run identity")
+            if state.nodes != config.topology.nodes:
+                raise RuntimeError("shared launch state has a different node topology")
             if state.launch_session_sha256 != expected_session_sha:
-                raise RuntimeError("shared output belongs to a different launch session")
-            if state.nodes != config.topology.nodes or state.state != "launching":
-                raise RuntimeError("shared launch state is not active for this topology")
+                time.sleep(LAUNCH_COORDINATION_POLL_SECONDS)
+                continue
+            if state.state == "failed":
+                raise RuntimeError("node 0 rejected the current shared launch session")
+            if state.state != "launching":
+                time.sleep(LAUNCH_COORDINATION_POLL_SECONDS)
+                continue
             return
-        time.sleep(0.25)
+        time.sleep(LAUNCH_COORDINATION_POLL_SECONDS)
     raise RuntimeError("timed out waiting for node 0 to bind the shared output directory")
+
+
+def _plan_sha256(plan: CyberMegatronPlan) -> str:
+    return _sha256_canonical(plan.model_dump(mode="json"))
+
+
+def _node_readiness(
+    *,
+    identity: CyberMegatronRunIdentity,
+    launch_session: str,
+    plan: CyberMegatronPlan,
+    node_rank: int,
+) -> CyberMegatronNodeReadiness:
+    return CyberMegatronNodeReadiness(
+        run_identity_sha256=identity.identity_sha256,
+        launch_session_sha256=_launch_session_sha256(launch_session),
+        plan_sha256=_plan_sha256(plan),
+        node_rank=node_rank,
+    )
+
+
+def _readiness_directory(output: Path, launch_session: str) -> Path:
+    return output / READINESS_DIRNAME / _launch_session_sha256(launch_session)
+
+
+def _write_node_readiness(
+    output: Path,
+    *,
+    identity: CyberMegatronRunIdentity,
+    launch_session: str,
+    plan: CyberMegatronPlan,
+    node_rank: int,
+) -> None:
+    readiness = _node_readiness(
+        identity=identity,
+        launch_session=launch_session,
+        plan=plan,
+        node_rank=node_rank,
+    )
+    atomic_write(
+        _readiness_directory(output, launch_session) / f"node-{node_rank}.json",
+        json.dumps(readiness.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+    )
+
+
+def _wait_for_all_nodes_ready(
+    config: CyberMegatronSFTConfig,
+    identity: CyberMegatronRunIdentity,
+    plan: CyberMegatronPlan,
+    *,
+    root: Path,
+    node_rank: int,
+    launch_session: str,
+) -> None:
+    output = resolve_under_root(root, config.output_dir)
+    state_path = output / LAUNCH_STATE_FILENAME
+    readiness_dir = _readiness_directory(output, launch_session)
+    _write_node_readiness(
+        output,
+        identity=identity,
+        launch_session=launch_session,
+        plan=plan,
+        node_rank=node_rank,
+    )
+    deadline = time.monotonic() + ALL_NODE_READINESS_TIMEOUT_SECONDS
+
+    if node_rank == 0:
+        while time.monotonic() < deadline:
+            missing = False
+            for expected_rank in range(config.topology.nodes):
+                path = readiness_dir / f"node-{expected_rank}.json"
+                if not path.is_file():
+                    missing = True
+                    continue
+                try:
+                    observed = CyberMegatronNodeReadiness.model_validate_json(
+                        path.read_bytes()
+                    )
+                except (OSError, ValueError) as exc:
+                    raise RuntimeError(
+                        f"invalid readiness receipt from node {expected_rank}"
+                    ) from exc
+                expected = _node_readiness(
+                    identity=identity,
+                    launch_session=launch_session,
+                    plan=plan,
+                    node_rank=expected_rank,
+                )
+                if observed != expected:
+                    raise RuntimeError(
+                        f"node {expected_rank} readiness does not match the final launch plan"
+                    )
+            if not missing:
+                _write_launch_state(
+                    output,
+                    identity=identity,
+                    launch_session=launch_session,
+                    nodes=config.topology.nodes,
+                    state="ready",
+                )
+                return
+            time.sleep(LAUNCH_COORDINATION_POLL_SECONDS)
+        raise RuntimeError("timed out waiting for every node to pass launch preflight")
+
+    expected_session_sha = _launch_session_sha256(launch_session)
+    while time.monotonic() < deadline:
+        try:
+            state = CyberMegatronLaunchState.model_validate_json(state_path.read_bytes())
+        except (OSError, ValueError):
+            time.sleep(LAUNCH_COORDINATION_POLL_SECONDS)
+            continue
+        if state.run_identity_sha256 != identity.identity_sha256:
+            raise RuntimeError("readiness barrier has a different run identity")
+        if state.launch_session_sha256 != expected_session_sha:
+            raise RuntimeError("readiness barrier has a different launch session")
+        if state.nodes != config.topology.nodes:
+            raise RuntimeError("readiness barrier has a different node topology")
+        if state.state == "failed":
+            raise RuntimeError("node 0 rejected the all-node readiness barrier")
+        if state.state == "ready":
+            return
+        time.sleep(LAUNCH_COORDINATION_POLL_SECONDS)
+    raise RuntimeError("timed out waiting for the all-node readiness barrier")
 
 
 def build_cyber_megatron_command(
@@ -1233,6 +1401,25 @@ def execute_cyber_megatron_sft(
                 state="failed",
             )
         raise RuntimeError("Cyber Megatron plan is blocked: " + "; ".join(plan.blockers))
+    try:
+        _wait_for_all_nodes_ready(
+            config,
+            identity,
+            plan,
+            root=root_path,
+            node_rank=node_rank,
+            launch_session=launch_session,
+        )
+    except (OSError, RuntimeError):
+        if node_rank == 0:
+            _write_launch_state(
+                resolve_under_root(root_path, config.output_dir),
+                identity=identity,
+                launch_session=launch_session,
+                nodes=config.topology.nodes,
+                state="failed",
+            )
+        raise
     try:
         subprocess.run(plan.command, cwd=root_path, check=True)
     except (OSError, subprocess.CalledProcessError):

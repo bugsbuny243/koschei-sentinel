@@ -86,8 +86,9 @@ sentinel-cyber-megatron-sft \
 
 The approval value must exactly equal the config `run_id`. Node 0 exclusively creates and binds
 the output directory to the run/config/dataset digests. Other nodes wait for that exact identity
-and launch session instead of racing to create the directory. A missing, stale, or mismatched value
-blocks Megatron before training starts.
+and launch session instead of racing to create the directory. After the final plan, every node
+publishes a plan-digest-bound readiness receipt; node 0 opens the barrier only after all configured
+nodes match. A missing, stale, or mismatched value blocks Megatron before training starts.
 
 ## 6. Resume a failed run
 

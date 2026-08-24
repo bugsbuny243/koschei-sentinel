@@ -304,7 +304,10 @@ def test_promotion_eligible_gold_split_requires_release_audit(
     assert audit_calls == [tmp_path / "build" / "gold-defense-release"]
 
 
-def test_shared_output_is_bound_once_for_all_nodes(tmp_path) -> None:
+def test_shared_output_waits_for_fresh_resume_session(
+    tmp_path,
+    monkeypatch,
+) -> None:
     write_seed_curriculum(tmp_path / "build" / "cyber-training")
     config = _config()
     materialize_cyber_megatron_dataset(config, root=tmp_path)
@@ -334,15 +337,124 @@ def test_shared_output_is_bound_once_for_all_nodes(tmp_path) -> None:
         _coordinated_identity_sha256=identity.identity_sha256,
     )
     assert plan.static_ready is True
-    with pytest.raises(RuntimeError, match="different launch session"):
+    output = tmp_path / config.output_dir
+    model = output / "checkpoint-25" / "model"
+    adapter = output / "checkpoint-25" / "adapter"
+    model.mkdir(parents=True)
+    adapter.mkdir(parents=True)
+    resume = CyberMegatronResume(
+        mcore_model=str(model),
+        mcore_adapter=str(adapter),
+        binding_manifest=str(output / megatron_training.RUN_IDENTITY_FILENAME),
+    )
+    fresh_session = "397b-fresh-resume-session-0002"
+    sleep_calls = []
+
+    def _publish_fresh_state(_seconds):
+        if not sleep_calls:
+            megatron_training._write_launch_state(
+                output,
+                identity=identity,
+                launch_session=fresh_session,
+                nodes=config.topology.nodes,
+                state="launching",
+            )
+        sleep_calls.append(True)
+
+    monkeypatch.setattr(megatron_training.time, "sleep", _publish_fresh_state)
+    megatron_training._coordinate_launch(
+        config,
+        identity,
+        root=tmp_path,
+        node_rank=1,
+        launch_session=fresh_session,
+        resume=resume,
+    )
+    assert sleep_calls
+    with pytest.raises(RuntimeError, match="new unique"):
         megatron_training._coordinate_launch(
             config,
             identity,
             root=tmp_path,
-            node_rank=1,
-            launch_session="397b-other-session-0002",
-            resume=None,
+            node_rank=0,
+            launch_session=fresh_session,
+            resume=resume,
         )
+
+
+def test_all_nodes_must_pass_the_same_final_plan_before_launch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    write_seed_curriculum(tmp_path / "build" / "cyber-training")
+    config = _config()
+    materialize_cyber_megatron_dataset(config, root=tmp_path)
+    verification = verify_cyber_megatron_dataset(config, root=tmp_path)
+    identity = megatron_training._run_identity(config, verification)
+    session = "397b-readiness-session-0001"
+    megatron_training._coordinate_launch(
+        config,
+        identity,
+        root=tmp_path,
+        node_rank=0,
+        launch_session=session,
+        resume=None,
+    )
+    plan = plan_cyber_megatron_sft(
+        config,
+        root=tmp_path,
+        _coordinated_identity_sha256=identity.identity_sha256,
+    )
+    output = tmp_path / config.output_dir
+
+    monkeypatch.setattr(
+        megatron_training,
+        "ALL_NODE_READINESS_TIMEOUT_SECONDS",
+        0.0,
+    )
+    with pytest.raises(RuntimeError, match="every node"):
+        megatron_training._wait_for_all_nodes_ready(
+            config,
+            identity,
+            plan,
+            root=tmp_path,
+            node_rank=0,
+            launch_session=session,
+        )
+
+    monkeypatch.setattr(
+        megatron_training,
+        "ALL_NODE_READINESS_TIMEOUT_SECONDS",
+        1.0,
+    )
+    for node_rank in range(1, config.topology.nodes):
+        megatron_training._write_node_readiness(
+            output,
+            identity=identity,
+            launch_session=session,
+            plan=plan,
+            node_rank=node_rank,
+        )
+    megatron_training._wait_for_all_nodes_ready(
+        config,
+        identity,
+        plan,
+        root=tmp_path,
+        node_rank=0,
+        launch_session=session,
+    )
+    state = megatron_training.CyberMegatronLaunchState.model_validate_json(
+        (output / megatron_training.LAUNCH_STATE_FILENAME).read_bytes()
+    )
+    assert state.state == "ready"
+    megatron_training._wait_for_all_nodes_ready(
+        config,
+        identity,
+        plan,
+        root=tmp_path,
+        node_rank=1,
+        launch_session=session,
+    )
 
 
 def test_resume_requires_matching_run_config_and_dataset_binding(tmp_path) -> None:
