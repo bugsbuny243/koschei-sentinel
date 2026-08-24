@@ -1,5 +1,8 @@
 # Koschei Sentinel Cyber SFT — Kaggle Quota and Provenance Controls
 
+> Historical regression workflow. The active training target is now only
+> `Qwen/Qwen3.5-397B-A17B`; see `docs/CYBER_SFT_397B_MEGATRON.md`.
+
 This document defines the fail-closed free-GPU workflow for the first real Sentinel Cyber SFT runs.
 
 ## 1. Spend zero GPU quota first

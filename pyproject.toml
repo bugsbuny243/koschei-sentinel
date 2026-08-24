@@ -34,6 +34,9 @@ training = [
   "torch",
   "transformers>=5.12,<6",
 ]
+megatron = [
+  "ms-swift==4.5.2",
+]
 
 [project.scripts]
 koschei-sentinel = "koschei_sentinel.__main__:main"
@@ -52,6 +55,7 @@ sentinel-cyber-sft-export-verify = "koschei_sentinel.cyber_sft_export_verify_cli
 sentinel-cyber-sft-scale-gate = "koschei_sentinel.cyber_sft_scale_gate_cli:main"
 sentinel-cyber-sft-source-bind = "koschei_sentinel.cyber_sft_training_source_cli:main"
 sentinel-cyber-sft-reuse-check = "koschei_sentinel.cyber_sft_run_reuse_cli:main"
+sentinel-cyber-megatron-sft = "koschei_sentinel.cyber_megatron_training_cli:main"
 sentinel-cyber-model-preflight = "koschei_sentinel.cyber_model_access_preflight_cli:main"
 sentinel-cyber-seed-curriculum = "koschei_sentinel.cyber_seed_curriculum_cli:main"
 sentinel-cyber-training-readiness = "koschei_sentinel.cyber_training_readiness_cli:main"

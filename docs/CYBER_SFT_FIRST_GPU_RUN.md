@@ -1,5 +1,9 @@
 # Koschei Sentinel — First Verified Cyber SFT GPU Run
 
+> Historical 9B regression record. It is not an active training target or a prerequisite.
+> The only active target is `Qwen/Qwen3.5-397B-A17B`; see
+> `docs/CYBER_SFT_397B_MEGATRON.md`.
+
 This document describes the first real model-weight update in the Cyber SFT line.
 
 ## Scope
@@ -130,5 +134,5 @@ merely because training loss decreases or artifact verification passes.
 Production promotion still requires human-reviewed training material plus the versioned
 single-incident, multi-incident/world-line, resource-load and authority/grounding safety gates.
 
-The 35B-A3B MoE development tier remains `MOE_DISTRIBUTED_REQUIRED` and is intentionally blocked
-from this single-GPU trainer.
+Historical 35B-A3B material is likewise not an active training target and cannot be used to
+bypass the single-model Qwen3.5-397B-A17B contract.
