@@ -37,6 +37,11 @@ training = [
 megatron = [
   "ms-swift==4.5.2",
 ]
+holdout = [
+  "ms-swift==4.5.2",
+  "vllm==0.17.0",
+  "ray[cgraph]",
+]
 
 [project.scripts]
 koschei-sentinel = "koschei_sentinel.__main__:main"
@@ -59,6 +64,7 @@ sentinel-cyber-sft-reuse-check = "koschei_sentinel.cyber_sft_run_reuse_cli:main"
 sentinel-cyber-megatron-sft = "koschei_sentinel.cyber_megatron_training_cli:main"
 sentinel-cyber-megatron-candidate = "koschei_sentinel.cyber_megatron_candidate_cli:main"
 sentinel-cyber-megatron-holdout = "koschei_sentinel.cyber_megatron_holdout_cli:main"
+sentinel-cyber-megatron-holdout-worker = "koschei_sentinel.cyber_megatron_holdout_worker_cli:main"
 sentinel-cyber-model-preflight = "koschei_sentinel.cyber_model_access_preflight_cli:main"
 sentinel-cyber-seed-curriculum = "koschei_sentinel.cyber_seed_curriculum_cli:main"
 sentinel-cyber-training-readiness = "koschei_sentinel.cyber_training_readiness_cli:main"
