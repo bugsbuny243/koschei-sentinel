@@ -36,6 +36,25 @@ def _sha256_canonical(payload: object) -> str:
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
+def _training_bundle_sha256(bundle: CyberTrainingBundle) -> str:
+    payload = "|".join(
+        [
+            bundle.bundle_id,
+            bundle.foundation_model_ref,
+            bundle.foundation_model_revision,
+            bundle.knowledge_batch_id,
+            bundle.knowledge_training_corpus_sha256,
+            bundle.knowledge_artifact_manifest_sha256,
+            bundle.defense_reflex_examples_sha256,
+            str(bundle.defense_reflex_example_count),
+            bundle.causal_defense_examples_sha256,
+            str(bundle.causal_defense_example_count),
+            bundle.eval_holdout_sha256,
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _gold_passes_policy(
     report: GoldHoldoutEvaluationReport,
     policy: GoldHoldoutEvaluationPolicy,
@@ -167,6 +186,8 @@ def build_cyber_defense_promotion_v5(
         raise ValueError("Promotion v5 candidate revision must equal the pinned model revision")
     if not training_bundle.ready_for_training:
         raise ValueError("Promotion v5 training bundle is not ready")
+    if training_bundle.bundle_sha256 != _training_bundle_sha256(training_bundle):
+        raise ValueError("Promotion v5 training bundle self-binding digest does not verify")
     if training_bundle.foundation_model_ref != candidate_model_ref:
         raise ValueError("Promotion v5 training bundle model differs from candidate")
     if training_bundle.foundation_model_revision != candidate_model_revision:
