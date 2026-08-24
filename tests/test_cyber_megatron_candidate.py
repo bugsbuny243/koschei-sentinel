@@ -136,12 +136,19 @@ def _fixture(tmp_path, *, gold_audit=True, completed=True):
     plan_path = tmp_path / "build" / "megatron" / "397b-plan.json"
     _write_json(plan_path, plan)
 
-    checkpoint = output_root / "checkpoint-100"
-    (checkpoint / "model").mkdir(parents=True)
-    (checkpoint / "adapter").mkdir(parents=True)
-    (checkpoint / "model" / "weights.safetensors").write_bytes(b"mcore-weights")
-    (checkpoint / "adapter" / "adapter_model.safetensors").write_bytes(b"lora-weights")
-    (checkpoint / "metadata.json").write_text('{"iteration":100}\n', encoding="utf-8")
+    # ms-swift's Qwen3.5 Megatron flow performs inference from the merged,
+    # Hugging Face-compatible checkpoint rather than the raw MCore training state.
+    checkpoint = output_root / "checkpoint-100-merged"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "config.json").write_text(
+        json.dumps({"model_type": "qwen3_5_moe_text"}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (checkpoint / "model.safetensors").write_bytes(b"merged-397b-weights")
+    (checkpoint / "tokenizer_config.json").write_text(
+        json.dumps({"model_max_length": 8192}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     return config, config_path, dataset, identity, plan, plan_path, checkpoint
 
@@ -168,12 +175,12 @@ def test_candidate_snapshot_binds_gold_run_plan_and_exact_checkpoint(tmp_path) -
     assert manifest.run_identity_sha256 == identity.identity_sha256
     assert manifest.gold_release_audit_sha256 == dataset.gold_release_audit_sha256
     assert manifest.plan_contract_sha256 == _plan_sha256(plan)
-    assert manifest.checkpoint_relative_path == "checkpoint-100"
+    assert manifest.checkpoint_relative_path == "checkpoint-100-merged"
     assert manifest.checkpoint_file_count == 3
     assert [row.path for row in manifest.checkpoint_files] == [
-        "adapter/adapter_model.safetensors",
-        "metadata.json",
-        "model/weights.safetensors",
+        "config.json",
+        "model.safetensors",
+        "tokenizer_config.json",
     ]
     assert manifest.candidate_sha256
 
@@ -202,7 +209,7 @@ def test_candidate_verification_fails_after_single_checkpoint_byte_changes(tmp_p
         output_path=_relative(tmp_path, manifest_path),
     )
 
-    (checkpoint / "model" / "weights.safetensors").write_bytes(b"tampered")
+    (checkpoint / "model.safetensors").write_bytes(b"tampered")
     verification = verify_cyber_megatron_candidate(
         root=tmp_path,
         manifest_path=_relative(tmp_path, manifest_path),
@@ -219,8 +226,8 @@ def test_candidate_snapshot_rejects_symlink_inside_checkpoint(tmp_path) -> None:
     _config_obj, config_path, _dataset, _identity, _plan, plan_path, checkpoint = _fixture(
         tmp_path
     )
-    target = checkpoint / "model" / "weights.safetensors"
-    (checkpoint / "model" / "alias.safetensors").symlink_to(target)
+    target = checkpoint / "model.safetensors"
+    (checkpoint / "alias.safetensors").symlink_to(target)
 
     with pytest.raises(ValueError, match="symlink"):
         build_cyber_megatron_candidate(
