@@ -1,5 +1,9 @@
 # Koschei Sentinel Cyber SFT — Kaggle GPU Run
 
+> Historical regression workflow. The active training target is now only
+> `Qwen/Qwen3.5-397B-A17B`; see `docs/CYBER_SFT_397B_MEGATRON.md`. Nothing in this
+> Kaggle workflow is an active model tier or a prerequisite for the 397B run.
+
 The preferred free-GPU path is now **micro-first**. Do not make Qwen3.5-9B the first proof of the training stack.
 
 Start with:
