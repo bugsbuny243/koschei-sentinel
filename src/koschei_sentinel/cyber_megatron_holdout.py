@@ -30,6 +30,7 @@ from koschei_sentinel.promotion import load_owner_public_key, public_key_fingerp
 from koschei_sentinel.training import atomic_write, canonical_json, resolve_under_root
 
 _DIGEST = r"^[a-f0-9]{64}$"
+_PRODUCTION_MINIMUM_HOLDOUT_CASES = 50
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -62,6 +63,7 @@ class CyberMegatronHoldoutPlan(StrictModel):
     candidate_sha256: str = Field(pattern=_DIGEST)
     checkpoint_tree_sha256: str = Field(pattern=_DIGEST)
     gold_release_audit_sha256: str = Field(pattern=_DIGEST)
+    minimum_case_count: int = Field(ge=1)
     case_count: int = Field(gt=0)
     case_ids: list[str] = Field(min_length=1)
     case_ids_sha256: str = Field(pattern=_DIGEST)
@@ -74,6 +76,7 @@ class CyberMegatronHoldoutPlan(StrictModel):
     reviewer_trust_policy_file_sha256: str = Field(pattern=_DIGEST)
     reviewer_trust_policy_digest: str = Field(pattern=_DIGEST)
     owner_key_fingerprint: str = Field(pattern=_DIGEST)
+    generation_policy: GoldHoldoutGenerationPolicy
     generation_policy_sha256: str = Field(pattern=_DIGEST)
     answer_key_isolated: Literal[True] = True
     deterministic_generation: Literal[True] = True
@@ -88,8 +91,12 @@ class CyberMegatronHoldoutPlan(StrictModel):
             raise ValueError("397B HOLDOUT case_ids must be unique")
         if self.case_count != len(self.case_ids):
             raise ValueError("397B HOLDOUT case_count differs from case_ids")
+        if self.case_count < self.minimum_case_count:
+            raise ValueError("397B HOLDOUT case_count is below the bound minimum")
         if _sha256_canonical(self.case_ids) != self.case_ids_sha256:
             raise ValueError("397B HOLDOUT case_ids_sha256 does not verify")
+        if _policy_sha256(self.generation_policy) != self.generation_policy_sha256:
+            raise ValueError("397B HOLDOUT generation policy SHA does not verify")
         if self.prediction_identity_digest != self.checkpoint_tree_sha256:
             raise ValueError(
                 "397B HOLDOUT prediction identity must equal checkpoint tree identity"
@@ -121,7 +128,10 @@ def _expected_holdout_plan(
     reviewer_trust_policy_path: Path,
     owner_public_key_path: Path,
     generation_policy: GoldHoldoutGenerationPolicy,
+    minimum_case_count: int,
 ) -> CyberMegatronHoldoutPlan:
+    if minimum_case_count < 1:
+        raise ValueError("397B HOLDOUT minimum_case_count must be positive")
     candidate_verification = verify_cyber_megatron_candidate(
         root=root,
         manifest_path=candidate_manifest_path,
@@ -196,6 +206,11 @@ def _expected_holdout_plan(
     case_ids = [case.case_id for case in cases]
     if case_ids != inference_manifest.case_ids:
         raise ValueError("Gold HOLDOUT admitted case IDs differ from inference manifest")
+    if len(case_ids) < minimum_case_count:
+        raise ValueError(
+            "397B HOLDOUT admitted pack is below minimum case count: "
+            f"{len(case_ids)} < {minimum_case_count}"
+        )
 
     unsigned: dict[str, object] = {
         "schema_version": "sentinel.cyber-megatron-holdout-plan.v1",
@@ -207,6 +222,7 @@ def _expected_holdout_plan(
         "candidate_sha256": candidate.candidate_sha256,
         "checkpoint_tree_sha256": candidate.checkpoint_tree_sha256,
         "gold_release_audit_sha256": candidate.gold_release_audit_sha256,
+        "minimum_case_count": minimum_case_count,
         "case_count": len(case_ids),
         "case_ids": case_ids,
         "case_ids_sha256": _sha256_canonical(case_ids),
@@ -219,6 +235,7 @@ def _expected_holdout_plan(
         "reviewer_trust_policy_file_sha256": _sha256_bytes(trust_policy_raw),
         "reviewer_trust_policy_digest": trust_policy.policy_digest,
         "owner_key_fingerprint": owner_fingerprint,
+        "generation_policy": generation_policy.model_dump(mode="json"),
         "generation_policy_sha256": _policy_sha256(generation_policy),
         "answer_key_isolated": True,
         "deterministic_generation": True,
@@ -247,6 +264,7 @@ def build_cyber_megatron_holdout_plan(
     owner_public_key_path: str | Path,
     output_path: str | Path,
     generation_policy: GoldHoldoutGenerationPolicy | None = None,
+    minimum_case_count: int = _PRODUCTION_MINIMUM_HOLDOUT_CASES,
     root: str | Path = ".",
 ) -> CyberMegatronHoldoutPlan:
     root_path = Path(root).resolve()
@@ -269,6 +287,7 @@ def build_cyber_megatron_holdout_plan(
         reviewer_trust_policy_path=Path(reviewer_trust_policy_path),
         owner_public_key_path=Path(owner_public_key_path),
         generation_policy=selected_policy,
+        minimum_case_count=minimum_case_count,
     )
     atomic_write(destination, _plan_text(plan))
     return plan
@@ -287,6 +306,7 @@ def verify_cyber_megatron_holdout_plan(
     reviewer_trust_policy_path: str | Path,
     owner_public_key_path: str | Path,
     generation_policy: GoldHoldoutGenerationPolicy | None = None,
+    minimum_case_count: int = _PRODUCTION_MINIMUM_HOLDOUT_CASES,
     root: str | Path = ".",
 ) -> CyberMegatronHoldoutPlanVerification:
     root_path = Path(root).resolve()
@@ -310,6 +330,11 @@ def verify_cyber_megatron_holdout_plan(
         )
 
     violations: list[str] = []
+    selected_policy = generation_policy or GoldHoldoutGenerationPolicy()
+    if observed.minimum_case_count != minimum_case_count:
+        violations.append("397B HOLDOUT plan minimum case floor differs from verifier policy")
+    if observed.generation_policy != selected_policy:
+        violations.append("397B HOLDOUT generation policy differs from verifier policy")
     if raw != _plan_text(observed).encode("utf-8"):
         violations.append("397B HOLDOUT plan is not canonical byte-for-byte")
     try:
@@ -333,7 +358,8 @@ def verify_cyber_megatron_holdout_plan(
             reviewer_public_key_path=Path(reviewer_public_key_path),
             reviewer_trust_policy_path=Path(reviewer_trust_policy_path),
             owner_public_key_path=Path(owner_public_key_path),
-            generation_policy=generation_policy or GoldHoldoutGenerationPolicy(),
+            generation_policy=selected_policy,
+            minimum_case_count=minimum_case_count,
         )
     except (OSError, TypeError, ValueError) as exc:
         violations.append(f"397B HOLDOUT source revalidation failed: {exc}")
