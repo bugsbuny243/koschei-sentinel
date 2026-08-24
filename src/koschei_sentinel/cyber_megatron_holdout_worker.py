@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import importlib.metadata
 import json
 import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeVar
 
 from pydantic import Field, model_validator
 
@@ -38,7 +39,7 @@ from koschei_sentinel.gold_holdout_inference_runner import (
     _prompt_messages,
 )
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.training import atomic_write, canonical_json, resolve_under_root
+from koschei_sentinel.training import atomic_write, canonical_json
 
 _DIGEST = r"^[a-f0-9]{64}$"
 WORKER_PLAN_FILENAME = "worker-plan.json"
@@ -53,6 +54,8 @@ HOLDOUT_LAUNCH_APPROVAL_ENV = "KOSCHEI_397B_HOLDOUT_APPROVED"
 HOLDOUT_LAUNCH_SESSION_ENV = "KOSCHEI_397B_HOLDOUT_SESSION"
 HOLDOUT_LAUNCH_APPROVAL_VALUE = "YES_I_ACCEPT_GPU_COST"
 RAY_ADDRESS_ENV = "RAY_ADDRESS"
+
+_ModelT = TypeVar("_ModelT", bound=StrictModel)
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -73,11 +76,7 @@ def _json_text(model: StrictModel) -> str:
 
 def _jsonl_text(rows: list[StrictModel]) -> str:
     return "".join(
-        json.dumps(
-            row.model_dump(mode="json"),
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+        json.dumps(row.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
         + "\n"
         for row in rows
     )
@@ -85,8 +84,7 @@ def _jsonl_text(rows: list[StrictModel]) -> str:
 
 def _request_jsonl_text(rows: list[dict[str, object]]) -> str:
     return "".join(
-        json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
-        for row in rows
+        json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n" for row in rows
     )
 
 
@@ -99,27 +97,15 @@ def _read_regular_bytes(path: Path, label: str) -> bytes:
         raise ValueError(f"cannot read {label}") from exc
 
 
-def _load_holdout_plan(path: Path) -> tuple[CyberMegatronHoldoutPlan, bytes]:
-    raw = _read_regular_bytes(path, "397B HOLDOUT plan")
+def _load_canonical_model(path: Path, model_type: type[_ModelT], label: str) -> tuple[_ModelT, bytes]:
+    raw = _read_regular_bytes(path, label)
     try:
-        return CyberMegatronHoldoutPlan.model_validate_json(raw), raw
+        model = model_type.model_validate_json(raw)
     except ValueError as exc:
-        raise ValueError("397B HOLDOUT plan cannot be parsed") from exc
-
-
-def _load_candidate(path: Path) -> CyberMegatronCandidateManifest:
-    raw = _read_regular_bytes(path, "397B candidate manifest")
-    try:
-        return CyberMegatronCandidateManifest.model_validate_json(raw)
-    except ValueError as exc:
-        raise ValueError("397B candidate manifest cannot be parsed") from exc
-
-
-def _package_version(name: str) -> str:
-    try:
-        return importlib.metadata.version(name)
-    except importlib.metadata.PackageNotFoundError as exc:
-        raise ValueError(f"required runtime package is not installed: {name}") from exc
+        raise ValueError(f"{label} cannot be parsed") from exc
+    if raw != _json_text(model).encode("utf-8"):
+        raise ValueError(f"{label} is not canonical byte-for-byte")
+    return model, raw
 
 
 class CyberMegatronHoldoutWorkerProfile(StrictModel):
@@ -185,8 +171,7 @@ class CyberMegatronHoldoutRequestManifest(StrictModel):
             raise ValueError("397B worker request case_ids must be unique")
         if self.case_count != len(self.case_ids) or self.case_count != len(self.bindings):
             raise ValueError("397B worker request count differs from bindings")
-        binding_ids = [row.case_id for row in self.bindings]
-        if binding_ids != self.case_ids:
+        if [row.case_id for row in self.bindings] != self.case_ids:
             raise ValueError("397B worker bindings must match sorted case_ids")
         expected = _sha256_canonical(
             [row.model_dump(mode="json") for row in self.bindings]
@@ -243,14 +228,16 @@ class CyberMegatronHoldoutWorkerPlan(StrictModel):
 
 
 class CyberMegatronHoldoutExecutionState(StrictModel):
-    schema_version: Literal["sentinel.cyber-megatron-holdout-execution-state.v1"] = (
-        "sentinel.cyber-megatron-holdout-execution-state.v1"
+    schema_version: Literal["sentinel.cyber-megatron-holdout-execution-state.v2"] = (
+        "sentinel.cyber-megatron-holdout-execution-state.v2"
     )
     worker_plan_sha256: str = Field(pattern=_DIGEST)
     command_sha256: str = Field(pattern=_DIGEST)
     checkpoint_tree_sha256: str = Field(pattern=_DIGEST)
     launch_session_sha256: str = Field(pattern=_DIGEST)
     ray_address_sha256: str = Field(pattern=_DIGEST)
+    ray_node_count: int = Field(ge=1)
+    ray_gpu_count: int = Field(ge=1)
     return_code: int = Field(ge=0, le=255)
     state: Literal["completed", "failed"]
     raw_results_sha256: str | None = Field(default=None, pattern=_DIGEST)
@@ -279,11 +266,7 @@ class CyberMegatronHoldoutFailure(StrictModel):
     case_id: str
     scenario_id: str
     input_context_sha256: str = Field(pattern=_DIGEST)
-    failure_type: Literal[
-        "MISSING_RESULT",
-        "DUPLICATE_RESULT",
-        "GENERATION_PARSE_ERROR",
-    ]
+    failure_type: Literal["MISSING_RESULT", "DUPLICATE_RESULT", "GENERATION_PARSE_ERROR"]
     detail: str = Field(min_length=1, max_length=4000)
 
 
@@ -342,32 +325,10 @@ class CyberMegatronHoldoutOutputVerification(StrictModel):
     verification_sha256: str = Field(pattern=_DIGEST)
 
 
-def _worker_plan_digest(payload: dict[str, object]) -> str:
+def _digest_without(payload: dict[str, object], field_name: str) -> str:
     unsigned = dict(payload)
-    unsigned.pop("plan_sha256", None)
+    unsigned.pop(field_name, None)
     return _sha256_canonical(unsigned)
-
-
-def _execution_state_digest(payload: dict[str, object]) -> str:
-    unsigned = dict(payload)
-    unsigned.pop("state_sha256", None)
-    return _sha256_canonical(unsigned)
-
-
-def _receipt_digest(payload: dict[str, object]) -> str:
-    unsigned = dict(payload)
-    unsigned.pop("receipt_sha256", None)
-    return _sha256_canonical(unsigned)
-
-
-def _verification_digest(payload: dict[str, object]) -> str:
-    unsigned = dict(payload)
-    unsigned.pop("verification_sha256", None)
-    return _sha256_canonical(unsigned)
-
-
-def _messages_sha256(messages: list[dict[str, str]]) -> str:
-    return _sha256_canonical(messages)
 
 
 def _build_request_material(
@@ -383,19 +344,18 @@ def _build_request_material(
                 case_id=case.case_id,
                 scenario_id=case.scenario_id,
                 input_context_sha256=case.input_context_sha256,
-                messages_sha256=_messages_sha256(messages),
+                messages_sha256=_sha256_canonical(messages),
             )
         )
     request_text = _request_jsonl_text(request_rows)
-    bindings_sha = _sha256_canonical(
-        [row.model_dump(mode="json") for row in bindings]
-    )
     manifest = CyberMegatronHoldoutRequestManifest(
         case_count=len(cases),
         case_ids=[case.case_id for case in cases],
         requests_sha256=_sha256_bytes(request_text.encode("utf-8")),
         bindings=bindings,
-        bindings_sha256=bindings_sha,
+        bindings_sha256=_sha256_canonical(
+            [row.model_dump(mode="json") for row in bindings]
+        ),
     )
     return request_text, manifest
 
@@ -408,9 +368,7 @@ def _validate_merged_inference_checkpoint(
     if not checkpoint_root.name.startswith("checkpoint-") or not checkpoint_root.name.endswith(
         "-merged"
     ):
-        raise ValueError(
-            "397B HOLDOUT inference requires SWIFT checkpoint-*-merged output"
-        )
+        raise ValueError("397B HOLDOUT inference requires SWIFT checkpoint-*-merged output")
     config_path = checkpoint_root / "config.json"
     if config_path.is_symlink() or not config_path.is_file():
         raise ValueError("397B merged inference checkpoint is missing config.json")
@@ -493,6 +451,48 @@ def _swift_command(
     ]
 
 
+def _fresh_holdout_plan(
+    *,
+    root: Path,
+    holdout_plan_path: str | Path,
+    candidate_manifest_path: str | Path,
+    candidate_config_path: str | Path,
+    candidate_training_plan_path: str | Path,
+    checkpoint_dir: str | Path,
+    inference_pack: str | Path,
+    signature_path: str | Path,
+    reviewer_public_key_path: str | Path,
+    reviewer_trust_policy_path: str | Path,
+    owner_public_key_path: str | Path,
+    minimum_case_count: int,
+) -> tuple[CyberMegatronHoldoutPlan, bytes]:
+    plan_path = _resolve_no_symlinks(root, holdout_plan_path, "397B HOLDOUT plan")
+    observed, raw = _load_canonical_model(plan_path, CyberMegatronHoldoutPlan, "397B HOLDOUT plan")
+    verification = verify_cyber_megatron_holdout_plan(
+        root=root,
+        plan_path=plan_path,
+        candidate_manifest_path=candidate_manifest_path,
+        candidate_config_path=candidate_config_path,
+        candidate_training_plan_path=candidate_training_plan_path,
+        checkpoint_dir=checkpoint_dir,
+        inference_pack=inference_pack,
+        signature_path=signature_path,
+        reviewer_public_key_path=reviewer_public_key_path,
+        reviewer_trust_policy_path=reviewer_trust_policy_path,
+        owner_public_key_path=owner_public_key_path,
+        minimum_case_count=minimum_case_count,
+    )
+    if not verification.valid or verification.plan is None:
+        detail = "; ".join(verification.violations[:5])
+        raise ValueError(
+            "397B HOLDOUT source plan does not freshly verify"
+            + (f": {detail}" if detail else "")
+        )
+    if observed != verification.plan:
+        raise ValueError("397B HOLDOUT plan differs from fresh source verification")
+    return observed, raw
+
+
 def prepare_cyber_megatron_holdout_worker(
     *,
     holdout_plan_path: str | Path,
@@ -511,11 +511,9 @@ def prepare_cyber_megatron_holdout_worker(
     root: str | Path = ".",
 ) -> CyberMegatronHoldoutWorkerPlan:
     root_path = Path(root).resolve()
-    plan_path = resolve_under_root(root_path, str(holdout_plan_path))
-    observed_plan, plan_raw = _load_holdout_plan(plan_path)
-    verification = verify_cyber_megatron_holdout_plan(
+    holdout_plan, holdout_raw = _fresh_holdout_plan(
         root=root_path,
-        plan_path=plan_path,
+        holdout_plan_path=holdout_plan_path,
         candidate_manifest_path=candidate_manifest_path,
         candidate_config_path=candidate_config_path,
         candidate_training_plan_path=candidate_training_plan_path,
@@ -527,41 +525,33 @@ def prepare_cyber_megatron_holdout_worker(
         owner_public_key_path=owner_public_key_path,
         minimum_case_count=minimum_case_count,
     )
-    if not verification.valid or verification.plan is None:
-        detail = "; ".join(verification.violations[:5])
-        raise ValueError(
-            "397B worker requires a freshly verified HOLDOUT plan"
-            + (f": {detail}" if detail else "")
-        )
-    if verification.plan != observed_plan:
-        raise ValueError("397B worker HOLDOUT plan differs from fresh verification")
-
-    candidate_path = resolve_under_root(root_path, str(candidate_manifest_path))
-    candidate = _load_candidate(candidate_path)
-    if candidate.candidate_sha256 != observed_plan.candidate_sha256:
+    candidate_path = _resolve_no_symlinks(
+        root_path, candidate_manifest_path, "397B candidate manifest"
+    )
+    candidate, _candidate_raw = _load_canonical_model(
+        candidate_path, CyberMegatronCandidateManifest, "397B candidate manifest"
+    )
+    if candidate.candidate_sha256 != holdout_plan.candidate_sha256:
         raise ValueError("397B worker candidate differs from HOLDOUT plan")
-    if candidate.checkpoint_tree_sha256 != observed_plan.checkpoint_tree_sha256:
+    if candidate.checkpoint_tree_sha256 != holdout_plan.checkpoint_tree_sha256:
         raise ValueError("397B worker checkpoint identity differs from HOLDOUT plan")
 
     checkpoint_path = _resolve_no_symlinks(root_path, checkpoint_dir, "397B merged checkpoint")
     _validate_merged_inference_checkpoint(
-        checkpoint_path,
-        expected_tree_sha256=candidate.checkpoint_tree_sha256,
+        checkpoint_path, expected_tree_sha256=candidate.checkpoint_tree_sha256
     )
-
     cases, _manifest, _manifest_raw = _load_inference_pack(inference_pack)
-    if [case.case_id for case in cases] != observed_plan.case_ids:
+    if [case.case_id for case in cases] != holdout_plan.case_ids:
         raise ValueError("397B worker inference pack case IDs differ from HOLDOUT plan")
     request_text, request_manifest = _build_request_material(cases)
 
     selected_profile = profile or CyberMegatronHoldoutWorkerProfile()
-    destination = resolve_under_root(root_path, str(output_dir))
+    destination = _resolve_no_symlinks(root_path, output_dir, "397B HOLDOUT worker output")
     if destination.exists():
         raise FileExistsError(f"397B HOLDOUT worker output already exists: {output_dir}")
     destination.mkdir(parents=True)
     requests_path = destination / REQUESTS_FILENAME
     bindings_path = destination / REQUEST_BINDINGS_FILENAME
-    worker_plan_path = destination / WORKER_PLAN_FILENAME
     raw_results_path = destination / RAW_RESULTS_FILENAME
     atomic_write(requests_path, request_text)
     atomic_write(bindings_path, _json_text(request_manifest))
@@ -573,27 +563,27 @@ def prepare_cyber_megatron_holdout_worker(
         checkpoint_path=checkpoint_relative,
         requests_path=requests_relative,
         raw_results_path=results_relative,
-        generation_policy=observed_plan.generation_policy,
+        generation_policy=holdout_plan.generation_policy,
         profile=selected_profile,
     )
     unsigned: dict[str, object] = {
         "schema_version": "sentinel.cyber-megatron-holdout-worker-plan.v2",
         "model": QWEN35_397B_MODEL,
         "model_revision": QWEN35_397B_REVISION,
-        "run_id": observed_plan.run_id,
-        "holdout_plan_file_sha256": _sha256_bytes(plan_raw),
-        "holdout_plan_sha256": observed_plan.plan_sha256,
+        "run_id": holdout_plan.run_id,
+        "holdout_plan_file_sha256": _sha256_bytes(holdout_raw),
+        "holdout_plan_sha256": holdout_plan.plan_sha256,
         "candidate_sha256": candidate.candidate_sha256,
         "checkpoint_tree_sha256": candidate.checkpoint_tree_sha256,
         "checkpoint_path": checkpoint_relative,
         "checkpoint_format": "swift-merged-hf",
         "request_count": len(cases),
-        "case_ids_sha256": observed_plan.case_ids_sha256,
+        "case_ids_sha256": holdout_plan.case_ids_sha256,
         "requests_sha256": request_manifest.requests_sha256,
         "request_bindings_sha256": request_manifest.bindings_sha256,
         "profile": selected_profile.model_dump(mode="json"),
-        "generation_policy": observed_plan.generation_policy.model_dump(mode="json"),
-        "generation_policy_sha256": observed_plan.generation_policy_sha256,
+        "generation_policy": holdout_plan.generation_policy.model_dump(mode="json"),
+        "generation_policy_sha256": holdout_plan.generation_policy_sha256,
         "answer_key_isolated": True,
         "deterministic_generation": True,
         "raw_result_format": "ms-swift-infer-jsonl",
@@ -603,66 +593,53 @@ def prepare_cyber_megatron_holdout_worker(
         "command_sha256": _sha256_canonical(command),
     }
     worker_plan = CyberMegatronHoldoutWorkerPlan(
-        **unsigned,
-        plan_sha256=_worker_plan_digest(unsigned),
+        **unsigned, plan_sha256=_sha256_canonical(unsigned)
     )
-    atomic_write(worker_plan_path, _json_text(worker_plan))
+    atomic_write(destination / WORKER_PLAN_FILENAME, _json_text(worker_plan))
     return worker_plan
 
 
-def _load_request_manifest(worker_root: Path) -> CyberMegatronHoldoutRequestManifest:
-    raw = _read_regular_bytes(
-        worker_root / REQUEST_BINDINGS_FILENAME,
-        "397B HOLDOUT request bindings",
-    )
-    try:
-        manifest = CyberMegatronHoldoutRequestManifest.model_validate_json(raw)
-    except ValueError as exc:
-        raise ValueError("397B HOLDOUT request bindings cannot be parsed") from exc
-    if raw != _json_text(manifest).encode("utf-8"):
-        raise ValueError("397B HOLDOUT request bindings are not canonical")
-    return manifest
-
-
 def _load_worker_plan(worker_root: Path) -> CyberMegatronHoldoutWorkerPlan:
-    raw = _read_regular_bytes(worker_root / WORKER_PLAN_FILENAME, "397B HOLDOUT worker plan")
-    try:
-        plan = CyberMegatronHoldoutWorkerPlan.model_validate_json(raw)
-    except ValueError as exc:
-        raise ValueError("397B HOLDOUT worker plan cannot be parsed") from exc
-    if raw != _json_text(plan).encode("utf-8"):
-        raise ValueError("397B HOLDOUT worker plan is not canonical")
+    plan, _raw = _load_canonical_model(
+        worker_root / WORKER_PLAN_FILENAME,
+        CyberMegatronHoldoutWorkerPlan,
+        "397B HOLDOUT worker plan",
+    )
     return plan
 
 
-def _preexecution_inventory(worker_root: Path) -> None:
-    expected = {
-        WORKER_PLAN_FILENAME,
-        REQUESTS_FILENAME,
-        REQUEST_BINDINGS_FILENAME,
-    }
+def _load_request_manifest(worker_root: Path) -> CyberMegatronHoldoutRequestManifest:
+    manifest, _raw = _load_canonical_model(
+        worker_root / REQUEST_BINDINGS_FILENAME,
+        CyberMegatronHoldoutRequestManifest,
+        "397B HOLDOUT request bindings",
+    )
+    return manifest
+
+
+def _worker_inventory(worker_root: Path, expected: set[str], label: str) -> None:
     observed: set[str] = set()
     for path in worker_root.rglob("*"):
         relative = path.relative_to(worker_root).as_posix()
         if path.is_symlink():
-            raise ValueError(f"397B HOLDOUT pre-execution output contains symlink: {relative}")
+            raise ValueError(f"{label} contains symlink: {relative}")
         if path.is_file():
             observed.add(relative)
     if observed != expected:
         raise ValueError(
-            "397B HOLDOUT pre-execution file set differs from sealed contract: "
-            f"expected={sorted(expected)} observed={sorted(observed)}"
+            f"{label} file set differs from sealed contract: "
+            f"missing={sorted(expected - observed)} extra={sorted(observed - expected)}"
         )
 
 
-def _verify_worker_preexecution(
-    *,
-    worker_root: Path,
-    root_path: Path,
-) -> CyberMegatronHoldoutWorkerPlan:
-    if worker_root.is_symlink() or not worker_root.is_dir():
-        raise ValueError("397B HOLDOUT worker directory is missing or symlinked")
-    _preexecution_inventory(worker_root)
+def _verify_preexecution(worker_root: Path, root_path: Path) -> CyberMegatronHoldoutWorkerPlan:
+    if not worker_root.is_dir():
+        raise ValueError("397B HOLDOUT worker directory is missing")
+    _worker_inventory(
+        worker_root,
+        {WORKER_PLAN_FILENAME, REQUESTS_FILENAME, REQUEST_BINDINGS_FILENAME},
+        "397B HOLDOUT pre-execution output",
+    )
     plan = _load_worker_plan(worker_root)
     request_manifest = _load_request_manifest(worker_root)
     requests_raw = _read_regular_bytes(worker_root / REQUESTS_FILENAME, "397B HOLDOUT requests")
@@ -676,13 +653,10 @@ def _verify_worker_preexecution(
         raise ValueError("397B HOLDOUT request count differs from worker plan")
 
     checkpoint_path = _resolve_no_symlinks(
-        root_path,
-        plan.checkpoint_path,
-        "397B merged checkpoint",
+        root_path, plan.checkpoint_path, "397B merged checkpoint"
     )
     _validate_merged_inference_checkpoint(
-        checkpoint_path,
-        expected_tree_sha256=plan.checkpoint_tree_sha256,
+        checkpoint_path, expected_tree_sha256=plan.checkpoint_tree_sha256
     )
     expected_command = _swift_command(
         checkpoint_path=plan.checkpoint_path,
@@ -693,19 +667,30 @@ def _verify_worker_preexecution(
     )
     if plan.command != expected_command:
         raise ValueError("397B HOLDOUT worker command differs from allowed command contract")
-    if _sha256_canonical(expected_command) != plan.command_sha256:
+    if plan.command_sha256 != _sha256_canonical(expected_command):
         raise ValueError("397B HOLDOUT worker command SHA differs from allowed command")
     return plan
 
 
+def _ray_cluster_capacity(address: str) -> tuple[int, int]:
+    try:
+        ray = importlib.import_module("ray")
+        ray.init(address=address, ignore_reinit_error=True, logging_level="ERROR")
+        nodes = [row for row in ray.nodes() if row.get("Alive")]
+        gpu_nodes = sum(float(row.get("Resources", {}).get("GPU", 0)) > 0 for row in nodes)
+        gpu_count = int(sum(float(row.get("Resources", {}).get("GPU", 0)) for row in nodes))
+        ray.shutdown()
+    except Exception as exc:
+        raise ValueError("cannot verify the configured Ray cluster capacity") from exc
+    return gpu_nodes, gpu_count
+
+
 def execute_cyber_megatron_holdout_worker(
-    *,
-    worker_dir: str | Path,
-    root: str | Path = ".",
+    *, worker_dir: str | Path, root: str | Path = "."
 ) -> int:
     root_path = Path(root).resolve()
-    worker_root = resolve_under_root(root_path, str(worker_dir))
-    plan = _verify_worker_preexecution(worker_root=worker_root, root_path=root_path)
+    worker_root = _resolve_no_symlinks(root_path, worker_dir, "397B HOLDOUT worker directory")
+    plan = _verify_preexecution(worker_root, root_path)
 
     if os.environ.get(HOLDOUT_LAUNCH_APPROVAL_ENV) != HOLDOUT_LAUNCH_APPROVAL_VALUE:
         raise PermissionError(
@@ -735,53 +720,52 @@ def execute_cyber_megatron_holdout_worker(
         raise ValueError("installed ms-swift version differs from worker plan")
     if runtime_versions["vllm"] != plan.profile.vllm_version:
         raise ValueError("installed vLLM version differs from worker plan")
+    ray_nodes, ray_gpus = _ray_cluster_capacity(ray_address)
+    if ray_nodes != plan.profile.nodes or ray_gpus != plan.profile.total_gpus:
+        raise ValueError(
+            "Ray cluster capacity differs from 397B worker plan: "
+            f"nodes={ray_nodes}/{plan.profile.nodes}, "
+            f"gpus={ray_gpus}/{plan.profile.total_gpus}"
+        )
 
-    raw_result_path = worker_root / RAW_RESULTS_FILENAME
+    raw_path = worker_root / RAW_RESULTS_FILENAME
     execution_path = worker_root / EXECUTION_STATE_FILENAME
-    if raw_result_path.exists():
+    if raw_path.exists():
         raise FileExistsError("397B HOLDOUT raw result already exists; SWIFT would append")
     if execution_path.exists():
         raise FileExistsError("397B HOLDOUT execution state already exists")
-
-    completed = subprocess.run(
-        plan.command,
-        cwd=root_path,
-        check=False,
-        env=os.environ.copy(),
-    )
+    completed = subprocess.run(plan.command, cwd=root_path, check=False, env=os.environ.copy())
     return_code = int(completed.returncode)
     if return_code < 0 or return_code > 255:
         raise ValueError("397B HOLDOUT subprocess returned an invalid exit code")
-    raw_sha: str | None = None
-    if raw_result_path.is_symlink():
+    if raw_path.is_symlink():
         raise ValueError("397B HOLDOUT raw result must not be a symlink")
-    if raw_result_path.is_file():
-        raw_sha = _sha256_bytes(raw_result_path.read_bytes())
+    raw_sha = _sha256_bytes(raw_path.read_bytes()) if raw_path.is_file() else None
     state_name: Literal["completed", "failed"] = (
         "completed" if return_code == 0 and raw_sha is not None else "failed"
     )
     unsigned: dict[str, object] = {
-        "schema_version": "sentinel.cyber-megatron-holdout-execution-state.v1",
+        "schema_version": "sentinel.cyber-megatron-holdout-execution-state.v2",
         "worker_plan_sha256": plan.plan_sha256,
         "command_sha256": plan.command_sha256,
         "checkpoint_tree_sha256": plan.checkpoint_tree_sha256,
         "launch_session_sha256": _sha256_text(session),
         "ray_address_sha256": _sha256_text(ray_address),
+        "ray_node_count": ray_nodes,
+        "ray_gpu_count": ray_gpus,
         "return_code": return_code,
         "state": state_name,
         "raw_results_sha256": raw_sha,
         "runtime_versions": runtime_versions,
     }
     state = CyberMegatronHoldoutExecutionState(
-        **unsigned,
-        state_sha256=_execution_state_digest(unsigned),
+        **unsigned, state_sha256=_sha256_canonical(unsigned)
     )
     atomic_write(execution_path, _json_text(state))
     return return_code
 
 
 def _parse_model_response(
-    *,
     case: GoldHoldoutInferenceCase,
     generated_text: str,
     checkpoint_tree_sha256: str,
@@ -790,12 +774,8 @@ def _parse_model_response(
         payload = json.loads(generated_text.strip())
     except json.JSONDecodeError as exc:
         raise ValueError("model output is not exactly one JSON object") from exc
-    if not isinstance(payload, dict):
-        raise ValueError("model output must be one JSON object")
-    if set(payload) != {"interpretation", "defense_sequence"}:
-        raise ValueError(
-            "model output must contain exactly interpretation and defense_sequence"
-        )
+    if not isinstance(payload, dict) or set(payload) != {"interpretation", "defense_sequence"}:
+        raise ValueError("model output must contain exactly interpretation and defense_sequence")
     interpretation = payload.get("interpretation")
     sequence_payload = payload.get("defense_sequence")
     if not isinstance(interpretation, str) or not interpretation.strip():
@@ -817,7 +797,6 @@ def _parse_model_response(
 
 
 def _replay_raw_results(
-    *,
     raw_results: bytes,
     cases: list[GoldHoldoutInferenceCase],
     request_manifest: CyberMegatronHoldoutRequestManifest,
@@ -846,12 +825,21 @@ def _replay_raw_results(
             raise ValueError(f"SWIFT result at line {line_number} is not an object")
         messages = payload.get("messages")
         response = payload.get("response")
-        if not isinstance(messages, list) or not all(isinstance(row, dict) for row in messages):
+        if not isinstance(messages, list) or not messages:
             raise ValueError(f"SWIFT result at line {line_number} has no messages list")
         if not isinstance(response, str):
             raise ValueError(f"SWIFT result at line {line_number} has no text response")
-        message_digest = _sha256_canonical(messages)
-        binding = binding_by_messages.get(message_digest)
+        if not all(isinstance(row, dict) for row in messages):
+            raise ValueError(f"SWIFT result at line {line_number} has malformed messages")
+        assistant = messages[-1]
+        if assistant.get("role") != "assistant" or assistant.get("content") != response:
+            raise ValueError(
+                f"SWIFT result at line {line_number} assistant message differs from response"
+            )
+        request_messages = messages[:-1]
+        if not request_messages:
+            raise ValueError(f"SWIFT result at line {line_number} omits the original request")
+        binding = binding_by_messages.get(_sha256_canonical(request_messages))
         if binding is None:
             raise ValueError(f"SWIFT result at line {line_number} is not a planned request")
         case = case_by_id[binding.case_id]
@@ -868,9 +856,7 @@ def _replay_raw_results(
         seen.add(binding.case_id)
         try:
             predictions[binding.case_id] = _parse_model_response(
-                case=case,
-                generated_text=response,
-                checkpoint_tree_sha256=checkpoint_tree_sha256,
+                case, response, checkpoint_tree_sha256
             )
         except ValueError as exc:
             failures[binding.case_id] = CyberMegatronHoldoutFailure(
@@ -892,7 +878,6 @@ def _replay_raw_results(
             )
         if case.case_id in failures:
             predictions.pop(case.case_id, None)
-
     return (
         [predictions[case_id] for case_id in sorted(predictions)],
         [failures[case_id] for case_id in sorted(failures)],
@@ -900,42 +885,36 @@ def _replay_raw_results(
 
 
 def _load_execution_state(worker_root: Path) -> CyberMegatronHoldoutExecutionState:
-    raw = _read_regular_bytes(
+    state, _raw = _load_canonical_model(
         worker_root / EXECUTION_STATE_FILENAME,
+        CyberMegatronHoldoutExecutionState,
         "397B HOLDOUT execution state",
     )
-    try:
-        state = CyberMegatronHoldoutExecutionState.model_validate_json(raw)
-    except ValueError as exc:
-        raise ValueError("397B HOLDOUT execution state cannot be parsed") from exc
-    if raw != _json_text(state).encode("utf-8"):
-        raise ValueError("397B HOLDOUT execution state is not canonical")
     return state
 
 
 def finalize_cyber_megatron_holdout_worker(
-    *,
-    worker_dir: str | Path,
-    inference_pack: str | Path,
-    root: str | Path = ".",
+    *, worker_dir: str | Path, inference_pack: str | Path, root: str | Path = "."
 ) -> CyberMegatronHoldoutRunReceipt:
     root_path = Path(root).resolve()
-    worker_root = resolve_under_root(root_path, str(worker_dir))
+    worker_root = _resolve_no_symlinks(root_path, worker_dir, "397B HOLDOUT worker directory")
     plan = _load_worker_plan(worker_root)
     request_manifest = _load_request_manifest(worker_root)
     execution = _load_execution_state(worker_root)
     if execution.state != "completed" or execution.return_code != 0:
         raise ValueError("397B HOLDOUT cannot finalize a failed SWIFT execution")
-    if execution.worker_plan_sha256 != plan.plan_sha256:
+    execution_checks = (
+        execution.worker_plan_sha256 == plan.plan_sha256,
+        execution.command_sha256 == plan.command_sha256,
+        execution.checkpoint_tree_sha256 == plan.checkpoint_tree_sha256,
+        execution.ray_node_count == plan.profile.nodes,
+        execution.ray_gpu_count == plan.profile.total_gpus,
+        execution.runtime_versions.get("ms-swift") == plan.profile.ms_swift_version,
+        execution.runtime_versions.get("vllm") == plan.profile.vllm_version,
+        bool(execution.runtime_versions.get("ray")),
+    )
+    if not all(execution_checks):
         raise ValueError("397B HOLDOUT execution state differs from worker plan")
-    if execution.command_sha256 != plan.command_sha256:
-        raise ValueError("397B HOLDOUT execution command differs from worker plan")
-    if execution.checkpoint_tree_sha256 != plan.checkpoint_tree_sha256:
-        raise ValueError("397B HOLDOUT execution checkpoint differs from worker plan")
-    if execution.runtime_versions.get("ms-swift") != plan.profile.ms_swift_version:
-        raise ValueError("397B HOLDOUT execution ms-swift version differs from worker plan")
-    if execution.runtime_versions.get("vllm") != plan.profile.vllm_version:
-        raise ValueError("397B HOLDOUT execution vLLM version differs from worker plan")
 
     requests_raw = _read_regular_bytes(worker_root / REQUESTS_FILENAME, "397B HOLDOUT requests")
     if _sha256_bytes(requests_raw) != plan.requests_sha256:
@@ -944,32 +923,26 @@ def finalize_cyber_megatron_holdout_worker(
         raise ValueError("397B HOLDOUT request manifest differs from worker plan")
     if request_manifest.bindings_sha256 != plan.request_bindings_sha256:
         raise ValueError("397B HOLDOUT request bindings differ from worker plan")
-
     cases, _manifest, _manifest_raw = _load_inference_pack(inference_pack)
     if [case.case_id for case in cases] != request_manifest.case_ids:
         raise ValueError("397B HOLDOUT inference pack differs from worker requests")
-    raw_results = _read_regular_bytes(
-        worker_root / RAW_RESULTS_FILENAME,
-        "397B SWIFT raw results",
-    )
+    raw_results = _read_regular_bytes(worker_root / RAW_RESULTS_FILENAME, "397B SWIFT raw results")
     if execution.raw_results_sha256 != _sha256_bytes(raw_results):
         raise ValueError("397B HOLDOUT raw results differ from execution state")
     predictions, failures = _replay_raw_results(
-        raw_results=raw_results,
-        cases=cases,
-        request_manifest=request_manifest,
-        checkpoint_tree_sha256=plan.checkpoint_tree_sha256,
+        raw_results, cases, request_manifest, plan.checkpoint_tree_sha256
     )
     prediction_text = _jsonl_text(predictions)
     failure_text = _jsonl_text(failures)
-    prediction_path = worker_root / PREDICTIONS_FILENAME
-    failure_path = worker_root / FAILURES_FILENAME
-    receipt_path = worker_root / RECEIPT_FILENAME
-    for path in (prediction_path, failure_path, receipt_path):
-        if path.exists():
-            raise FileExistsError(f"397B HOLDOUT finalize output already exists: {path.name}")
-    atomic_write(prediction_path, prediction_text)
-    atomic_write(failure_path, failure_text)
+    output_paths = [
+        worker_root / PREDICTIONS_FILENAME,
+        worker_root / FAILURES_FILENAME,
+        worker_root / RECEIPT_FILENAME,
+    ]
+    if any(path.exists() for path in output_paths):
+        raise FileExistsError("397B HOLDOUT finalize output already exists")
+    atomic_write(output_paths[0], prediction_text)
+    atomic_write(output_paths[1], failure_text)
 
     unsigned: dict[str, object] = {
         "schema_version": "sentinel.cyber-megatron-holdout-run-receipt.v2",
@@ -990,10 +963,9 @@ def finalize_cyber_megatron_holdout_worker(
         "runtime_versions": execution.runtime_versions,
     }
     receipt = CyberMegatronHoldoutRunReceipt(
-        **unsigned,
-        receipt_sha256=_receipt_digest(unsigned),
+        **unsigned, receipt_sha256=_sha256_canonical(unsigned)
     )
-    atomic_write(receipt_path, _json_text(receipt))
+    atomic_write(output_paths[2], _json_text(receipt))
     return receipt
 
 
@@ -1016,46 +988,30 @@ def verify_cyber_megatron_holdout_output(
     root_path = Path(root).resolve()
     violations: list[str] = []
     request_count = prediction_count = failure_count = 0
-    source_plan_verified = False
-    worker_plan_verified = False
-    request_binding_verified = False
-    execution_verified = False
-    raw_results_replayed = False
-    receipt_verified = False
+    source_plan_verified = worker_plan_verified = request_binding_verified = False
+    execution_verified = raw_results_replayed = receipt_verified = False
     complete_case_accounting = False
-
     try:
-        worker_root = resolve_under_root(root_path, str(worker_dir))
-        if worker_root.is_symlink() or not worker_root.is_dir():
-            raise ValueError("397B HOLDOUT worker output directory is missing or symlinked")
-        expected_files = {
-            WORKER_PLAN_FILENAME,
-            REQUESTS_FILENAME,
-            REQUEST_BINDINGS_FILENAME,
-            RAW_RESULTS_FILENAME,
-            EXECUTION_STATE_FILENAME,
-            PREDICTIONS_FILENAME,
-            FAILURES_FILENAME,
-            RECEIPT_FILENAME,
-        }
-        observed_files: set[str] = set()
-        for path in worker_root.rglob("*"):
-            relative = path.relative_to(worker_root).as_posix()
-            if path.is_symlink():
-                raise ValueError(f"397B HOLDOUT worker output contains symlink: {relative}")
-            if path.is_file():
-                observed_files.add(relative)
-        if observed_files != expected_files:
-            missing = sorted(expected_files - observed_files)
-            extra = sorted(observed_files - expected_files)
-            raise ValueError(
-                "397B HOLDOUT worker output file set differs from sealed contract: "
-                f"missing={missing}; extra={extra}"
-            )
-
-        holdout_verification = verify_cyber_megatron_holdout_plan(
+        worker_root = _resolve_no_symlinks(
+            root_path, worker_dir, "397B HOLDOUT worker directory"
+        )
+        _worker_inventory(
+            worker_root,
+            {
+                WORKER_PLAN_FILENAME,
+                REQUESTS_FILENAME,
+                REQUEST_BINDINGS_FILENAME,
+                RAW_RESULTS_FILENAME,
+                EXECUTION_STATE_FILENAME,
+                PREDICTIONS_FILENAME,
+                FAILURES_FILENAME,
+                RECEIPT_FILENAME,
+            },
+            "397B HOLDOUT worker output",
+        )
+        holdout_plan, _holdout_raw = _fresh_holdout_plan(
             root=root_path,
-            plan_path=holdout_plan_path,
+            holdout_plan_path=holdout_plan_path,
             candidate_manifest_path=candidate_manifest_path,
             candidate_config_path=candidate_config_path,
             candidate_training_plan_path=candidate_training_plan_path,
@@ -1067,14 +1023,7 @@ def verify_cyber_megatron_holdout_output(
             owner_public_key_path=owner_public_key_path,
             minimum_case_count=minimum_case_count,
         )
-        if not holdout_verification.valid or holdout_verification.plan is None:
-            raise ValueError(
-                "397B source HOLDOUT plan does not freshly verify: "
-                + "; ".join(holdout_verification.violations[:5])
-            )
         source_plan_verified = True
-        holdout_plan = holdout_verification.plan
-
         worker_plan = _load_worker_plan(worker_root)
         expected_command = _swift_command(
             checkpoint_path=worker_plan.checkpoint_path,
@@ -1083,7 +1032,7 @@ def verify_cyber_megatron_holdout_output(
             generation_policy=worker_plan.generation_policy,
             profile=worker_plan.profile,
         )
-        worker_plan_checks = (
+        worker_checks = (
             worker_plan.holdout_plan_sha256 == holdout_plan.plan_sha256,
             worker_plan.candidate_sha256 == holdout_plan.candidate_sha256,
             worker_plan.checkpoint_tree_sha256 == holdout_plan.checkpoint_tree_sha256,
@@ -1093,28 +1042,21 @@ def verify_cyber_megatron_holdout_output(
             worker_plan.generation_policy_sha256 == holdout_plan.generation_policy_sha256,
             worker_plan.command == expected_command,
             worker_plan.command_sha256 == _sha256_canonical(expected_command),
-            _worker_plan_digest(worker_plan.model_dump(mode="json")) == worker_plan.plan_sha256,
         )
-        if not all(worker_plan_checks):
+        if not all(worker_checks):
             raise ValueError("397B HOLDOUT worker plan differs from verified source plan")
         checkpoint_path = _resolve_no_symlinks(
-            root_path,
-            worker_plan.checkpoint_path,
-            "397B merged checkpoint",
+            root_path, worker_plan.checkpoint_path, "397B merged checkpoint"
         )
         _validate_merged_inference_checkpoint(
-            checkpoint_path,
-            expected_tree_sha256=worker_plan.checkpoint_tree_sha256,
+            checkpoint_path, expected_tree_sha256=worker_plan.checkpoint_tree_sha256
         )
         worker_plan_verified = True
         request_count = worker_plan.request_count
 
-        request_manifest = _load_request_manifest(worker_root)
-        requests_raw = _read_regular_bytes(
-            worker_root / REQUESTS_FILENAME,
-            "397B HOLDOUT requests",
-        )
         cases, _inference_manifest, _manifest_raw = _load_inference_pack(inference_pack)
+        requests_raw = _read_regular_bytes(worker_root / REQUESTS_FILENAME, "397B HOLDOUT requests")
+        request_manifest = _load_request_manifest(worker_root)
         expected_request_text, expected_request_manifest = _build_request_material(cases)
         if requests_raw != expected_request_text.encode("utf-8"):
             raise ValueError("397B HOLDOUT requests differ from freshly rebuilt prompts")
@@ -1124,66 +1066,53 @@ def verify_cyber_megatron_holdout_output(
             raise ValueError("397B HOLDOUT request SHA differs from worker plan")
         request_binding_verified = True
 
+        raw_results = _read_regular_bytes(worker_root / RAW_RESULTS_FILENAME, "397B SWIFT raw results")
         execution = _load_execution_state(worker_root)
-        raw_results = _read_regular_bytes(
-            worker_root / RAW_RESULTS_FILENAME,
-            "397B SWIFT raw results",
-        )
         execution_checks = (
             execution.worker_plan_sha256 == worker_plan.plan_sha256,
             execution.command_sha256 == worker_plan.command_sha256,
             execution.checkpoint_tree_sha256 == worker_plan.checkpoint_tree_sha256,
+            execution.ray_node_count == worker_plan.profile.nodes,
+            execution.ray_gpu_count == worker_plan.profile.total_gpus,
             execution.state == "completed",
             execution.return_code == 0,
             execution.raw_results_sha256 == _sha256_bytes(raw_results),
             execution.runtime_versions.get("ms-swift") == worker_plan.profile.ms_swift_version,
             execution.runtime_versions.get("vllm") == worker_plan.profile.vllm_version,
             bool(execution.runtime_versions.get("ray")),
-            _execution_state_digest(execution.model_dump(mode="json")) == execution.state_sha256,
         )
         if not all(execution_checks):
             raise ValueError("397B HOLDOUT execution state differs from sealed worker plan/results")
         execution_verified = True
 
         rebuilt_predictions, rebuilt_failures = _replay_raw_results(
-            raw_results=raw_results,
-            cases=cases,
-            request_manifest=request_manifest,
-            checkpoint_tree_sha256=worker_plan.checkpoint_tree_sha256,
+            raw_results, cases, request_manifest, worker_plan.checkpoint_tree_sha256
         )
         predictions_raw = _read_regular_bytes(
-            worker_root / PREDICTIONS_FILENAME,
-            "397B HOLDOUT predictions",
+            worker_root / PREDICTIONS_FILENAME, "397B HOLDOUT predictions"
         )
         failures_raw = _read_regular_bytes(
-            worker_root / FAILURES_FILENAME,
-            "397B HOLDOUT failures",
+            worker_root / FAILURES_FILENAME, "397B HOLDOUT failures"
         )
-        expected_predictions_raw = _jsonl_text(rebuilt_predictions).encode("utf-8")
-        expected_failures_raw = _jsonl_text(rebuilt_failures).encode("utf-8")
-        if predictions_raw != expected_predictions_raw:
+        if predictions_raw != _jsonl_text(rebuilt_predictions).encode("utf-8"):
             raise ValueError("397B normalized predictions differ from raw SWIFT replay")
-        if failures_raw != expected_failures_raw:
+        if failures_raw != _jsonl_text(rebuilt_failures).encode("utf-8"):
             raise ValueError("397B normalized failures differ from raw SWIFT replay")
         raw_results_replayed = True
         prediction_count = len(rebuilt_predictions)
         failure_count = len(rebuilt_failures)
 
-        receipt_raw = _read_regular_bytes(
+        receipt, _receipt_raw = _load_canonical_model(
             worker_root / RECEIPT_FILENAME,
+            CyberMegatronHoldoutRunReceipt,
             "397B HOLDOUT receipt",
         )
-        receipt = CyberMegatronHoldoutRunReceipt.model_validate_json(receipt_raw)
-        if receipt_raw != _json_text(receipt).encode("utf-8"):
-            raise ValueError("397B HOLDOUT receipt is not canonical")
-        expected_receipt_checks = (
+        receipt_checks = (
             receipt.worker_plan_sha256 == worker_plan.plan_sha256,
             receipt.execution_state_sha256 == execution.state_sha256,
             receipt.holdout_plan_sha256 == holdout_plan.plan_sha256,
             receipt.candidate_sha256 == worker_plan.candidate_sha256,
             receipt.checkpoint_tree_sha256 == worker_plan.checkpoint_tree_sha256,
-            receipt.model == worker_plan.model,
-            receipt.model_revision == worker_plan.model_revision,
             receipt.request_count == request_count,
             receipt.prediction_count == prediction_count,
             receipt.failure_count == failure_count,
@@ -1192,9 +1121,8 @@ def verify_cyber_megatron_holdout_output(
             receipt.predictions_sha256 == _sha256_bytes(predictions_raw),
             receipt.failures_sha256 == _sha256_bytes(failures_raw),
             receipt.runtime_versions == execution.runtime_versions,
-            _receipt_digest(receipt.model_dump(mode="json")) == receipt.receipt_sha256,
         )
-        if not all(expected_receipt_checks):
+        if not all(receipt_checks):
             raise ValueError("397B HOLDOUT receipt differs from independently verified output")
         receipt_verified = True
 
@@ -1225,6 +1153,5 @@ def verify_cyber_megatron_holdout_output(
         "violations": violations,
     }
     return CyberMegatronHoldoutOutputVerification(
-        **payload,
-        verification_sha256=_verification_digest(payload),
+        **payload, verification_sha256=_sha256_canonical(payload)
     )
