@@ -117,6 +117,7 @@ def _approve_mocked_execution(monkeypatch, tmp_path, worker_plan) -> None:
     monkeypatch.setattr(worker_module.shutil, "which", lambda name: f"/mock/{name}")
     versions = {"ms-swift": "4.5.2", "vllm": "0.17.0", "ray": "2.54.0"}
     monkeypatch.setattr(worker_module, "_package_version", versions.__getitem__)
+    monkeypatch.setattr(worker_module, "_ray_cluster_capacity", lambda address: (2, 4))
     monkeypatch.setattr(worker_module.subprocess, "run", _fake_swift_run(tmp_path))
 
 
@@ -134,7 +135,8 @@ def test_prepare_worker_binds_merged_checkpoint_prompts_and_ray_command(tmp_path
     assert worker_plan.profile.pipeline_parallel_size == 2
     assert worker_plan.profile.total_gpus == 4
     assert worker_plan.command[:2] == ["swift", "infer"]
-    assert worker_plan.command[worker_plan.command.index("--infer_backend") + 1] == "vllm"
+    backend_index = worker_plan.command.index("--infer_backend")
+    assert worker_plan.command[backend_index + 1] == "vllm"
     engine_kwargs = worker_plan.command[worker_plan.command.index("--vllm_engine_kwargs") + 1]
     assert json.loads(engine_kwargs) == {"distributed_executor_backend": "ray"}
     assert sorted(path.name for path in worker_dir.iterdir()) == sorted(
@@ -178,6 +180,33 @@ def test_execute_rehashes_checkpoint_before_any_paid_subprocess(tmp_path, monkey
     monkeypatch.setattr(worker_module.subprocess, "run", fake_run)
 
     with pytest.raises(ValueError, match="tree SHA differs"):
+        execute_cyber_megatron_holdout_worker(
+            worker_dir=_relative(tmp_path, worker_dir),
+            root=tmp_path,
+        )
+    assert called is False
+
+
+def test_execute_rejects_ray_cluster_shape_before_swift(tmp_path, monkeypatch) -> None:
+    _candidate, _source, _holdout, _holdout_path, worker_dir, worker_plan = _worker_fixture(
+        tmp_path
+    )
+    monkeypatch.setenv(HOLDOUT_LAUNCH_APPROVAL_ENV, HOLDOUT_LAUNCH_APPROVAL_VALUE)
+    monkeypatch.setenv(HOLDOUT_LAUNCH_SESSION_ENV, worker_plan.plan_sha256)
+    monkeypatch.setenv("RAY_ADDRESS", "auto")
+    monkeypatch.setattr(worker_module.shutil, "which", lambda name: f"/mock/{name}")
+    versions = {"ms-swift": "4.5.2", "vllm": "0.17.0", "ray": "2.54.0"}
+    monkeypatch.setattr(worker_module, "_package_version", versions.__getitem__)
+    monkeypatch.setattr(worker_module, "_ray_cluster_capacity", lambda address: (1, 2))
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess must not start")
+
+    monkeypatch.setattr(worker_module.subprocess, "run", fake_run)
+    with pytest.raises(ValueError, match="Ray cluster capacity differs"):
         execute_cyber_megatron_holdout_worker(
             worker_dir=_relative(tmp_path, worker_dir),
             root=tmp_path,
@@ -289,8 +318,6 @@ def test_finalize_rejects_raw_result_not_bound_to_planned_messages(
     rewritten = json.dumps(raw, sort_keys=True, separators=(",", ":")) + "\n"
     raw_path.write_text(rewritten, encoding="utf-8")
 
-    # The execution receipt bound the original raw SWIFT bytes, so post-execution
-    # prompt/result mutation must fail before normalization.
     with pytest.raises(ValueError, match="raw results differ from execution state"):
         finalize_cyber_megatron_holdout_worker(
             worker_dir=_relative(tmp_path, worker_dir),
