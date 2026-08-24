@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
@@ -9,9 +11,9 @@ from pydantic import Field, model_validator
 
 from koschei_sentinel.cyber_megatron_training import (
     LAUNCH_STATE_FILENAME,
-    RUN_IDENTITY_FILENAME,
     QWEN35_397B_MODEL,
     QWEN35_397B_REVISION,
+    RUN_IDENTITY_FILENAME,
     CyberMegatronDatasetManifest,
     CyberMegatronLaunchState,
     CyberMegatronPlan,
@@ -31,12 +33,48 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+def _file_identity(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def _sha256_stable_regular_file(path: Path) -> tuple[int, str]:
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError(f"397B checkpoint file cannot be opened safely: {path.name}") from exc
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError(f"397B checkpoint contains a non-regular entry: {path.name}")
+        digest = hashlib.sha256()
+        while True:
+            chunk = os.read(descriptor, 8 * 1024 * 1024)
+            if not chunk:
+                break
             digest.update(chunk)
-    return digest.hexdigest()
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    try:
+        path_after = path.lstat()
+    except OSError as exc:
+        raise ValueError(f"397B checkpoint file disappeared while hashing: {path.name}") from exc
+    if (
+        _file_identity(before) != _file_identity(after)
+        or _file_identity(after) != _file_identity(path_after)
+    ):
+        raise ValueError(f"397B checkpoint file changed while hashing: {path.name}")
+    return after.st_size, digest.hexdigest()
 
 
 def _sha256_canonical(payload: object) -> str:
@@ -177,31 +215,49 @@ def _load_completed_launch_state(
     return state, raw
 
 
-def _checkpoint_inventory(
-    checkpoint_root: Path,
-) -> tuple[list[CyberMegatronCheckpointFile], int, str]:
-    if checkpoint_root.is_symlink() or not checkpoint_root.is_dir():
-        raise ValueError("397B checkpoint must be a real directory, not a symlink")
-    entries: list[CyberMegatronCheckpointFile] = []
+def _checkpoint_paths(checkpoint_root: Path) -> list[tuple[str, Path]]:
+    observed: list[tuple[str, Path]] = []
     for path in checkpoint_root.rglob("*"):
         relative = path.relative_to(checkpoint_root).as_posix()
         if path.is_symlink():
             raise ValueError(f"397B checkpoint contains a symlink: {relative}")
         if path.is_dir():
             continue
-        if not path.is_file():
+        try:
+            mode = path.lstat().st_mode
+        except OSError as exc:
+            raise ValueError(f"397B checkpoint entry disappeared: {relative}") from exc
+        if not stat.S_ISREG(mode):
             raise ValueError(f"397B checkpoint contains a non-regular entry: {relative}")
-        size = path.stat().st_size
+        observed.append((relative, path))
+    observed.sort(key=lambda item: item[0])
+    paths = [relative for relative, _path in observed]
+    if len(paths) != len(set(paths)):
+        raise ValueError("397B checkpoint contains duplicate relative paths")
+    return observed
+
+
+def _checkpoint_inventory(
+    checkpoint_root: Path,
+) -> tuple[list[CyberMegatronCheckpointFile], int, str]:
+    if checkpoint_root.is_symlink() or not checkpoint_root.is_dir():
+        raise ValueError("397B checkpoint must be a real directory, not a symlink")
+    before = _checkpoint_paths(checkpoint_root)
+    if not before:
+        raise ValueError("397B checkpoint directory contains no files")
+    entries: list[CyberMegatronCheckpointFile] = []
+    for relative, path in before:
+        size, digest = _sha256_stable_regular_file(path)
         entries.append(
             CyberMegatronCheckpointFile(
                 path=relative,
                 size_bytes=size,
-                sha256=_sha256_file(path),
+                sha256=digest,
             )
         )
-    entries.sort(key=lambda entry: entry.path)
-    if not entries:
-        raise ValueError("397B checkpoint directory contains no files")
+    after = _checkpoint_paths(checkpoint_root)
+    if [relative for relative, _path in before] != [relative for relative, _path in after]:
+        raise ValueError("397B checkpoint file set changed while snapshotting")
     total = sum(entry.size_bytes for entry in entries)
     if total <= 0:
         raise ValueError("397B checkpoint inventory contains no bytes")
