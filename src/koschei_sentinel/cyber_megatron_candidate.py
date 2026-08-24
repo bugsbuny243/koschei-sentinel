@@ -24,13 +24,48 @@ from koschei_sentinel.cyber_megatron_training import (
     load_cyber_megatron_config,
 )
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.training import atomic_write, canonical_json, resolve_under_root
+from koschei_sentinel.training import atomic_write, canonical_json
 
 CANDIDATE_FILENAME = "koschei-397b-candidate.json"
+_DIGEST = r"^[a-f0-9]{64}$"
 
 
 def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def _sha256_canonical(payload: object) -> str:
+    return _sha256_bytes(canonical_json(payload).encode("utf-8"))
+
+
+def _assert_relative_safe(value: str, field_name: str) -> None:
+    path = PurePosixPath(value)
+    if (
+        not value
+        or path.is_absolute()
+        or ".." in path.parts
+        or value.startswith("~")
+        or "\\" in value
+    ):
+        raise ValueError(f"{field_name} must be a portable relative POSIX path")
+
+
+def _resolve_no_symlinks(root: Path, value: str | Path, label: str) -> Path:
+    requested = Path(value)
+    lexical = requested if requested.is_absolute() else root / requested
+    absolute = Path(os.path.abspath(lexical))
+    if absolute != root and root not in absolute.parents:
+        raise ValueError(f"{label} escapes the repository root")
+    relative_parts = () if absolute == root else absolute.relative_to(root).parts
+    current = root
+    for part in relative_parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(f"{label} must not traverse a symlink: {current}")
+    resolved = absolute.resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError(f"{label} resolves outside the repository root")
+    return resolved
 
 
 def _file_identity(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
@@ -77,26 +112,10 @@ def _sha256_stable_regular_file(path: Path) -> tuple[int, str]:
     return after.st_size, digest.hexdigest()
 
 
-def _sha256_canonical(payload: object) -> str:
-    return _sha256_bytes(canonical_json(payload).encode("utf-8"))
-
-
-def _assert_relative_safe(value: str, field_name: str) -> None:
-    path = PurePosixPath(value)
-    if (
-        not value
-        or path.is_absolute()
-        or ".." in path.parts
-        or value.startswith("~")
-        or "\\" in value
-    ):
-        raise ValueError(f"{field_name} must be a portable relative POSIX path")
-
-
 class CyberMegatronCheckpointFile(StrictModel):
     path: str = Field(min_length=1, max_length=4096)
     size_bytes: int = Field(ge=0)
-    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
     def path_is_portable(self) -> CyberMegatronCheckpointFile:
@@ -112,25 +131,25 @@ class CyberMegatronCandidateManifest(StrictModel):
     model: Literal["Qwen/Qwen3.5-397B-A17B"]
     model_revision: Literal["8472618112abcbd45acbcdc58436aff4233c23f7"]
     run_id: str
-    run_identity_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    training_config_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    dataset_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    source_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    source_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    validation_source_examples_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    validation_source_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    train_jsonl_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    validation_jsonl_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    gold_release_audit_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    plan_file_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    plan_contract_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    launch_state_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    run_identity_sha256: str = Field(pattern=_DIGEST)
+    training_config_sha256: str = Field(pattern=_DIGEST)
+    dataset_manifest_sha256: str = Field(pattern=_DIGEST)
+    source_examples_sha256: str = Field(pattern=_DIGEST)
+    source_manifest_sha256: str = Field(pattern=_DIGEST)
+    validation_source_examples_sha256: str = Field(pattern=_DIGEST)
+    validation_source_manifest_sha256: str = Field(pattern=_DIGEST)
+    train_jsonl_sha256: str = Field(pattern=_DIGEST)
+    validation_jsonl_sha256: str = Field(pattern=_DIGEST)
+    gold_release_audit_sha256: str = Field(pattern=_DIGEST)
+    plan_file_sha256: str = Field(pattern=_DIGEST)
+    plan_contract_sha256: str = Field(pattern=_DIGEST)
+    launch_state_sha256: str = Field(pattern=_DIGEST)
     checkpoint_relative_path: str = Field(min_length=1, max_length=4096)
     checkpoint_file_count: int = Field(gt=0)
     checkpoint_total_bytes: int = Field(gt=0)
     checkpoint_files: list[CyberMegatronCheckpointFile] = Field(min_length=1)
-    checkpoint_tree_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    candidate_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    checkpoint_tree_sha256: str = Field(pattern=_DIGEST)
+    candidate_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
     def internal_contract_is_coherent(self) -> CyberMegatronCandidateManifest:
@@ -142,9 +161,8 @@ class CyberMegatronCandidateManifest(StrictModel):
             raise ValueError("checkpoint file inventory contains duplicate paths")
         if self.checkpoint_file_count != len(self.checkpoint_files):
             raise ValueError("checkpoint_file_count differs from inventory")
-        if self.checkpoint_total_bytes != sum(
-            entry.size_bytes for entry in self.checkpoint_files
-        ):
+        expected_bytes = sum(entry.size_bytes for entry in self.checkpoint_files)
+        if self.checkpoint_total_bytes != expected_bytes:
             raise ValueError("checkpoint_total_bytes differs from inventory")
         expected_tree = _sha256_canonical(
             [entry.model_dump(mode="json") for entry in self.checkpoint_files]
@@ -161,7 +179,7 @@ class CyberMegatronCandidateManifest(StrictModel):
 class CyberMegatronCandidateVerification(StrictModel):
     valid: bool
     manifest: CyberMegatronCandidateManifest | None
-    manifest_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    manifest_sha256: str | None = Field(default=None, pattern=_DIGEST)
     violations: list[str]
 
 
@@ -170,8 +188,12 @@ def _load_dataset_manifest(
     *,
     root: Path,
 ) -> tuple[CyberMegatronDatasetManifest, str]:
-    path = resolve_under_root(root, config.dataset_dir) / "manifest.json"
-    if path.is_symlink() or not path.is_file():
+    path = _resolve_no_symlinks(
+        root,
+        Path(config.dataset_dir) / "manifest.json",
+        "397B dataset manifest",
+    )
+    if not path.is_file():
         raise ValueError("397B candidate requires a regular materialized dataset manifest")
     raw = path.read_bytes()
     try:
@@ -256,7 +278,7 @@ def _checkpoint_inventory(
             )
         )
     after = _checkpoint_paths(checkpoint_root)
-    if [relative for relative, _path in before] != [relative for relative, _path in after]:
+    if [item[0] for item in before] != [item[0] for item in after]:
         raise ValueError("397B checkpoint file set changed while snapshotting")
     total = sum(entry.size_bytes for entry in entries)
     if total <= 0:
@@ -265,6 +287,11 @@ def _checkpoint_inventory(
         [entry.model_dump(mode="json") for entry in entries]
     )
     return entries, total, tree_sha
+
+
+def _require_equal(label: str, observed: object, expected: object, prefix: str) -> None:
+    if observed != expected:
+        raise ValueError(f"{prefix}: {label}")
 
 
 def _expected_candidate(
@@ -278,30 +305,78 @@ def _expected_candidate(
     if config.model != QWEN35_397B_MODEL or config.model_revision != QWEN35_397B_REVISION:
         raise ValueError("candidate builder accepts only the pinned Qwen3.5-397B-A17B target")
 
-    output_root = resolve_under_root(root, config.output_dir).resolve()
-    if output_root.is_symlink() or not output_root.is_dir():
+    output_root = _resolve_no_symlinks(
+        root,
+        config.output_dir,
+        "397B training output directory",
+    )
+    if not output_root.is_dir():
         raise ValueError("397B candidate requires the bound training output directory")
 
-    identity_path = output_root / RUN_IDENTITY_FILENAME
-    if identity_path.is_symlink() or not identity_path.is_file():
+    identity_path = _resolve_no_symlinks(
+        root,
+        Path(config.output_dir) / RUN_IDENTITY_FILENAME,
+        "397B run identity",
+    )
+    if not identity_path.is_file():
         raise ValueError("397B candidate requires the bound run identity")
     identity = _load_run_identity(identity_path)
-    if identity.model != config.model or identity.model_revision != config.model_revision:
-        raise ValueError("397B run identity model binding differs from training config")
-    if identity.run_id != config.run_id:
-        raise ValueError("397B run identity run_id differs from training config")
-    if identity.config_sha256 != _config_sha256(config):
-        raise ValueError("397B run identity config SHA differs from training config")
-    if identity.output_dir != config.output_dir:
-        raise ValueError("397B run identity output_dir differs from training config")
+    _require_equal(
+        "model",
+        identity.model,
+        config.model,
+        "397B run identity differs from training config",
+    )
+    _require_equal(
+        "model_revision",
+        identity.model_revision,
+        config.model_revision,
+        "397B run identity differs from training config",
+    )
+    _require_equal(
+        "run_id",
+        identity.run_id,
+        config.run_id,
+        "397B run identity differs from training config",
+    )
+    _require_equal(
+        "config_sha256",
+        identity.config_sha256,
+        _config_sha256(config),
+        "397B run identity differs from training config",
+    )
+    _require_equal(
+        "output_dir",
+        identity.output_dir,
+        config.output_dir,
+        "397B run identity differs from training config",
+    )
 
     dataset, dataset_sha = _load_dataset_manifest(config, root=root)
-    if dataset_sha != identity.dataset_manifest_sha256:
-        raise ValueError("397B dataset manifest SHA differs from run identity")
-    if dataset.run_id != config.run_id:
-        raise ValueError("397B dataset manifest run_id differs from training config")
-    if dataset.model != config.model or dataset.model_revision != config.model_revision:
-        raise ValueError("397B dataset manifest model binding differs from training config")
+    _require_equal(
+        "dataset_manifest_sha256",
+        dataset_sha,
+        identity.dataset_manifest_sha256,
+        "397B dataset manifest differs from run identity",
+    )
+    _require_equal(
+        "run_id",
+        dataset.run_id,
+        config.run_id,
+        "397B dataset manifest differs from training config",
+    )
+    _require_equal(
+        "model",
+        dataset.model,
+        config.model,
+        "397B dataset manifest differs from training config",
+    )
+    _require_equal(
+        "model_revision",
+        dataset.model_revision,
+        config.model_revision,
+        "397B dataset manifest differs from training config",
+    )
     if dataset.gold_release_audit_sha256 is None:
         raise ValueError("397B promotion candidate requires a Gold release audit binding")
     if dataset.validation_source_examples_sha256 is None:
@@ -334,8 +409,12 @@ def _expected_candidate(
         ),
     )
     for label, observed, expected in identity_checks:
-        if observed != expected:
-            raise ValueError(f"397B run identity differs from dataset manifest: {label}")
+        _require_equal(
+            label,
+            observed,
+            expected,
+            "397B run identity differs from dataset manifest",
+        )
 
     plan, plan_raw = _load_plan(plan_path)
     plan_checks = (
@@ -370,8 +449,12 @@ def _expected_candidate(
         ("run_identity_sha256", plan.run_identity_sha256, identity.identity_sha256),
     )
     for label, observed, expected in plan_checks:
-        if observed != expected:
-            raise ValueError(f"397B saved launch plan binding mismatch: {label}")
+        _require_equal(
+            label,
+            observed,
+            expected,
+            "397B saved launch plan binding mismatch",
+        )
     if not plan.static_ready or not plan.dataset_verified or plan.blockers:
         raise ValueError("397B saved launch plan was not statically ready")
     if plan.backend != "megatron-swift":
@@ -383,7 +466,7 @@ def _expected_candidate(
         run_identity_sha256=identity.identity_sha256,
     )
 
-    checkpoint_root = checkpoint_dir.resolve()
+    checkpoint_root = checkpoint_dir
     try:
         checkpoint_relative = checkpoint_root.relative_to(output_root).as_posix()
     except ValueError as exc:
@@ -437,10 +520,10 @@ def build_cyber_megatron_candidate(
     root: str | Path = ".",
 ) -> CyberMegatronCandidateManifest:
     root_path = Path(root).resolve()
-    config_file = resolve_under_root(root_path, str(config_path))
-    plan_file = resolve_under_root(root_path, str(plan_path))
-    checkpoint = resolve_under_root(root_path, str(checkpoint_dir))
-    destination = resolve_under_root(root_path, str(output_path))
+    config_file = _resolve_no_symlinks(root_path, config_path, "397B training config")
+    plan_file = _resolve_no_symlinks(root_path, plan_path, "397B launch plan")
+    checkpoint = _resolve_no_symlinks(root_path, checkpoint_dir, "397B checkpoint")
+    destination = _resolve_no_symlinks(root_path, output_path, "397B candidate output")
     if destination.exists():
         raise FileExistsError(f"397B candidate manifest already exists: {output_path}")
     manifest = _expected_candidate(
@@ -462,14 +545,26 @@ def verify_cyber_megatron_candidate(
     root: str | Path = ".",
 ) -> CyberMegatronCandidateVerification:
     root_path = Path(root).resolve()
-    candidate_path = resolve_under_root(root_path, str(manifest_path))
-    violations: list[str] = []
-    if candidate_path.is_symlink() or not candidate_path.is_file():
+    try:
+        candidate_path = _resolve_no_symlinks(
+            root_path,
+            manifest_path,
+            "397B candidate manifest",
+        )
+    except ValueError as exc:
         return CyberMegatronCandidateVerification(
             valid=False,
             manifest=None,
             manifest_sha256=None,
-            violations=["397B candidate manifest is missing or is a symlink"],
+            violations=[str(exc)],
+        )
+    violations: list[str] = []
+    if not candidate_path.is_file():
+        return CyberMegatronCandidateVerification(
+            valid=False,
+            manifest=None,
+            manifest_sha256=None,
+            violations=["397B candidate manifest is missing"],
         )
     raw = candidate_path.read_bytes()
     try:
@@ -486,9 +581,17 @@ def verify_cyber_megatron_candidate(
     try:
         expected = _expected_candidate(
             root=root_path,
-            config_path=resolve_under_root(root_path, str(config_path)),
-            plan_path=resolve_under_root(root_path, str(plan_path)),
-            checkpoint_dir=resolve_under_root(root_path, str(checkpoint_dir)),
+            config_path=_resolve_no_symlinks(
+                root_path,
+                config_path,
+                "397B training config",
+            ),
+            plan_path=_resolve_no_symlinks(root_path, plan_path, "397B launch plan"),
+            checkpoint_dir=_resolve_no_symlinks(
+                root_path,
+                checkpoint_dir,
+                "397B checkpoint",
+            ),
         )
     except (OSError, TypeError, ValueError) as exc:
         violations.append(f"397B candidate source revalidation failed: {exc}")
