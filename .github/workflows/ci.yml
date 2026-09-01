@@ -40,6 +40,8 @@ jobs:
           tests/test_cyber_sft_execution_cli_preflight.py
           tests/test_cyber_sft_trainer_explicit_validation.py
           tests/test_defense_reflex_gold_review.py
+          tests/test_defense_reflex_gold_capacity.py
+          tests/test_defense_reflex_gold_production_release.py
           tests/test_gold_review_signing.py
           tests/test_gold_reviewer_trust.py
           tests/test_gold_reviewer_trust_cli.py
