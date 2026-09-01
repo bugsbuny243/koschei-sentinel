@@ -87,6 +87,7 @@ Restart anchors:
 
 - `main` before freeze marker: `7581292de5f7800e6f14f9670ec34015ff294a8d`.
 - Freeze marker commit: `f3027e1cbaff0cad08b80614fd96d60d18fa867c`.
+- Reactivation marker commit: `c6f0c1809d8c8cd5a990da3af11f8154e126f4c8`.
 - PR #67 preserved head: `fde029e0b4a164b5dc71a0301ce5abe14cbee95a`.
 - PR #69 preserved head: `c3869449e87ecaa1e13a34e60d77c6f923bc9f00`.
 - Base-model revision: `8472618112abcbd45acbcdc58436aff4233c23f7`.
