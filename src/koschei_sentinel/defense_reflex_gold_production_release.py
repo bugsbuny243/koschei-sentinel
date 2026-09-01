@@ -85,7 +85,12 @@ def _preflight_output_paths(
         raise FileExistsError(
             f"Gold production release receipt exists: {receipt_destination}"
         )
-    if receipt_destination == release_destination or release_destination in receipt_destination.parents:
+    release_resolved = release_destination.resolve(strict=False)
+    receipt_resolved = receipt_destination.resolve(strict=False)
+    if (
+        receipt_resolved == release_resolved
+        or release_resolved in receipt_resolved.parents
+    ):
         raise ValueError("Gold production release receipt must be outside the release directory")
 
 
