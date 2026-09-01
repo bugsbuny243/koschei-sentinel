@@ -9,17 +9,14 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from koschei_sentinel.cyber_range import CyberRangeScenario
 from koschei_sentinel.defense_reflex_gold_capacity import (
     GoldReviewCapacityReport,
     _exact_scenario_set,
     _load_models_by_scenario,
     build_gold_review_capacity_report,
 )
-from koschei_sentinel.cyber_range import CyberRangeScenario
 from koschei_sentinel.defense_reflex_gold_queue import GoldDefenseReviewPacket
-from koschei_sentinel.defense_reflex_gold_release import (
-    GoldDefenseReleaseManifest,
-)
 from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
 from koschei_sentinel.defense_reflex_gold_review import GoldReviewedPacket
 from koschei_sentinel.gold_reviewer_trust import (
@@ -68,6 +65,28 @@ class GoldProductionReleaseReceipt(StrictModel):
         if _sha256_canonical(unsigned) != observed:
             raise ValueError("Gold production release receipt self-hash does not verify")
         return self
+
+
+def _preflight_output_paths(
+    *,
+    output_dir: str | Path,
+    receipt_output: str | Path | None,
+) -> None:
+    release_destination = Path(output_dir)
+    if release_destination.exists():
+        raise FileExistsError(
+            f"Gold production release already exists: {release_destination}"
+        )
+    if receipt_output is None:
+        return
+
+    receipt_destination = Path(receipt_output)
+    if receipt_destination.exists():
+        raise FileExistsError(
+            f"Gold production release receipt exists: {receipt_destination}"
+        )
+    if receipt_destination == release_destination or release_destination in receipt_destination.parents:
+        raise ValueError("Gold production release receipt must be outside the release directory")
 
 
 def _load_release_rows(
@@ -234,6 +253,10 @@ def build_gold_production_release(
     output_dir: str | Path,
     receipt_output: str | Path | None = None,
 ) -> GoldProductionReleaseReceipt:
+    _preflight_output_paths(
+        output_dir=output_dir,
+        receipt_output=receipt_output,
+    )
     capacity = build_gold_review_capacity_report(
         scenario_dir=scenario_dir,
         packet_dir=packet_dir,
@@ -260,8 +283,6 @@ def build_gold_production_release(
     )
     if receipt_output is not None:
         destination = Path(receipt_output)
-        if destination.exists():
-            raise FileExistsError(f"Gold production release receipt exists: {destination}")
         atomic_write(
             destination,
             canonical_json(receipt.model_dump(mode="json")) + "\n",
