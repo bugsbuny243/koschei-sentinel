@@ -98,6 +98,7 @@ sentinel-defense-reflex-review = "koschei_sentinel.defense_reflex_review_cli:mai
 sentinel-defense-reflex-gold-queue = "koschei_sentinel.defense_reflex_gold_queue_cli:main"
 sentinel-defense-reflex-gold-review = "koschei_sentinel.defense_reflex_gold_review_cli:main"
 sentinel-defense-reflex-gold-capacity = "koschei_sentinel.defense_reflex_gold_capacity_cli:main"
+sentinel-defense-reflex-gold-production-release = "koschei_sentinel.defense_reflex_gold_production_release_cli:main"
 sentinel-defense-reflex-gold-release = "koschei_sentinel.defense_reflex_gold_release_cli:main"
 sentinel-defense-reflex-gold-audit = "koschei_sentinel.defense_reflex_gold_release_audit_cli:main"
 sentinel-gold-reviewer-trust = "koschei_sentinel.gold_reviewer_trust_cli:main"
