@@ -111,8 +111,10 @@ def test_production_release_receipt_self_hash_is_bound() -> None:
 
     assert receipt.production_ready is True
     assert receipt.holdout_cases == 50
+    tampered = receipt.model_dump(mode="json")
+    tampered["holdout_cases"] = 51
     with pytest.raises(ValueError, match="receipt self-hash does not verify"):
-        receipt.model_copy(update={"holdout_cases": 51}).model_dump()
+        GoldProductionReleaseReceipt.model_validate(tampered)
 
 
 def test_production_release_cli_rejects_capacity_shortfall(tmp_path, capsys) -> None:
