@@ -13,7 +13,11 @@ SHA = "b" * 64
 
 
 def ev(value: str) -> EvidenceRef:
-    return EvidenceRef(evidence_id=value, source="planner-test", content_sha256=SHA)
+    return EvidenceRef(
+        evidence_id=f"evidence:{value}",
+        source="planner-test",
+        content_sha256=SHA,
+    )
 
 
 def test_high_confidence_critical_attack_enters_combat_or_siege() -> None:
@@ -28,7 +32,7 @@ def test_high_confidence_critical_attack_enters_combat_or_siege() -> None:
         ],
         relations=[
             CyberRelation(
-                relation_id="c1",
+                relation_id="rel:c1",
                 source_entity_id="credential:prod",
                 target_entity_id="device:runner",
                 relation_type="uses_credential",
@@ -37,7 +41,7 @@ def test_high_confidence_critical_attack_enters_combat_or_siege() -> None:
                 evidence=[ev("e1"), ev("e2")],
             ),
             CyberRelation(
-                relation_id="c2",
+                relation_id="rel:c2",
                 source_entity_id="device:runner",
                 target_entity_id="pipeline:prod",
                 relation_type="modifies_pipeline",
@@ -46,7 +50,7 @@ def test_high_confidence_critical_attack_enters_combat_or_siege() -> None:
                 evidence=[ev("e3")],
             ),
             CyberRelation(
-                relation_id="c3",
+                relation_id="rel:c3",
                 source_entity_id="pipeline:prod",
                 target_entity_id="wallet:treasury",
                 relation_type="reaches_signer",
@@ -55,7 +59,7 @@ def test_high_confidence_critical_attack_enters_combat_or_siege() -> None:
                 evidence=[ev("e4")],
             ),
             CyberRelation(
-                relation_id="c4",
+                relation_id="rel:c4",
                 source_entity_id="wallet:treasury",
                 target_entity_id="transaction:pending",
                 relation_type="prepares_transaction",
@@ -89,7 +93,7 @@ def test_uncorroborated_signal_stays_guard_and_withholds_destructive_containment
         ],
         relations=[
             CyberRelation(
-                relation_id="g1",
+                relation_id="rel:g1",
                 source_entity_id="process:suspect",
                 target_entity_id="device:laptop",
                 relation_type="executes",
