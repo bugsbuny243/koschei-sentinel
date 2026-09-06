@@ -114,6 +114,7 @@ sentinel-web4-research-readiness = "koschei_sentinel.web4_research_readiness_cli
 sentinel-web4-benchmark-intake = "koschei_sentinel.web4_benchmark_intake_cli:main"
 sentinel-web4-review-verify = "koschei_sentinel.web4_benchmark_review_verify_cli:main"
 sentinel-web4-holdout-release-verify = "koschei_sentinel.web4_holdout_release_verify_cli:main"
+sentinel-web4-holdout-eval-verify = "koschei_sentinel.web4_holdout_evaluation_verify_cli:main"
 sentinel-language-foundation = "koschei_sentinel.language_foundation_cli:main"
 sentinel-language-train = "koschei_sentinel.language_training_cli:main"
 
