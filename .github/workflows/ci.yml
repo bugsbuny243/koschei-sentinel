@@ -21,6 +21,10 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: ruff check .
       - run: pytest
+      - name: Web4 signed review fail-closed gate
+        run: pytest tests/test_web4_benchmark_review.py
+      - name: Validate Web4 review verifier entrypoint
+        run: sentinel-web4-review-verify --help
       - run: sentinel-web4-research-readiness
       - name: Validate Web4 benchmark intake isolation
         run: >-
