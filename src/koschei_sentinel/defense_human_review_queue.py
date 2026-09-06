@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from koschei_sentinel.defense_authority import DefenseAction, DefenseMode
+from koschei_sentinel.defense_authority import DefenseActionType, DefenseMode
 from koschei_sentinel.defense_reflex_corpus_v3 import DefenseReflexTrainingExampleV3
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
@@ -21,7 +21,7 @@ class HumanReviewTaskStatus(StrEnum):
 class HumanDefenseReviewStep(StrictModel):
     sequence: int = Field(gt=0)
     expected_mode: DefenseMode
-    action: DefenseAction
+    action: DefenseActionType
     target_entity_id: str = Field(min_length=1, max_length=512)
     rationale: str = Field(min_length=16, max_length=4000)
     supporting_evidence_ids: list[str] = Field(min_length=1, max_length=256)
