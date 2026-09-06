@@ -19,6 +19,26 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install -e '.[dev]'
+      - name: Generate Ruff baseline cleanup
+        run: |
+          ruff format src tests
+          ruff check src tests --fix --exit-zero
+          mkdir -p build/ruff-baseline
+          git diff --name-only -z -- src tests > build/ruff-baseline/files.zlist
+          if [ -s build/ruff-baseline/files.zlist ]; then
+            tar --null -T build/ruff-baseline/files.zlist -czf build/ruff-baseline/modified-files.tgz
+          else
+            tar -czf build/ruff-baseline/modified-files.tgz --files-from /dev/null
+          fi
+          git diff -- src tests > build/ruff-baseline/changes.patch
+          ruff check src tests --output-format=json > build/ruff-baseline/remaining.json || true
+      - name: Upload Ruff baseline cleanup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ruff-baseline-cleanup
+          path: build/ruff-baseline
+          if-no-files-found: error
+          retention-days: 1
       - run: ruff check .
       - run: pytest
       - run: >-
