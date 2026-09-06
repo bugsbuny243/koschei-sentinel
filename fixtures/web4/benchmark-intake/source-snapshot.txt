@@ -1,0 +1,2 @@
+Synthetic CI-only snapshot fixture for Web4 benchmark intake validation.
+This is not copied source material and must not be treated as training data.

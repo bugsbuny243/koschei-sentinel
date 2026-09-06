@@ -22,6 +22,12 @@ jobs:
       - run: ruff check .
       - run: pytest
       - run: sentinel-web4-research-readiness
+      - name: Validate Web4 benchmark intake isolation
+        run: >-
+          sentinel-web4-benchmark-intake
+          --proposal fixtures/web4/benchmark-intake/proposal.json
+          --answer-key fixtures/web4/benchmark-intake/answer-key.json
+          --output build/web4/benchmark-intake.json
       - run: >-
           sentinel-curriculum-check
           --config configs/curriculum/language-first.v1.json

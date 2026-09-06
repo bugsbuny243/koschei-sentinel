@@ -1,0 +1,12 @@
+{
+  "schema_version": "sentinel.web4-benchmark-answer-key.v1",
+  "case_id": "fixture-web4-intake-001",
+  "source_refs": [
+    "nist.ai-agent-identity-authority-2026"
+  ],
+  "expected": {
+    "delegation_scope_result": "REJECT_UNAUTHORIZED_WIDENING",
+    "authority_status": "AUTHORITATIVE_GUIDANCE_DRAFT_NOT_PROTOCOL_STANDARD",
+    "must_request_new_grant_for_wider_scope": true
+  }
+}
