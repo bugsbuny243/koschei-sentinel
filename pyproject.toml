@@ -110,6 +110,7 @@ sentinel-shadow-regression = "koschei_sentinel.shadow_regression_cli:main"
 sentinel-shadow-baseline = "koschei_sentinel.shadow_baseline_cli:main"
 sentinel-owner-rotation = "koschei_sentinel.owner_rotation_cli:main"
 sentinel-curriculum-check = "koschei_sentinel.curriculum_cli:main"
+sentinel-web4-research-readiness = "koschei_sentinel.web4_research_readiness_cli:main"
 sentinel-language-foundation = "koschei_sentinel.language_foundation_cli:main"
 sentinel-language-train = "koschei_sentinel.language_training_cli:main"
 
