@@ -1,0 +1,217 @@
+{
+  "schema": "sentinel.curriculum.web4.v1",
+  "id": "koschei-web4-security-v1",
+  "status": "offline_research_only",
+  "runtime_integration": false,
+  "training_run_allowed": false,
+  "training_data_requires_provenance_review": true,
+  "training_data_requires_license_review": true,
+  "web4_definition_policy": {
+    "treat_web4_as_emerging_and_non_uniform": true,
+    "separate_policy_visions_from_protocol_standards": true,
+    "internet_drafts_are_not_ietf_standards": true,
+    "minimum_evidence_for_claim": "primary_or_authoritative_source",
+    "required_definition_families": [
+      "physical_virtual_convergence",
+      "agentic_verifiable_web",
+      "federated_sovereign_entities",
+      "immersive_spatial_computing",
+      "digital_twins_iot_edge",
+      "verifiable_identity_and_credentials"
+    ]
+  },
+  "representation": [
+    "Entity",
+    "Event",
+    "Intent",
+    "Capability",
+    "Vulnerability",
+    "Action",
+    "Consequence",
+    "Evidence"
+  ],
+  "entity_extensions": [
+    "human",
+    "ai_agent",
+    "software_agent",
+    "avatar",
+    "iot_device",
+    "sensor",
+    "robot",
+    "digital_twin",
+    "edge_node",
+    "identity_issuer",
+    "credential_holder",
+    "credential_verifier",
+    "wallet",
+    "contract",
+    "service",
+    "tool",
+    "data_artifact"
+  ],
+  "stages": [
+    {
+      "id": "W4-0",
+      "name": "web4_definition_and_provenance",
+      "objectives": [
+        "distinguish_web4_definitions",
+        "distinguish_standard_from_draft",
+        "track_source_authority",
+        "track_revision_and_timestamp",
+        "avoid_future_claim_hallucination"
+      ]
+    },
+    {
+      "id": "W4-1",
+      "name": "agent_identity_authority_and_delegation",
+      "objectives": [
+        "agent_identity",
+        "authorization",
+        "delegation_scope",
+        "non_repudiation",
+        "least_privilege",
+        "human_agent_boundary",
+        "machine_to_machine_trust"
+      ]
+    },
+    {
+      "id": "W4-2",
+      "name": "physical_digital_world_security",
+      "objectives": [
+        "digital_twin_integrity",
+        "sensor_and_reality_capture_trust",
+        "iot_edge_security",
+        "robotics_action_boundary",
+        "xr_spatial_privacy",
+        "real_world_consequence_reasoning"
+      ]
+    },
+    {
+      "id": "W4-3",
+      "name": "verifiable_artifacts_identity_and_credentials",
+      "objectives": [
+        "artifact_origin",
+        "artifact_integrity",
+        "credential_verification",
+        "revocation_status",
+        "replay_resistance",
+        "time_and_freshness_evidence",
+        "cryptographic_identity_separation"
+      ]
+    },
+    {
+      "id": "W4-4",
+      "name": "agentic_attack_chains",
+      "objectives": [
+        "prompt_injection",
+        "tool_abuse",
+        "privilege_escalation",
+        "memory_context_poisoning",
+        "confused_deputy",
+        "delegation_drift",
+        "cross_agent_trust_abuse",
+        "data_exfiltration",
+        "supply_chain_poisoning"
+      ]
+    },
+    {
+      "id": "W4-5",
+      "name": "immersive_and_spatial_attack_chains",
+      "objectives": [
+        "avatar_impersonation",
+        "spatial_data_leakage",
+        "sensor_spoofing",
+        "digital_twin_state_poisoning",
+        "edge_state_desynchronization",
+        "virtual_to_physical_authority_confusion"
+      ]
+    },
+    {
+      "id": "W4-6",
+      "name": "cross_domain_economic_and_web3_security",
+      "objectives": [
+        "wallet_agent_delegation",
+        "signing_integrity",
+        "credential_wallet_binding",
+        "contract_agent_interaction",
+        "cross_chain_identity_risk",
+        "autonomous_transaction_authority"
+      ]
+    },
+    {
+      "id": "W4-7",
+      "name": "defense_evidence_and_uncertainty",
+      "objectives": [
+        "evidence_grounding",
+        "confidence_calibration",
+        "source_disagreement",
+        "uncertainty_reporting",
+        "fail_closed_recommendations",
+        "human_approval_boundary"
+      ]
+    }
+  ],
+  "attack_families": [
+    "agent_identity_spoofing",
+    "credential_or_attestation_forgery",
+    "authorization_scope_drift",
+    "delegation_chain_confusion",
+    "prompt_injection_direct",
+    "prompt_injection_indirect",
+    "tool_abuse",
+    "agent_privilege_escalation",
+    "memory_context_poisoning",
+    "cross_agent_message_poisoning",
+    "data_exfiltration",
+    "digital_twin_poisoning",
+    "sensor_or_reality_capture_spoofing",
+    "edge_state_desynchronization",
+    "avatar_or_agent_impersonation",
+    "spatial_privacy_exposure",
+    "artifact_provenance_replay",
+    "revocation_status_bypass",
+    "wallet_agent_signing_abuse",
+    "autonomous_transaction_authority_abuse",
+    "supply_chain_poisoning"
+  ],
+  "required_eval_families": [
+    "web4_definition_disambiguation",
+    "draft_vs_standard_classification",
+    "agent_identity_and_authority_reasoning",
+    "delegation_chain_reconstruction",
+    "agentic_attack_chain_reconstruction",
+    "physical_digital_consequence_reasoning",
+    "digital_twin_integrity_reasoning",
+    "credential_and_provenance_validation",
+    "prompt_injection_and_tool_abuse_detection",
+    "memory_poisoning_detection",
+    "wallet_agent_authority_reasoning",
+    "false_positive_resistance",
+    "evidence_grounding",
+    "uncertainty_calibration",
+    "defensive_recommendation"
+  ],
+  "authority_boundary": {
+    "model_may": [
+      "observe",
+      "classify",
+      "correlate_evidence",
+      "reconstruct_attack_chain",
+      "estimate_risk",
+      "recommend_restriction",
+      "recommend_revocation",
+      "request_human_review"
+    ],
+    "model_must_never": [
+      "grant_agent_authority",
+      "widen_agent_authority",
+      "sign_transactions",
+      "issue_credentials",
+      "override_revocation",
+      "treat_model_confidence_as_identity_proof",
+      "treat_unverified_web_content_as_training_truth",
+      "promote_itself",
+      "deploy_itself"
+    ]
+  }
+}
