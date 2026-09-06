@@ -9,7 +9,6 @@ from koschei_sentinel.cyber_state_graph import (
     EvidenceStatus,
 )
 
-
 SHA = "c" * 64
 
 
@@ -34,7 +33,7 @@ def _two_component_graph() -> CyberStateGraph:
         ],
         relations=[
             CyberRelation(
-                relation_id="a1",
+                relation_id="rel:a1",
                 source_entity_id="identity:alice",
                 target_entity_id="device:laptop",
                 relation_type="authenticates_to",
@@ -43,7 +42,7 @@ def _two_component_graph() -> CyberStateGraph:
                 evidence=[ev("ev-a1")],
             ),
             CyberRelation(
-                relation_id="b1",
+                relation_id="rel:b1",
                 source_entity_id="credential:prod",
                 target_entity_id="pipeline:release",
                 relation_type="modifies_pipeline",
@@ -52,7 +51,7 @@ def _two_component_graph() -> CyberStateGraph:
                 evidence=[ev("ev-b1", "CICD:ci:prod")],
             ),
             CyberRelation(
-                relation_id="b2",
+                relation_id="rel:b2",
                 source_entity_id="pipeline:release",
                 target_entity_id="wallet:treasury",
                 relation_type="reaches_signer",
@@ -61,7 +60,7 @@ def _two_component_graph() -> CyberStateGraph:
                 evidence=[ev("ev-b2", "SIGNER_WALLET:signer:prod")],
             ),
             CyberRelation(
-                relation_id="b3",
+                relation_id="rel:b3",
                 source_entity_id="wallet:treasury",
                 target_entity_id="transaction:pending",
                 relation_type="executes_transaction",
@@ -79,10 +78,13 @@ def test_disconnected_events_are_reported_as_separate_attack_components() -> Non
     assert len(report.components) == 2
     assert report.primary_component_id is not None
     assert report.current_stage is AttackStage.IMPACT
-    assert set(report.active_relation_ids) == {"b1", "b2", "b3"}
+    assert set(report.active_relation_ids) == {"rel:b1", "rel:b2", "rel:b3"}
 
     relation_sets = {frozenset(component.active_relation_ids) for component in report.components}
-    assert relation_sets == {frozenset({"a1"}), frozenset({"b1", "b2", "b3"})}
+    assert relation_sets == {
+        frozenset({"rel:a1"}),
+        frozenset({"rel:b1", "rel:b2", "rel:b3"}),
+    }
 
 
 def test_focus_entity_selects_its_component_even_when_another_component_is_higher_risk() -> None:
@@ -92,7 +94,7 @@ def test_focus_entity_selects_its_component_even_when_another_component_is_highe
     )
 
     assert report.current_stage is AttackStage.INITIAL_ACCESS
-    assert report.active_relation_ids == ["a1"]
+    assert report.active_relation_ids == ["rel:a1"]
     assert all(
         cut.entity_id in {"identity:alice", "device:laptop"}
         for cut in report.defensive_cut_points
@@ -105,7 +107,7 @@ def test_active_defense_planner_does_not_mix_cut_points_across_incidents() -> No
         critical_entity_ids=["device:laptop"],
     )
 
-    assert plan.progression.active_relation_ids == ["a1"]
+    assert plan.progression.active_relation_ids == ["rel:a1"]
     assert len(plan.progression.components) == 2
     cut_entities = {
         row.entity_id

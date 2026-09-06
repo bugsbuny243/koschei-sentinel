@@ -88,7 +88,7 @@ class DefenseResourcePolicy(StrictModel):
     max_wait_boost: float = Field(default=0.30, ge=0.0, le=2.0)
 
     @model_validator(mode="after")
-    def capacities_are_complete_and_coherent(self) -> "DefenseResourcePolicy":
+    def capacities_are_complete_and_coherent(self) -> DefenseResourcePolicy:
         missing = sorted(
             set(DefenseResourceClass) - set(self.resource_capacities),
             key=lambda row: row.value,
@@ -115,7 +115,7 @@ class DefenseSchedulingContext(StrictModel):
     tick: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
-    def scheduling_subjects_are_unique(self) -> "DefenseSchedulingContext":
+    def scheduling_subjects_are_unique(self) -> DefenseSchedulingContext:
         values = list(self.scheduling_subject_by_component.values())
         if len(values) != len(set(values)):
             raise ValueError("one scheduling subject cannot represent multiple active components")
@@ -129,7 +129,7 @@ class DefenseSchedulerState(StrictModel):
     wait_cycles_by_subject: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def wait_cycles_are_valid(self) -> "DefenseSchedulerState":
+    def wait_cycles_are_valid(self) -> DefenseSchedulerState:
         if any(value < 0 for value in self.wait_cycles_by_subject.values()):
             raise ValueError("scheduler wait cycles cannot be negative")
         return self
@@ -155,7 +155,7 @@ class DefenseScheduleItem(StrictModel):
     rationale: list[str]
 
     @model_validator(mode="after")
-    def target_remains_inside_component(self) -> "DefenseScheduleItem":
+    def target_remains_inside_component(self) -> DefenseScheduleItem:
         if self.target_entity_id not in set(self.component_entity_ids):
             raise ValueError("scheduled defense target crossed the attack component boundary")
         return self
@@ -180,7 +180,7 @@ class DefenseResourceSchedule(StrictModel):
     rationale: list[str]
 
     @model_validator(mode="after")
-    def schedule_obeys_parallelism(self) -> "DefenseResourceSchedule":
+    def schedule_obeys_parallelism(self) -> DefenseResourceSchedule:
         scheduled_components = [row.component_id for row in self.scheduled]
         if len(scheduled_components) != len(set(scheduled_components)):
             raise ValueError("only one interception step per component may be scheduled in a wave")

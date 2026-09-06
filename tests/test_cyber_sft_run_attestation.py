@@ -270,7 +270,10 @@ def test_attestation_rejects_plan_drift(monkeypatch, tmp_path: Path) -> None:
     payload["base_revision"] = "9" * 40
     _write_json(path, payload)
 
-    with pytest.raises(ValueError, match="training source binding"):
+    with pytest.raises(
+        ValueError,
+        match="training source plan/config mismatch: base_revision",
+    ):
         build_cyber_sft_run_attestation(**_build_kwargs(fixture, tmp_path))
 
 

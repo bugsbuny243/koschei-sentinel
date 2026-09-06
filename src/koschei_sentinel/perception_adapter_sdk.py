@@ -50,7 +50,7 @@ class PerceptionAdapterDescriptor(StrictModel):
     secret_handling: Literal["REJECT"] = "REJECT"
 
     @model_validator(mode="after")
-    def source_types_are_unique(self) -> "PerceptionAdapterDescriptor":
+    def source_types_are_unique(self) -> PerceptionAdapterDescriptor:
         if len(self.supported_source_types) != len(set(self.supported_source_types)):
             raise ValueError("perception adapter supported_source_types must be unique")
         return self
@@ -68,7 +68,7 @@ class SanitizedTelemetryEvent(StrictModel):
     fields: dict[str, Scalar] = Field(default_factory=dict, max_length=512)
 
     @model_validator(mode="after")
-    def reject_sensitive_field_names(self) -> "SanitizedTelemetryEvent":
+    def reject_sensitive_field_names(self) -> SanitizedTelemetryEvent:
         for key in self.fields:
             normalized = key.strip().lower().replace(" ", "_")
             if normalized in _FORBIDDEN_FIELD_TOKENS or any(
@@ -206,7 +206,7 @@ def deterministic_observation_id(
 
 def deterministic_evidence_id(*, adapter_id: str, event_id: str, payload_sha256: str) -> str:
     digest = hashlib.sha256(
-        f"{adapter_id}|{event_id}|{payload_sha256}".encode("utf-8")
+        f"{adapter_id}|{event_id}|{payload_sha256}".encode()
     ).hexdigest()[:32]
     return f"evidence:{adapter_id}:{digest}"
 

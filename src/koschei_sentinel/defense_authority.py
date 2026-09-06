@@ -106,7 +106,7 @@ class DefenseExecutionRecord(StrictModel):
     outcome_evidence_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def execution_is_auditable(self) -> "DefenseExecutionRecord":
+    def execution_is_auditable(self) -> DefenseExecutionRecord:
         if self.authorized and not self.precondition_evidence_ids:
             raise ValueError("authorized defense execution requires precondition evidence")
         if self.outcome_verified and not self.outcome_evidence_ids:

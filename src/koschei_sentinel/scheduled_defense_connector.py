@@ -37,7 +37,7 @@ class ScheduledAssuredConnectorEnvelope(StrictModel):
     production_authorized: Literal[True] = True
 
     @model_validator(mode="after")
-    def bindings_are_coherent(self) -> "ScheduledAssuredConnectorEnvelope":
+    def bindings_are_coherent(self) -> ScheduledAssuredConnectorEnvelope:
         command = self.assured_connector.command
         if self.schedule_item.disposition is not SchedulingDisposition.SCHEDULED:
             raise ValueError("scheduled connector envelope requires a SCHEDULED resource item")

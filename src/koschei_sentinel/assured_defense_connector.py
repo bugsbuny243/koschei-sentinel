@@ -54,7 +54,7 @@ class AssuredDefenseConnectorEnvelope(StrictModel):
     production_authorized: Literal[True] = True
 
     @model_validator(mode="after")
-    def production_binding_is_valid(self) -> "AssuredDefenseConnectorEnvelope":
+    def production_binding_is_valid(self) -> AssuredDefenseConnectorEnvelope:
         if active_defense_assurance_sha256(self.assurance_receipt) != self.assurance_sha256:
             raise ValueError("assured connector envelope assurance digest mismatch")
         if interception_plan_sha256(self.interception_plan) != self.interception_plan_sha256:

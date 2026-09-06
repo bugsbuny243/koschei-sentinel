@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from koschei_sentinel.defense_authority import DefenseAction, DefenseMode
+from koschei_sentinel.defense_authority import DefenseActionType, DefenseMode
 from koschei_sentinel.defense_human_review_queue import (
     HumanDefenseReviewStep,
     build_human_review_queue,
@@ -96,7 +96,7 @@ def test_human_review_submission_is_bound_to_existing_evidence() -> None:
             HumanDefenseReviewStep(
                 sequence=1,
                 expected_mode=DefenseMode.GUARD,
-                action=DefenseAction.COLLECT_EVIDENCE,
+                action=DefenseActionType.COLLECT_EVIDENCE,
                 target_entity_id="endpoint:1",
                 rationale="Collect additional evidence while preserving the endpoint state.",
                 supporting_evidence_ids=["ev-1"],
@@ -123,7 +123,7 @@ def test_human_review_rejects_invented_evidence() -> None:
                 HumanDefenseReviewStep(
                     sequence=1,
                     expected_mode=DefenseMode.GUARD,
-                    action=DefenseAction.COLLECT_EVIDENCE,
+                    action=DefenseActionType.COLLECT_EVIDENCE,
                     target_entity_id="endpoint:1",
                     rationale="Collect evidence without escalating authority prematurely.",
                     supporting_evidence_ids=["invented-evidence"],

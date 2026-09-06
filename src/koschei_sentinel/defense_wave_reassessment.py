@@ -75,7 +75,7 @@ class DefenseWaveReassessmentReceipt(StrictModel):
     reassessment_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def receipt_digest_is_valid(self) -> "DefenseWaveReassessmentReceipt":
+    def receipt_digest_is_valid(self) -> DefenseWaveReassessmentReceipt:
         expected = _receipt_digest(
             previous_wave_sha256=self.previous_wave_sha256,
             previous_schedule_sha256=self.previous_schedule_sha256,
@@ -99,7 +99,7 @@ class DefenseWaveReassessment(StrictModel):
     receipt: DefenseWaveReassessmentReceipt
 
     @model_validator(mode="after")
-    def next_plan_is_bound_to_receipt(self) -> "DefenseWaveReassessment":
+    def next_plan_is_bound_to_receipt(self) -> DefenseWaveReassessment:
         if assured_multi_incident_plan_sha256(self.next_plan) != self.receipt.next_plan_sha256:
             raise ValueError("defense wave reassessment next plan digest mismatch")
         return self

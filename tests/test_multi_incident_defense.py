@@ -8,7 +8,6 @@ from koschei_sentinel.cyber_state_graph import (
 )
 from koschei_sentinel.multi_incident_defense import build_multi_incident_defense_plan
 
-
 SHA = "e" * 64
 
 

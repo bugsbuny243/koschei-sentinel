@@ -49,7 +49,7 @@ class ReviewedCorrectionTrajectory(StrictModel):
     correction_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def fail_closed_training_authorization(self) -> "ReviewedCorrectionTrajectory":
+    def fail_closed_training_authorization(self) -> ReviewedCorrectionTrajectory:
         if self.review_decision is CorrectionReviewDecision.APPROVE:
             if self.review_status is not DefenseReflexReviewStatus.APPROVED:
                 raise ValueError("approved correction must carry APPROVED review status")

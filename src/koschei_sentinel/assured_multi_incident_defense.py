@@ -17,7 +17,6 @@ from koschei_sentinel.perception_assurance import PerceptionAssuranceSummary
 from koschei_sentinel.perception_graph_binding import PerceptionGraphReceipt
 from koschei_sentinel.perception_source_registry import PerceptionSourceRegistry
 
-
 _MODE_RANK = {
     DefenseMode.GUARD: 0,
     DefenseMode.COMBAT: 1,
@@ -37,7 +36,7 @@ class AssuredComponentDefensePlan(StrictModel):
     assured_plan: AssuredActiveDefensePlan
 
     @model_validator(mode="after")
-    def component_boundary_is_preserved(self) -> "AssuredComponentDefensePlan":
+    def component_boundary_is_preserved(self) -> AssuredComponentDefensePlan:
         entity_set = set(self.entity_ids)
         active = self.assured_plan.active_defense_plan
         if active.progression.primary_component_id != self.component_id:
@@ -67,7 +66,7 @@ class AssuredMultiIncidentDefensePlan(StrictModel):
     rationale: list[str]
 
     @model_validator(mode="after")
-    def components_are_unique(self) -> "AssuredMultiIncidentDefensePlan":
+    def components_are_unique(self) -> AssuredMultiIncidentDefensePlan:
         component_ids = [row.component_id for row in self.component_plans]
         if len(component_ids) != len(set(component_ids)):
             raise ValueError("assured multi-incident plan contains duplicate components")
