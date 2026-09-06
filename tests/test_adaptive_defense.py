@@ -70,9 +70,15 @@ def test_reassessment_recomputes_authority_from_updated_graph():
         critical_entity_ids=["device:prod"],
     )
 
+    assessment = reassessment.active_defense_plan.assessment
     assert reassessment.graph_changed is True
     assert reassessment.disposition is ReassessmentDisposition.CONTINUE_CONTAINMENT
-    assert reassessment.active_defense_plan.decision.mode is DefenseMode.COMBAT
+    assert assessment.attack_confidence >= 0.95
+    assert assessment.active_progression is True
+    assert assessment.critical_asset_at_risk is True
+    assert assessment.blast_radius_score >= 0.7
+    assert assessment.corroborating_evidence_count >= 2
+    assert reassessment.active_defense_plan.decision.mode is DefenseMode.SIEGE
     assert reassessment.interception_plan.steps
     assert any(
         step.target_entity_id == "device:prod"
