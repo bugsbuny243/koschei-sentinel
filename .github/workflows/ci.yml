@@ -23,8 +23,12 @@ jobs:
       - run: pytest
       - name: Web4 signed review fail-closed gate
         run: pytest tests/test_web4_benchmark_review.py
+      - name: Web4 signed HOLDOUT release fail-closed gate
+        run: pytest tests/test_web4_holdout_release.py
       - name: Validate Web4 review verifier entrypoint
         run: sentinel-web4-review-verify --help
+      - name: Validate Web4 HOLDOUT release verifier entrypoint
+        run: sentinel-web4-holdout-release-verify --help
       - run: sentinel-web4-research-readiness
       - name: Validate Web4 benchmark intake isolation
         run: >-
