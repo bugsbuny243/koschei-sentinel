@@ -16,7 +16,6 @@ from koschei_sentinel.web4_benchmark_review import (
     sign_web4_benchmark_human_review,
 )
 from koschei_sentinel.web4_reviewer_trust import (
-    Web4ReviewerTrustPolicy,
     Web4ReviewRole,
     build_web4_reviewer_trust_policy,
     load_web4_review_private_key,
