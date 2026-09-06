@@ -55,6 +55,7 @@ def _digest(payload: object) -> str:
 
 
 def _build_signed_release(tmp_path: Path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     proposal_template = json.loads(_PROPOSAL.read_text(encoding="utf-8"))
     answer_template = json.loads(_ANSWER_KEY.read_text(encoding="utf-8"))
     packet = None
