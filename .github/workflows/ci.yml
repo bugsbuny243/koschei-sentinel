@@ -21,6 +21,7 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: ruff check .
       - run: pytest
+      - run: sentinel-web4-research-readiness
       - run: >-
           sentinel-curriculum-check
           --config configs/curriculum/language-first.v1.json
