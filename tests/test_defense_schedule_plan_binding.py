@@ -1,12 +1,11 @@
 import pytest
 
-from tests.test_defense_resource_scheduler import _plan, _policy, _scope_for
-
 from koschei_sentinel.defense_resource_scheduler import build_defense_resource_schedule
 from koschei_sentinel.defense_wave_execution import start_defense_wave_execution
 from koschei_sentinel.scheduled_defense_connector import (
     build_scheduled_assured_connector_envelope,
 )
+from tests.test_defense_resource_scheduler import _plan, _policy, _scope_for
 
 
 def test_schedule_cannot_be_replayed_against_different_assured_plan() -> None:

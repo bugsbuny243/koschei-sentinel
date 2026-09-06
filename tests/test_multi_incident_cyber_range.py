@@ -16,7 +16,6 @@ from koschei_sentinel.multi_incident_cyber_range import (
     run_multi_incident_cyber_range,
 )
 
-
 SHA = "f" * 64
 
 

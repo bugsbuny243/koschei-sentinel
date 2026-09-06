@@ -55,7 +55,7 @@ class PerceivedEntity(StrictModel):
     labels: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def reject_sensitive_label_names(self) -> "PerceivedEntity":
+    def reject_sensitive_label_names(self) -> PerceivedEntity:
         for key in self.labels:
             normalized = key.strip().lower().replace(" ", "_")
             if normalized in _SENSITIVE_LABEL_TOKENS or any(
@@ -84,7 +84,7 @@ class PerceptionBatch(StrictModel):
     observations: list[PerceptionObservation] = Field(min_length=1, max_length=100000)
 
     @model_validator(mode="after")
-    def observation_ids_are_unique(self) -> "PerceptionBatch":
+    def observation_ids_are_unique(self) -> PerceptionBatch:
         ids = [row.observation_id for row in self.observations]
         if len(ids) != len(set(ids)):
             raise ValueError("observation_id values must be unique inside a perception batch")

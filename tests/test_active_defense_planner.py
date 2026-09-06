@@ -9,7 +9,6 @@ from koschei_sentinel.cyber_state_graph import (
 )
 from koschei_sentinel.defense_authority import DefenseActionType, DefenseMode
 
-
 SHA = "b" * 64
 
 

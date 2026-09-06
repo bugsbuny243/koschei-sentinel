@@ -59,7 +59,7 @@ class HumanDefenseReviewSubmission(StrictModel):
     submission_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def ordered_steps(self) -> "HumanDefenseReviewSubmission":
+    def ordered_steps(self) -> HumanDefenseReviewSubmission:
         sequence = [row.sequence for row in self.steps]
         if sequence != list(range(1, len(sequence) + 1)):
             raise ValueError("human defense review steps must be contiguous from sequence 1")

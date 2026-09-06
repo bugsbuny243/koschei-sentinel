@@ -11,7 +11,6 @@ from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
 
-
 _DIGEST = r"^[a-f0-9]{64}$"
 
 

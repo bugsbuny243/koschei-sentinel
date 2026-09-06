@@ -9,7 +9,6 @@ from koschei_sentinel.cyber_state_graph import (
     EvidenceStatus,
 )
 
-
 SHA = "c" * 64
 
 

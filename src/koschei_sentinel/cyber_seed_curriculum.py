@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 from pydantic import Field
 
@@ -28,7 +29,6 @@ from koschei_sentinel.defense_reflex_corpus_v3 import (
 )
 from koschei_sentinel.defense_reflex_review import ReviewedCorrectionStep
 from koschei_sentinel.models import StrictModel
-
 
 SEED_POLICY_ID = "policy:sentinel-seed-defense-doctrine-v1"
 

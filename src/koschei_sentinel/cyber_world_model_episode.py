@@ -70,7 +70,7 @@ class CyberWorldModelEpisode(StrictModel):
     training_authorization: bool = False
 
     @model_validator(mode="after")
-    def temporal_integrity(self) -> "CyberWorldModelEpisode":
+    def temporal_integrity(self) -> CyberWorldModelEpisode:
         ticks = [row.tick for row in self.snapshots]
         if ticks != list(range(len(ticks))):
             raise ValueError("world-model snapshots must use contiguous ticks from zero")

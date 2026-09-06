@@ -6,7 +6,11 @@ from typing import Literal
 
 from pydantic import Field
 
-from koschei_sentinel.cyber_perception import PerceivedEntity, PerceptionBatch, PerceptionObservation
+from koschei_sentinel.cyber_perception import (
+    PerceivedEntity,
+    PerceptionBatch,
+    PerceptionObservation,
+)
 from koschei_sentinel.models import StrictModel
 
 _DIGEST = r"^[a-f0-9]{64}$"

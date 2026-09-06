@@ -25,7 +25,7 @@ class ProtectedScope(StrictModel):
     permitted_actions: list[DefenseActionType] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def scope_values_are_unique(self) -> "ProtectedScope":
+    def scope_values_are_unique(self) -> ProtectedScope:
         if len(self.entity_ids) != len(set(self.entity_ids)):
             raise ValueError("protected scope entity_ids must be unique")
         if len(self.permitted_actions) != len(set(self.permitted_actions)):
@@ -63,7 +63,7 @@ class DefenseConnectorReceipt(StrictModel):
     message: str | None = None
 
     @model_validator(mode="after")
-    def completed_receipt_requires_evidence(self) -> "DefenseConnectorReceipt":
+    def completed_receipt_requires_evidence(self) -> DefenseConnectorReceipt:
         if self.status in {
             ConnectorExecutionStatus.SUCCEEDED,
             ConnectorExecutionStatus.FAILED,

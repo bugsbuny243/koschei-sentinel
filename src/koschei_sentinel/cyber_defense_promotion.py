@@ -22,7 +22,6 @@ from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
 
-
 _DIGEST = r"^[a-f0-9]{64}$"
 
 
@@ -72,7 +71,7 @@ class CyberDefensePromotionEvidence(StrictModel):
     evidence_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def promotion_is_fail_closed(self) -> "CyberDefensePromotionEvidence":
+    def promotion_is_fail_closed(self) -> CyberDefensePromotionEvidence:
         expected = (
             self.cyber_range_passed
             and self.multi_incident_range_passed

@@ -35,7 +35,7 @@ class GoldReviewSplitPolicy(StrictModel):
     holdout_basis_points: int = Field(default=1000, ge=1, le=9998)
 
     @model_validator(mode="after")
-    def ratios_sum_to_one(self) -> "GoldReviewSplitPolicy":
+    def ratios_sum_to_one(self) -> GoldReviewSplitPolicy:
         total = (
             self.train_basis_points
             + self.validation_basis_points

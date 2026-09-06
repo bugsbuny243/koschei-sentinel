@@ -39,7 +39,7 @@ class HumanDefenseAdjudication(StrictModel):
     adjudication_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def independent_adjudicator(self) -> "HumanDefenseAdjudication":
+    def independent_adjudicator(self) -> HumanDefenseAdjudication:
         if self.reviewer_id == self.adjudicator_id:
             raise ValueError("reviewer and adjudicator must be different identities")
         expected = self.decision is HumanDefenseAdjudicationDecision.APPROVE_FOR_RANGE_VALIDATION

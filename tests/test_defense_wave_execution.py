@@ -1,5 +1,3 @@
-from tests.test_defense_resource_scheduler import _plan, _policy
-
 from koschei_sentinel.defense_resource_scheduler import build_defense_resource_schedule
 from koschei_sentinel.defense_wave_execution import (
     DefenseWaveComponentStatus,
@@ -8,6 +6,7 @@ from koschei_sentinel.defense_wave_execution import (
     start_defense_wave_execution,
     verify_wave_component_outcome,
 )
+from tests.test_defense_resource_scheduler import _plan, _policy
 
 
 def test_parallel_components_can_be_authorized_independently() -> None:

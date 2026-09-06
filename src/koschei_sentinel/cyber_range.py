@@ -43,7 +43,7 @@ class CyberRangeScenario(StrictModel):
     action_outcomes: list[SimulatedActionOutcome] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def scenario_is_coherent(self) -> "CyberRangeScenario":
+    def scenario_is_coherent(self) -> CyberRangeScenario:
         graph_ids = {graph.graph_id for graph in self.graph_snapshots}
         if len(graph_ids) != 1:
             raise ValueError("all graph snapshots in a cyber-range scenario must share graph_id")

@@ -10,7 +10,6 @@ from koschei_sentinel.cyber_state_graph import CyberStateGraph
 from koschei_sentinel.defense_authority import DefenseMode
 from koschei_sentinel.models import StrictModel
 
-
 _MODE_RANK = {
     DefenseMode.GUARD: 0,
     DefenseMode.COMBAT: 1,
@@ -30,7 +29,7 @@ class ComponentDefensePlan(StrictModel):
     defense_plan: ActiveDefensePlan
 
     @model_validator(mode="after")
-    def component_boundary_is_preserved(self) -> "ComponentDefensePlan":
+    def component_boundary_is_preserved(self) -> ComponentDefensePlan:
         entity_set = set(self.entity_ids)
         if not set(self.critical_entity_ids).issubset(entity_set):
             raise ValueError("component critical entities must remain inside the component")
@@ -61,7 +60,7 @@ class MultiIncidentDefensePlan(StrictModel):
     rationale: list[str]
 
     @model_validator(mode="after")
-    def component_ids_are_unique(self) -> "MultiIncidentDefensePlan":
+    def component_ids_are_unique(self) -> MultiIncidentDefensePlan:
         component_ids = [row.component_id for row in self.component_plans]
         if len(component_ids) != len(set(component_ids)):
             raise ValueError("multi-incident defense plan contains duplicate components")

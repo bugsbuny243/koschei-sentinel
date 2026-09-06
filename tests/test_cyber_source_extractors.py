@@ -10,7 +10,6 @@ from koschei_sentinel.cyber_source_extractors import (
     extract_rustsec_snapshot,
 )
 
-
 REVISION = "deadbeef"
 RUSTSEC_APPROVED_REVISION = "69f93e1d081d8b6fbee010e48f0b5e0d13661415"
 DIGEST = "a" * 64
