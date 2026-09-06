@@ -36,7 +36,7 @@ def test_progression_sees_supply_chain_and_signer_path() -> None:
         ],
         relations=[
             CyberRelation(
-                relation_id="r1",
+                relation_id="rel:r1",
                 source_entity_id="identity:attacker-session",
                 target_entity_id="credential:ci-token",
                 relation_type="steals_credential",
@@ -45,7 +45,7 @@ def test_progression_sees_supply_chain_and_signer_path() -> None:
                 evidence=[evidence("ev1")],
             ),
             CyberRelation(
-                relation_id="r2",
+                relation_id="rel:r2",
                 source_entity_id="credential:ci-token",
                 target_entity_id="device:runner",
                 relation_type="uses_credential",
@@ -54,7 +54,7 @@ def test_progression_sees_supply_chain_and_signer_path() -> None:
                 evidence=[evidence("ev2")],
             ),
             CyberRelation(
-                relation_id="r3",
+                relation_id="rel:r3",
                 source_entity_id="device:runner",
                 target_entity_id="pipeline:release",
                 relation_type="modifies_pipeline",
@@ -63,7 +63,7 @@ def test_progression_sees_supply_chain_and_signer_path() -> None:
                 evidence=[evidence("ev3")],
             ),
             CyberRelation(
-                relation_id="r4",
+                relation_id="rel:r4",
                 source_entity_id="pipeline:release",
                 target_entity_id="wallet:signer",
                 relation_type="reaches_signer",
@@ -72,7 +72,7 @@ def test_progression_sees_supply_chain_and_signer_path() -> None:
                 evidence=[evidence("ev4")],
             ),
             CyberRelation(
-                relation_id="r5",
+                relation_id="rel:r5",
                 source_entity_id="wallet:signer",
                 target_entity_id="transaction:pending",
                 relation_type="prepares_transaction",
@@ -90,7 +90,7 @@ def test_progression_sees_supply_chain_and_signer_path() -> None:
     assert any(row.stage is AttackStage.SUPPLY_CHAIN for row in report.active_stages)
     assert any(row.stage is AttackStage.SIGNER_OR_WALLET_ACCESS for row in report.active_stages)
     assert report.predicted_transitions[0].to_stage is AttackStage.IMPACT
-    assert "r5" not in report.active_relation_ids
+    assert "rel:r5" not in report.active_relation_ids
 
     actions = {row.action for row in report.defensive_cut_points}
     assert DefenseActionType.REVOKE_CREDENTIAL in actions
