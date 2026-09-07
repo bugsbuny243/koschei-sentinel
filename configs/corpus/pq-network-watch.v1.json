@@ -1,0 +1,80 @@
+{
+  "schema_version": "sentinel.pq-network-watch.v1",
+  "lane_id": "post-quantum-network-intelligence",
+  "status": "RESEARCH_INTAKE",
+  "event_schema": "schemas/pq-network-intelligence-v1.schema.json",
+  "watch_networks": [
+    "Ethereum",
+    "Bitcoin",
+    "Solana",
+    "Sui",
+    "NEAR",
+    "Cardano",
+    "Aptos",
+    "Avalanche",
+    "Cosmos"
+  ],
+  "tracked_dimensions": [
+    "current_cryptography",
+    "exposed_key_surface",
+    "post_quantum_scheme",
+    "account_migration",
+    "validator_migration",
+    "consensus_migration",
+    "wallet_hsm_support",
+    "bridge_cross_chain_compatibility",
+    "fork_or_proposal",
+    "target_date",
+    "evidence"
+  ],
+  "source_policy": {
+    "prefer_primary_protocol_sources": true,
+    "require_canonical_locator_before_verification": true,
+    "require_snapshot_sha256_before_verification": true,
+    "require_provenance_receipt_before_dataset_admission": true,
+    "require_human_review_before_gold": true,
+    "training_authorization_default": false,
+    "secondary_sources_may_discover_but_not_authorize": true
+  },
+  "promotion_policy": {
+    "minimum_independent_evidence": 1,
+    "primary_protocol_evidence_required_for_protocol_status_claims": true,
+    "unknown_is_not_negative_evidence": true,
+    "unverified_target_dates_are_blocked": true
+  },
+  "seed_discoveries": [
+    {
+      "source_id": "ethereum-protocol-priorities-2026-02-18",
+      "title": "Protocol Priorities Update for 2026",
+      "publisher": "Ethereum Foundation",
+      "canonical_locator": "https://blog.ethereum.org/2026/02/18/protocol-priorities-update-2026",
+      "source_class": "PRIMARY_PROTOCOL",
+      "review_status": "PROPOSED",
+      "snapshot_sha256": null,
+      "training_authorization": false,
+      "notes": "Official discovery anchor. Must be snapshotted, hashed, and receipt-bound before evidence verification or dataset admission."
+    },
+    {
+      "source_id": "ethereum-current-emerging-priorities-2026-09-07",
+      "title": "EF Protocol: Current and Emerging Priorities",
+      "publisher": "Ethereum Foundation Protocol Cluster",
+      "canonical_locator": null,
+      "source_class": "PRIMARY_PROTOCOL",
+      "review_status": "PROPOSED",
+      "snapshot_sha256": null,
+      "training_authorization": false,
+      "notes": "Priority discovery from 2026-09-07. Resolve the canonical official locator and bind a snapshot receipt before extracting claims."
+    },
+    {
+      "source_id": "ethereum-hegota-eip-opinion-tier-list-2026-09-07",
+      "title": "Hegotá EIP Opinion Post and Tier List",
+      "publisher": "Ethereum Foundation Protocol Cluster",
+      "canonical_locator": null,
+      "source_class": "PRIMARY_PROTOCOL",
+      "review_status": "PROPOSED",
+      "snapshot_sha256": null,
+      "training_authorization": false,
+      "notes": "Priority discovery from 2026-09-07. Resolve the canonical official locator and bind a snapshot receipt before extracting EIP rankings or protocol claims."
+    }
+  ]
+}
