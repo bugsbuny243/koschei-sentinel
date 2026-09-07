@@ -1,6 +1,6 @@
 {
   "schema_version": "sentinel.web4-protocol-tracking.v1",
-  "observed_at": "2026-09-06",
+  "observed_at": "2026-09-07",
   "status": "research_only",
   "training_authorization": false,
   "policy": {
@@ -59,6 +59,66 @@
       "standing": "INDIVIDUAL_INTERNET_DRAFT",
       "topics": ["PRINCIPAL_BINDING", "VERIFIER_BINDING", "DELEGATION_STATE", "SESSION_CONTINUITY", "ACTION_EVIDENCE"],
       "source_ref": "ietf.draft.bu.agentproto-security-principal-binding-00"
+    },
+    {
+      "family_id": "agent-identity-discovery-nemethi",
+      "display_name": "Agent Identity and Discovery (AID)",
+      "document_id": "draft-nemethi-aid-agent-identity-discovery",
+      "author_identity": "B. Nemethi",
+      "current_observed_revision": "00",
+      "current_observed_publication_date": "2026-03-16",
+      "current_observed_expiry": "2026-09-17",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_DISCOVERY", "DNS_TXT", "ENDPOINT_METADATA", "AUTH_HINT", "ENDPOINT_PROOF", "ED25519"],
+      "source_ref": "ietf.draft.nemethi.aid-agent-identity-discovery-00"
+    },
+    {
+      "family_id": "dns-ai-discovery-mozleywilliams",
+      "display_name": "DNS for AI Discovery",
+      "document_id": "draft-mozleywilliams-dnsop-dnsaid",
+      "author_identity": "J. Mozley; N. Williams; B. Sarikaya; R. Schott; J. Damick",
+      "current_observed_revision": "02",
+      "current_observed_publication_date": "2026-05-27",
+      "current_observed_expiry": "2026-11-28",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_DISCOVERY", "DNS", "SVCB", "DNS_SD", "DNSSEC", "DANE", "TLSA"],
+      "source_ref": "ietf.draft.mozleywilliams.dnsop-dnsaid-02"
+    },
+    {
+      "family_id": "agent-discovery-protocol-lian",
+      "display_name": "Agent Discovery Protocol",
+      "document_id": "draft-pro-adp-agent-discovery",
+      "author_identity": "B. Lian",
+      "current_observed_revision": "02",
+      "current_observed_publication_date": "2026-06-18",
+      "current_observed_expiry": "2026-12-20",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_DISCOVERY", "DNS_AID", "WELL_KNOWN_METADATA", "ED25519_IDENTITY", "AGENT_GATEWAY_PROTOCOL"],
+      "source_ref": "ietf.draft.pro.adp-agent-discovery-02"
+    },
+    {
+      "family_id": "agent-to-agent-trust-tonyai",
+      "display_name": "Agent-to-Agent Trust, Identity, and Verifiable Provenance",
+      "document_id": "draft-tonyai-a2a-trust",
+      "author_identity": "T. Trujillo",
+      "current_observed_revision": "01",
+      "current_observed_publication_date": "2026-07-25",
+      "current_observed_expiry": "2027-01-26",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_TO_AGENT_TRUST", "IDENTITY", "SPAWN_CHAIN", "PROVENANCE", "CROSS_ORGANIZATION_AUTHORIZATION"],
+      "source_ref": "ietf.draft.tonyai.a2a-trust-01"
+    },
+    {
+      "family_id": "agent-identity-certificate-wei",
+      "display_name": "AI Agent Identity Certificate",
+      "document_id": "draft-wei-aic-identity-cert",
+      "author_identity": "J. Wei",
+      "current_observed_revision": "00",
+      "current_observed_publication_date": "2026-08-19",
+      "current_observed_expiry": "2027-02-20",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_IDENTITY", "PRINCIPAL_BINDING", "X509", "ATTRIBUTION", "AUTHORIZATION_BOUNDARY"],
+      "source_ref": "ietf.draft.wei.aic-identity-cert-00"
     },
     {
       "family_id": "web4-terminology-jacobs",
