@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koschei.dev/schemas/pq-network-intelligence-v1.schema.json",
+  "title": "Koschei Sentinel Post-Quantum Network Intelligence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_id",
+    "network",
+    "observed_at",
+    "lifecycle",
+    "graph",
+    "migration_surface",
+    "evidence",
+    "confidence",
+    "training_authorization"
+  ],
+  "properties": {
+    "schema_version": {"const": "sentinel.pq-network-intelligence.v1"},
+    "record_id": {"type": "string", "minLength": 8},
+    "network": {"type": "string", "minLength": 2},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "event_type": {
+      "enum": [
+        "PROTOCOL_PRIORITY",
+        "PROPOSAL",
+        "FORK_SCOPE",
+        "DEVNET",
+        "TESTNET",
+        "MAINNET",
+        "ACCOUNT_MIGRATION",
+        "VALIDATOR_MIGRATION",
+        "CONSENSUS_MIGRATION",
+        "WALLET_OR_HSM_SUPPORT",
+        "BRIDGE_OR_CROSS_CHAIN_COMPATIBILITY",
+        "CRYPTOGRAPHY_CHANGE"
+      ]
+    },
+    "lifecycle": {
+      "enum": ["DISCOVERED", "PROPOSED", "ACCEPTED", "IMPLEMENTING", "TESTING", "DEPLOYED", "REJECTED", "SUPERSEDED", "UNKNOWN"]
+    },
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity", "event", "intent", "capability", "vulnerability", "action", "consequence", "evidence_summary"],
+      "properties": {
+        "entity": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "event": {"type": "string", "minLength": 3},
+        "intent": {"type": ["string", "null"]},
+        "capability": {"type": ["string", "null"]},
+        "vulnerability": {"type": ["string", "null"]},
+        "action": {"type": ["string", "null"]},
+        "consequence": {"type": ["string", "null"]},
+        "evidence_summary": {"type": "string", "minLength": 3}
+      }
+    },
+    "cryptography": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "current_signature_or_key_scheme": {"type": ["string", "null"]},
+        "proposed_pq_scheme": {"type": ["string", "null"]},
+        "hybrid_mode": {"type": ["boolean", "null"]},
+        "key_exposure_model": {"type": ["string", "null"]}
+      }
+    },
+    "migration_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accounts", "validators", "consensus", "wallets_hsm", "bridges_cross_chain"],
+      "properties": {
+        "accounts": {"enum": ["NONE", "UNKNOWN", "RESEARCH", "PROPOSED", "TESTING", "DEPLOYED"]},
+        "validators": {"enum": ["NONE", "UNKNOWN", "RESEARCH", "PROPOSED", "TESTING", "DEPLOYED"]},
+        "consensus": {"enum": ["NONE", "UNKNOWN", "RESEARCH", "PROPOSED", "TESTING", "DEPLOYED"]},
+        "wallets_hsm": {"enum": ["NONE", "UNKNOWN", "RESEARCH", "PROPOSED", "TESTING", "DEPLOYED"]},
+        "bridges_cross_chain": {"enum": ["NONE", "UNKNOWN", "RESEARCH", "PROPOSED", "TESTING", "DEPLOYED"]}
+      }
+    },
+    "target_date": {"type": ["string", "null"], "format": "date"},
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "publisher", "source_class", "canonical_locator", "published_at", "snapshot_sha256", "verified"],
+        "properties": {
+          "title": {"type": "string", "minLength": 3},
+          "publisher": {"type": "string", "minLength": 2},
+          "source_class": {"enum": ["PRIMARY_PROTOCOL", "AUTHORITATIVE", "REVIEWED_SECONDARY", "CONTEXT_ONLY"]},
+          "canonical_locator": {"type": ["string", "null"]},
+          "published_at": {"type": ["string", "null"], "format": "date-time"},
+          "snapshot_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+          "verified": {"type": "boolean"}
+        }
+      }
+    },
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "uncertainty": {"type": ["string", "null"]},
+    "training_authorization": {"type": "boolean"}
+  }
+}
