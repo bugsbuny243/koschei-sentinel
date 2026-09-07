@@ -71,6 +71,8 @@ jobs:
           sentinel-web4-research-snapshot verify \
             --receipt build/web4/research-snapshot-receipt.json \
             --snapshot fixtures/web4/research-snapshot/fixture-source.txt
+      - name: Web4 benchmark snapshot receipt binding gate
+        run: pytest tests/test_web4_benchmark_snapshot_receipt_binding.py
       - name: Validate Web4 benchmark intake isolation
         run: >-
           sentinel-web4-benchmark-intake
