@@ -50,6 +50,10 @@ jobs:
       - name: Validate Web4 evaluation decision verifier entrypoint
         run: sentinel-web4-holdout-eval-decision-verify --help
       - run: sentinel-web4-research-readiness
+      - name: Web4 Agent Trust Chain fail-closed gate
+        run: pytest tests/test_web4_agent_trust_chain.py
+      - name: Validate Web4 Agent Trust Chain contract
+        run: sentinel-web4-agent-trust-chain
       - name: Validate Web4 benchmark intake isolation
         run: >-
           sentinel-web4-benchmark-intake
