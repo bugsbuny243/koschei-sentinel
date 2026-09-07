@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sentinel.cloud-runtime-profile.v1",
+  "title": "Koschei Sentinel Cloud Runtime Profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "ownership",
+    "provider_binding",
+    "own_server_required",
+    "compute_lifecycle",
+    "persistent_local_state",
+    "training_backend",
+    "stores",
+    "model_sources",
+    "network",
+    "budget",
+    "termination"
+  ],
+  "properties": {
+    "schema_version": {"const": "sentinel.cloud-runtime-profile.v1"},
+    "profile_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+    "ownership": {"const": "EXTERNAL_EPHEMERAL_COMPUTE"},
+    "provider_binding": {"const": "UNBOUND"},
+    "own_server_required": {"const": false},
+    "compute_lifecycle": {"const": "EPHEMERAL"},
+    "persistent_local_state": {"const": false},
+    "training_backend": {"const": "megatron-swift"},
+    "stores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkpoint_artifacts", "security_analytics"],
+      "properties": {
+        "checkpoint_artifacts": {"$ref": "#/$defs/objectStorageStore"},
+        "security_analytics": {"$ref": "#/$defs/clickhouseStore"}
+      }
+    },
+    "model_sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["OBJECT_STORAGE", "LOCAL_CACHE", "EXTERNAL_REGISTRY_OPTIONAL"]
+      },
+      "contains": {"const": "OBJECT_STORAGE"}
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["public_inbound_default", "cluster_rendezvous"],
+      "properties": {
+        "public_inbound_default": {"const": "DENY"},
+        "cluster_rendezvous": {"const": "PRIVATE_OR_PROVIDER_INTERNAL"}
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paid_compute_default", "approval_env", "session_env"],
+      "properties": {
+        "paid_compute_default": {"const": "DENY"},
+        "approval_env": {"const": "KOSCHEI_CLOUD_RUNTIME_APPROVED"},
+        "session_env": {"const": "KOSCHEI_CLOUD_RUNTIME_SESSION"}
+      }
+    },
+    "termination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "require_checkpoint_sync",
+        "require_manifest_sha256",
+        "require_remote_persistence_before_release"
+      ],
+      "properties": {
+        "require_checkpoint_sync": {"const": true},
+        "require_manifest_sha256": {"const": true},
+        "require_remote_persistence_before_release": {"const": true}
+      }
+    }
+  },
+  "$defs": {
+    "objectStorageStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "required", "uri_env"],
+      "properties": {
+        "kind": {"const": "OBJECT_STORAGE"},
+        "required": {"const": true},
+        "uri_env": {"type": "string", "pattern": "^KOSCHEI_[A-Z0-9_]+$"}
+      }
+    },
+    "clickhouseStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "required", "uri_env"],
+      "properties": {
+        "kind": {"const": "CLICKHOUSE"},
+        "required": {"const": true},
+        "uri_env": {"type": "string", "pattern": "^KOSCHEI_[A-Z0-9_]+$"}
+      }
+    }
+  }
+}
