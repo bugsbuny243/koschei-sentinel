@@ -114,6 +114,7 @@ sentinel-web4-research-readiness = "koschei_sentinel.web4_research_readiness_cli
 sentinel-web4-benchmark-intake = "koschei_sentinel.web4_benchmark_intake_cli:main"
 sentinel-web4-review-ops = "koschei_sentinel.web4_review_ops_cli:main"
 sentinel-web4-review-verify = "koschei_sentinel.web4_benchmark_review_verify_cli:main"
+sentinel-web4-holdout-ops = "koschei_sentinel.web4_holdout_ops_cli:main"
 sentinel-web4-holdout-release-verify = "koschei_sentinel.web4_holdout_release_verify_cli:main"
 sentinel-web4-holdout-eval-verify = "koschei_sentinel.web4_holdout_evaluation_verify_cli:main"
 sentinel-web4-holdout-eval-decision-verify = "koschei_sentinel.web4_holdout_evaluation_decision_verify_cli:main"

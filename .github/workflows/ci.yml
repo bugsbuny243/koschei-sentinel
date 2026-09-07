@@ -25,6 +25,10 @@ jobs:
         run: pytest tests/test_web4_review_ops_cli.py
       - name: Validate Web4 review operator entrypoint
         run: sentinel-web4-review-ops --help
+      - name: Web4 HOLDOUT operator fail-closed gate
+        run: pytest tests/test_web4_holdout_ops_cli.py
+      - name: Validate Web4 HOLDOUT operator entrypoint
+        run: sentinel-web4-holdout-ops --help
       - name: Web4 signed review fail-closed gate
         run: pytest tests/test_web4_benchmark_review.py
       - name: Web4 signed HOLDOUT release fail-closed gate
