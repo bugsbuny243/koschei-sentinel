@@ -54,6 +54,10 @@ jobs:
         run: pytest tests/test_web4_agent_trust_chain.py
       - name: Validate Web4 Agent Trust Chain contract
         run: sentinel-web4-agent-trust-chain
+      - name: Web4 Agent Trust authoring plan fail-closed gate
+        run: pytest tests/test_web4_agent_trust_authoring.py
+      - name: Validate Web4 Agent Trust authoring plan
+        run: sentinel-web4-agent-trust-authoring
       - name: Validate Web4 benchmark intake isolation
         run: >-
           sentinel-web4-benchmark-intake
