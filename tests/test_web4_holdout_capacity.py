@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.promotion import public_key_fingerprint
@@ -14,6 +15,7 @@ from koschei_sentinel.web4_holdout_capacity import (
     Web4HoldoutCapacityReport,
     build_web4_holdout_capacity_report,
 )
+from koschei_sentinel.web4_holdout_capacity_cli import main as capacity_main
 from koschei_sentinel.web4_holdout_release import (
     Web4HoldoutRelease,
     Web4HoldoutReleaseCase,
@@ -117,6 +119,22 @@ def _signed_release(
     return Web4HoldoutRelease.model_validate(signed)
 
 
+def _write_release(path: Path, release: Web4HoldoutRelease) -> None:
+    path.write_text(
+        json.dumps(release.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_owner_public(path: Path, owner: Ed25519PrivateKey) -> None:
+    path.write_bytes(
+        owner.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+
+
 def test_capacity_reports_real_policy_shortfall_without_granting_authority() -> None:
     owner = Ed25519PrivateKey.generate()
     first_family = str(_policy()["required_families"][0])
@@ -217,3 +235,78 @@ def test_capacity_rejects_wrong_owner_and_tampered_report() -> None:
     tampered["capacity_sha256"] = "f" * 64
     with pytest.raises(ValueError, match="self-hash"):
         Web4HoldoutCapacityReport.model_validate(tampered)
+
+
+def test_capacity_cli_returns_one_for_valid_shortfall_and_writes_report(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    owner = Ed25519PrivateKey.generate()
+    first_family = str(_policy()["required_families"][0])
+    release_path = tmp_path / "release.json"
+    owner_public_path = tmp_path / "owner-public.pem"
+    output_path = tmp_path / "capacity.json"
+    _write_release(release_path, _signed_release(owner, {first_family: 1}))
+    _write_owner_public(owner_public_path, owner)
+
+    result = capacity_main(
+        [
+            "--release",
+            str(release_path),
+            "--benchmark-policy",
+            str(_BENCHMARK),
+            "--owner-public-key",
+            str(owner_public_path),
+            "--output",
+            str(output_path),
+        ]
+    )
+    assert result == 1
+    report = Web4HoldoutCapacityReport.model_validate_json(output_path.read_bytes())
+    assert report.research_benchmark_capacity_ready is False
+    assert report.training_authorization is False
+    stdout = capsys.readouterr().out
+    assert '"training_authorization": false' in stdout
+
+
+def test_capacity_cli_returns_zero_for_ready_signed_release(tmp_path: Path) -> None:
+    owner = Ed25519PrivateKey.generate()
+    families = [str(item) for item in _policy()["required_families"]]
+    release_path = tmp_path / "release.json"
+    owner_public_path = tmp_path / "owner-public.pem"
+    _write_release(release_path, _signed_release(owner, {family: 12 for family in families}))
+    _write_owner_public(owner_public_path, owner)
+
+    result = capacity_main(
+        [
+            "--release",
+            str(release_path),
+            "--benchmark-policy",
+            str(_BENCHMARK),
+            "--owner-public-key",
+            str(owner_public_path),
+        ]
+    )
+    assert result == 0
+
+
+def test_capacity_cli_returns_two_for_wrong_owner(tmp_path: Path) -> None:
+    owner = Ed25519PrivateKey.generate()
+    wrong_owner = Ed25519PrivateKey.generate()
+    first_family = str(_policy()["required_families"][0])
+    release_path = tmp_path / "release.json"
+    owner_public_path = tmp_path / "wrong-owner-public.pem"
+    _write_release(release_path, _signed_release(owner, {first_family: 1}))
+    _write_owner_public(owner_public_path, wrong_owner)
+
+    result = capacity_main(
+        [
+            "--release",
+            str(release_path),
+            "--benchmark-policy",
+            str(_BENCHMARK),
+            "--owner-public-key",
+            str(owner_public_path),
+        ]
+    )
+    assert result == 2
