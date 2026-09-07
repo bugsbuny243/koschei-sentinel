@@ -1,6 +1,6 @@
-# Qwen3.5-397B-A17B Megatron-SWIFT runbook
+# Qwen3.5-397B-A17B Megatron-SWIFT external bootstrap runbook
 
-This runbook prepares and launches the only active Koschei Sentinel model-training target.
+This runbook prepares and launches the only active **external bootstrap/trainer-proof** large-MoE training target currently checked into the repository. It does not define Koschei Sentinel's product identity or native architecture target. The Sentinel-native target is approximately 397B total / 35B active parameters and is defined in `configs/model/sentinel-moe-397b-a35b.target.json`.
 
 ## 1. Build or mount the corpus
 
@@ -44,7 +44,7 @@ verify at minimum:
 - the approved cost cap covers the measured wall-time estimate.
 
 Do not infer feasibility from the 17B active-parameter count. The checkpoint contains 397B total
-parameters.
+parameters. These figures describe the external bootstrap model, not the Sentinel-native 35B-active architecture target.
 
 ## 4. Review the generated command
 
