@@ -56,6 +56,10 @@ jobs:
           --proposal fixtures/web4/benchmark-intake/proposal.json
           --answer-key fixtures/web4/benchmark-intake/answer-key.json
           --output build/web4/benchmark-intake.json
+      - name: Web4 batch benchmark intake fail-closed gate
+        run: pytest tests/test_web4_benchmark_batch_queue.py
+      - name: Validate Web4 batch benchmark intake entrypoint
+        run: sentinel-web4-benchmark-batch-intake --help
       - run: >-
           sentinel-curriculum-check
           --config configs/curriculum/language-first.v1.json
