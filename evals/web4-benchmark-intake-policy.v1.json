@@ -10,6 +10,7 @@
   "evaluation_authorization_before_human_review": false,
   "answer_key_storage": "SEPARATE_FILE_SHA256_ONLY",
   "require_source_snapshot_hashes": true,
+  "require_source_snapshot_receipts": true,
   "source_registry_eval_exclusion_required": true,
   "source_registry_training_closed_required": true
 }
