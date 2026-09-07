@@ -14,7 +14,8 @@
   "sources": [
     {
       "source_ref": "nist.ai-agent-identity-authority-2026",
-      "snapshot_path": "source-snapshot.txt"
+      "snapshot_path": "source-snapshot.txt",
+      "snapshot_receipt_path": "source-snapshot.receipt.json"
     }
   ]
 }
