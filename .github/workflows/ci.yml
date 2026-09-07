@@ -58,6 +58,19 @@ jobs:
         run: pytest tests/test_web4_agent_trust_authoring.py
       - name: Validate Web4 Agent Trust authoring plan
         run: sentinel-web4-agent-trust-authoring
+      - name: Web4 research snapshot receipt fail-closed gate
+        run: pytest tests/test_web4_research_snapshot.py
+      - name: Validate Web4 research snapshot capture and verify
+        run: |
+          mkdir -p build/web4
+          sentinel-web4-research-snapshot capture \
+            --source-id ietf.draft.nemethi.aid-agent-identity-discovery-00 \
+            --snapshot fixtures/web4/research-snapshot/fixture-source.txt \
+            --captured-at 2026-09-07T10:57:00+03:00 \
+            --output build/web4/research-snapshot-receipt.json
+          sentinel-web4-research-snapshot verify \
+            --receipt build/web4/research-snapshot-receipt.json \
+            --snapshot fixtures/web4/research-snapshot/fixture-source.txt
       - name: Validate Web4 benchmark intake isolation
         run: >-
           sentinel-web4-benchmark-intake
