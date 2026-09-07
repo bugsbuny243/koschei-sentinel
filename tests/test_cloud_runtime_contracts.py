@@ -4,7 +4,6 @@ from pathlib import Path
 
 from koschei_sentinel import cloud_runtime
 
-
 PROFILE = Path("configs/runtime/ephemeral-cloud-gpu.v1.json")
 
 
