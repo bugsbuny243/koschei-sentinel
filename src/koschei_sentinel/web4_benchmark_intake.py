@@ -11,6 +11,7 @@ from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import atomic_write, canonical_json
+from koschei_sentinel.web4_research_snapshot import verify_web4_research_snapshot_receipt
 
 _DIGEST = r"^[a-f0-9]{64}$"
 _FORBIDDEN_MODEL_INPUT_KEYS = {
@@ -32,6 +33,7 @@ class Web4BenchmarkSplit(StrEnum):
 class Web4BenchmarkSourceInput(StrictModel):
     source_ref: str = Field(min_length=3, max_length=256)
     snapshot_path: str = Field(min_length=1, max_length=4096)
+    snapshot_receipt_path: str = Field(min_length=1, max_length=4096)
 
 
 class Web4BenchmarkCaseProposal(StrictModel):
@@ -55,6 +57,9 @@ class Web4BenchmarkCaseProposal(StrictModel):
         source_refs = [source.source_ref for source in self.sources]
         if len(source_refs) != len(set(source_refs)):
             raise ValueError("Web4 benchmark proposal contains duplicate source refs")
+        receipt_paths = [source.snapshot_receipt_path for source in self.sources]
+        if len(receipt_paths) != len(set(receipt_paths)):
+            raise ValueError("Web4 benchmark proposal contains duplicate snapshot receipt paths")
         if not self.model_input:
             raise ValueError("Web4 benchmark proposal requires model-visible input")
         _reject_answer_key_fields(self.model_input)
@@ -92,6 +97,7 @@ class Web4BenchmarkIntakePolicy(StrictModel):
     evaluation_authorization_before_human_review: Literal[False] = False
     answer_key_storage: Literal["SEPARATE_FILE_SHA256_ONLY"] = "SEPARATE_FILE_SHA256_ONLY"
     require_source_snapshot_hashes: Literal[True] = True
+    require_source_snapshot_receipts: Literal[True]
     source_registry_eval_exclusion_required: Literal[True] = True
     source_registry_training_closed_required: Literal[True] = True
 
@@ -118,6 +124,9 @@ class Web4BenchmarkIntakePacket(StrictModel):
     source_refs: list[str]
     source_revision_status: dict[str, str]
     source_snapshot_sha256s: dict[str, str]
+    source_snapshot_receipt_sha256s: dict[str, str]
+    source_match_verified: dict[str, Literal[False]]
+    source_provenance_review_status: dict[str, Literal["REVIEW_REQUIRED"]]
     model_input: dict[str, object]
     model_input_sha256: str = Field(pattern=_DIGEST)
     answer_key_sha256: str = Field(pattern=_DIGEST)
@@ -131,10 +140,17 @@ class Web4BenchmarkIntakePacket(StrictModel):
 
     @model_validator(mode="after")
     def packet_contract_verifies(self) -> Web4BenchmarkIntakePacket:
-        if set(self.source_refs) != set(self.source_revision_status):
+        expected = set(self.source_refs)
+        if expected != set(self.source_revision_status):
             raise ValueError("Web4 benchmark packet source revision bindings differ")
-        if set(self.source_refs) != set(self.source_snapshot_sha256s):
+        if expected != set(self.source_snapshot_sha256s):
             raise ValueError("Web4 benchmark packet source snapshot bindings differ")
+        if expected != set(self.source_snapshot_receipt_sha256s):
+            raise ValueError("Web4 benchmark packet snapshot receipt bindings differ")
+        if expected != set(self.source_match_verified):
+            raise ValueError("Web4 benchmark packet source-match bindings differ")
+        if expected != set(self.source_provenance_review_status):
+            raise ValueError("Web4 benchmark packet provenance-review bindings differ")
         _reject_answer_key_fields(self.model_input)
         unsigned = self.model_dump(mode="json")
         observed = str(unsigned.pop("packet_sha256"))
@@ -276,6 +292,7 @@ def _assign_split(
     family: str,
     source_refs: list[str],
     source_snapshot_sha256s: dict[str, str],
+    source_snapshot_receipt_sha256s: dict[str, str],
 ) -> tuple[Web4BenchmarkSplit, str]:
     material = {
         "split_seed": policy.split_seed,
@@ -283,6 +300,7 @@ def _assign_split(
         "family": family,
         "source_refs": source_refs,
         "source_snapshot_sha256s": source_snapshot_sha256s,
+        "source_snapshot_receipt_sha256s": source_snapshot_receipt_sha256s,
     }
     material_sha = _sha256_canonical(material)
     bucket = int(material_sha[:16], 16) % 10000
@@ -335,6 +353,9 @@ def build_web4_benchmark_intake(
     )
     source_revision_status: dict[str, str] = {}
     source_snapshot_sha256s: dict[str, str] = {}
+    source_snapshot_receipt_sha256s: dict[str, str] = {}
+    source_match_verified: dict[str, Literal[False]] = {}
+    source_provenance_review_status: dict[str, Literal["REVIEW_REQUIRED"]] = {}
 
     for source_input in proposal.sources:
         source = source_by_id.get(source_input.source_ref)
@@ -365,20 +386,55 @@ def build_web4_benchmark_intake(
             source_input.snapshot_path,
             f"Web4 source snapshot {source_input.source_ref}",
         )
-        source_revision_status[source_input.source_ref] = revision_status
-        source_snapshot_sha256s[source_input.source_ref] = _sha256_file(
+        receipt_path = _resolve_snapshot(
+            root,
+            source_input.snapshot_receipt_path,
+            f"Web4 source snapshot receipt {source_input.source_ref}",
+        )
+        snapshot_sha = _sha256_file(
             snapshot,
             f"Web4 source snapshot {source_input.source_ref}",
         )
+        receipt = verify_web4_research_snapshot_receipt(
+            receipt_path=receipt_path,
+            snapshot_path=snapshot,
+            source_registry_path=source_registry_path,
+        )
+        if receipt.source_id != source_input.source_ref:
+            raise ValueError(
+                f"Web4 snapshot receipt source differs from proposal: {source_input.source_ref}"
+            )
+        if receipt.source_registry_sha256 != source_registry_sha:
+            raise ValueError(
+                f"Web4 snapshot receipt registry differs from active registry: {source_input.source_ref}"
+            )
+        if receipt.snapshot_sha256 != snapshot_sha:
+            raise ValueError(
+                f"Web4 snapshot receipt bytes differ from proposal snapshot: {source_input.source_ref}"
+            )
+        if receipt.revision_status != revision_status:
+            raise ValueError(
+                f"Web4 snapshot receipt revision differs from active source: {source_input.source_ref}"
+            )
+
+        source_revision_status[source_input.source_ref] = revision_status
+        source_snapshot_sha256s[source_input.source_ref] = snapshot_sha
+        source_snapshot_receipt_sha256s[source_input.source_ref] = receipt.receipt_sha256
+        source_match_verified[source_input.source_ref] = receipt.source_match_verified
+        source_provenance_review_status[source_input.source_ref] = receipt.provenance_review_status
 
     source_revision_status = dict(sorted(source_revision_status.items()))
     source_snapshot_sha256s = dict(sorted(source_snapshot_sha256s.items()))
+    source_snapshot_receipt_sha256s = dict(sorted(source_snapshot_receipt_sha256s.items()))
+    source_match_verified = dict(sorted(source_match_verified.items()))
+    source_provenance_review_status = dict(sorted(source_provenance_review_status.items()))
     split, split_material_sha = _assign_split(
         policy=intake_policy,
         case_id=proposal.case_id,
         family=proposal.family,
         source_refs=source_refs,
         source_snapshot_sha256s=source_snapshot_sha256s,
+        source_snapshot_receipt_sha256s=source_snapshot_receipt_sha256s,
     )
 
     unsigned: dict[str, object] = {
@@ -395,6 +451,9 @@ def build_web4_benchmark_intake(
         "source_refs": source_refs,
         "source_revision_status": source_revision_status,
         "source_snapshot_sha256s": source_snapshot_sha256s,
+        "source_snapshot_receipt_sha256s": source_snapshot_receipt_sha256s,
+        "source_match_verified": source_match_verified,
+        "source_provenance_review_status": source_provenance_review_status,
         "model_input": proposal.model_input,
         "model_input_sha256": _sha256_canonical(proposal.model_input),
         "answer_key_sha256": answer_key_sha,
