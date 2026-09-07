@@ -1,0 +1,41 @@
+{
+  "schema_version": "sentinel.cloud-runtime-profile.v1",
+  "profile_id": "ephemeral-cloud-gpu-v1",
+  "ownership": "EXTERNAL_EPHEMERAL_COMPUTE",
+  "provider_binding": "UNBOUND",
+  "own_server_required": false,
+  "compute_lifecycle": "EPHEMERAL",
+  "persistent_local_state": false,
+  "training_backend": "megatron-swift",
+  "stores": {
+    "checkpoint_artifacts": {
+      "kind": "OBJECT_STORAGE",
+      "required": true,
+      "uri_env": "KOSCHEI_OBJECT_STORE_URI"
+    },
+    "security_analytics": {
+      "kind": "CLICKHOUSE",
+      "required": true,
+      "uri_env": "KOSCHEI_CLICKHOUSE_DSN"
+    }
+  },
+  "model_sources": [
+    "OBJECT_STORAGE",
+    "LOCAL_CACHE",
+    "EXTERNAL_REGISTRY_OPTIONAL"
+  ],
+  "network": {
+    "public_inbound_default": "DENY",
+    "cluster_rendezvous": "PRIVATE_OR_PROVIDER_INTERNAL"
+  },
+  "budget": {
+    "paid_compute_default": "DENY",
+    "approval_env": "KOSCHEI_CLOUD_RUNTIME_APPROVED",
+    "session_env": "KOSCHEI_CLOUD_RUNTIME_SESSION"
+  },
+  "termination": {
+    "require_checkpoint_sync": true,
+    "require_manifest_sha256": true,
+    "require_remote_persistence_before_release": true
+  }
+}

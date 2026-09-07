@@ -40,6 +40,7 @@ megatron = [
 
 [project.scripts]
 koschei-sentinel = "koschei_sentinel.__main__:main"
+sentinel-cloud-runtime-preflight = "koschei_sentinel.cloud_runtime_cli:main"
 sentinel-dataset-export = "koschei_sentinel.dataset_cli:main"
 sentinel-dataset-split = "koschei_sentinel.split_cli:main"
 sentinel-dataset-build = "koschei_sentinel.dataset_build_cli:main"
