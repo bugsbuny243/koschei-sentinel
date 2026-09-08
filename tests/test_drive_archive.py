@@ -146,11 +146,15 @@ def test_restore_downloads_to_empty_dir_and_rehashes_bytes(
     assert (restored / "weights.bin").read_bytes() == b"sentinel-weights"
 
 
-def test_restore_refuses_nonempty_destination(tmp_path: Path) -> None:
+def test_restore_refuses_nonempty_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _, manifest_path, _ = _manifest(tmp_path)
     restored = tmp_path / "restored"
     restored.mkdir()
     (restored / "keep.txt").write_text("do not overwrite", encoding="utf-8")
+    monkeypatch.setattr(drive_archive, "_resolve_rclone", lambda executable: "/usr/bin/rclone")
 
     with pytest.raises(FileExistsError, match="must be empty"):
         drive_archive.restore_and_verify_with_rclone(
