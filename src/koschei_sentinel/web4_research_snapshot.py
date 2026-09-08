@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
+from koschei_sentinel.strict_json import require_json_value, strict_json_loads
 from koschei_sentinel.training import atomic_write
 
 _DIGEST = r"^[a-f0-9]{64}$"
@@ -65,6 +66,7 @@ def _parse_timestamp(value: str) -> datetime:
 
 
 def _sha256_canonical(payload: object) -> str:
+    require_json_value(payload)
     encoded = json.dumps(
         payload,
         sort_keys=True,
@@ -92,8 +94,8 @@ def _load_source_registry(path: Path) -> tuple[dict[str, dict[str, object]], str
         if not line.strip():
             continue
         try:
-            row = json.loads(line)
-        except json.JSONDecodeError as exc:
+            row = strict_json_loads(line)
+        except ValueError as exc:
             raise ValueError(f"invalid Web4 source row at line {line_number}") from exc
         if not isinstance(row, dict):
             raise ValueError(f"Web4 source row {line_number} must be a JSON object")
@@ -205,8 +207,8 @@ def verify_web4_research_snapshot_receipt(
 ) -> Web4ResearchSnapshotReceipt:
     raw = _read_regular(Path(receipt_path), "Web4 research snapshot receipt")
     try:
-        payload = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        payload = strict_json_loads(raw)
+    except ValueError as exc:
         raise ValueError("invalid Web4 research snapshot receipt JSON") from exc
     if not isinstance(payload, dict):
         raise ValueError("Web4 research snapshot receipt must contain one JSON object")
