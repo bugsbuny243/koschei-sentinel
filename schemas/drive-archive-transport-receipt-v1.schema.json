@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sentinel.drive-archive-transport-receipt.v1",
+  "title": "Koschei Sentinel Drive Archive Transport Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "artifact_digest",
+    "manifest_sha256",
+    "transport",
+    "remote_name",
+    "archive_folder_binding_sha256",
+    "remote_base_path",
+    "upload_verified",
+    "verification_mode",
+    "verification_command_digest"
+  ],
+  "properties": {
+    "schema_version": {"const": "sentinel.drive-archive-transport-receipt.v1"},
+    "artifact_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "artifact_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "transport": {"const": "RCLONE_GOOGLE_DRIVE"},
+    "remote_name": {"type": "string", "minLength": 1, "maxLength": 64},
+    "archive_folder_binding_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "remote_base_path": {"type": "string", "minLength": 1, "maxLength": 512},
+    "upload_verified": {"const": true},
+    "verification_mode": {"const": "REMOTE_SHA256_DOWNLOAD"},
+    "verification_command_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}
