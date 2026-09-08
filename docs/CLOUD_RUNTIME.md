@@ -2,57 +2,94 @@
 
 Koschei Sentinel does not require a Koschei-owned physical server.
 
-The default runtime contract is provider-neutral and assumes ephemeral rented GPU compute. The provider is intentionally not part of Sentinel's identity or persistent state.
+The recommended runtime contract is provider-neutral, cost-aware, and assumes ephemeral rented GPU compute. The provider is not part of Sentinel identity or persistent state.
 
-## Persistent state boundary
+## Cost-aware storage boundary
 
-Ephemeral GPU nodes are disposable. They must not be the only copy of any checkpoint, dataset artifact, manifest, evaluation result, or security telemetry required for reproducibility.
+Sentinel must not treat ClickHouse as universal storage.
 
-Persistent state is split into:
+The recommended v2 profile splits persistence into three tiers:
 
-- object storage for checkpoints, model artifacts, manifests, dataset artifacts, and immutable hashes;
-- ClickHouse for security analytics, event/telemetry records, model/runtime observations, and large analytical queries;
-- Git for code, configuration, schema, and run-definition provenance.
+- **Google Drive cold archive** — required for low-cost persistent storage of dataset releases, manifests, SHA256 records, provenance, evaluation artifacts, selected checkpoints/adapters, and recovery material.
+- **ClickHouse hot analytics** — optional. It is only for data that benefits from fast analytical queries, such as recent security events, compact telemetry, run metrics, and aggregated threat intelligence. Default retention is short.
+- **Object storage** — optional during normal development and required only when an explicitly authorized large distributed run needs durable high-throughput checkpoint staging.
 
-Hugging Face or another external registry may be used as an optional bootstrap source. It is not required to operate Sentinel and it must not define Sentinel model identity.
+Git remains the source of truth for code, configuration, schema, and run-definition provenance.
 
-## Compute lifecycle
+Hugging Face or another external registry may be used as an optional bootstrap source. It is not required to operate Sentinel and must not define Sentinel model identity.
 
-1. Select a GPU provider outside the Sentinel identity boundary.
-2. Attach or expose the required persistent-store bindings to the runtime through secret environment injection.
-3. Run the Sentinel cloud-runtime preflight.
-4. Keep paid compute denied unless an explicit launch approval and launch session are present.
-5. Start the existing distributed launcher using the provider's private/internal rendezvous network.
-6. During execution, write reproducibility metadata and checkpoint manifests.
-7. Before releasing ephemeral nodes, synchronize required checkpoints/artifacts to object storage and verify their SHA256-bound manifests.
-8. Terminate rented GPU capacity when it is no longer needed.
+## Why Google Drive is not the live 397B checkpoint filesystem
 
-## Required environment bindings
+Google Drive is a cold archive and recovery layer, not the synchronous checkpoint backend for a multi-node 397B run. Large distributed runs should write active checkpoint shards to local NVMe and temporary object storage, verify their manifests, and only then archive the release material that belongs in Drive.
 
-The profile refers only to environment-variable names; values must be injected by the runtime secret mechanism and must not be committed to Git.
+This avoids turning Drive latency or mount behavior into a training failure mode while keeping normal development storage costs low.
 
-- `KOSCHEI_OBJECT_STORE_URI` — persistent object storage binding.
-- `KOSCHEI_CLICKHOUSE_DSN` — ClickHouse binding.
+## Normal development lifecycle
+
+1. Rent ephemeral GPU compute only when needed.
+2. Bind the existing Sentinel Drive archive using `KOSCHEI_DRIVE_ARCHIVE_FOLDER_ID`.
+3. Leave ClickHouse unbound unless hot analytical queries are actually needed.
+4. Leave object storage unbound unless a large distributed run is requested.
+5. Run the v2 cloud-runtime preflight.
+6. Keep paid compute denied unless explicit approval and a launch-session identity are present.
+7. Write local batch telemetry and reproducibility metadata during execution.
+8. Archive required artifacts, manifests, hashes, and recovery state to Drive before releasing ephemeral compute.
+
+## Large-run lifecycle
+
+A large run is a separate fail-closed mode.
+
+In addition to the normal runtime approval, it requires:
+
+- `KOSCHEI_LARGE_RUN_APPROVED=YES`;
+- `KOSCHEI_OBJECT_STORE_URI` for checkpoint staging;
+- the existing training-readiness, dataset, evaluation, checkpoint, and launch gates.
+
+ClickHouse remains optional even for a large run; training must not depend on an analytics database being online.
+
+## Environment bindings
+
+Values must be injected by the runtime secret mechanism and must not be committed to Git.
+
+- `KOSCHEI_DRIVE_ARCHIVE_FOLDER_ID` — persistent Sentinel Google Drive archive folder.
+- `KOSCHEI_CLICKHOUSE_DSN` — optional hot-analytics binding.
+- `KOSCHEI_OBJECT_STORE_URI` — optional normally; required for explicit large-run checkpoint staging.
 - `KOSCHEI_CLOUD_RUNTIME_APPROVED=YES` — explicit paid-compute authorization.
 - `KOSCHEI_CLOUD_RUNTIME_SESSION` — non-empty launch-session identity.
+- `KOSCHEI_LARGE_RUN_APPROVED=YES` — additional authorization for a large distributed run.
 
-The existing distributed Megatron launcher still requires its normal node/rendezvous variables such as `NODE_RANK`, `MASTER_ADDR`, and `MASTER_PORT` for multi-node execution.
+The existing distributed Megatron launcher still requires normal rendezvous variables such as `NODE_RANK`, `MASTER_ADDR`, and `MASTER_PORT` for multi-node execution.
 
-## Security defaults
+## Security and cost defaults
 
-- public inbound access: DENY by default;
-- cluster rendezvous: private/provider-internal only;
-- local persistent state: forbidden as the sole source of truth;
-- paid compute: DENY by default;
-- checkpoint release: blocked until remote persistence and hash manifest requirements are satisfied;
-- provider binding: UNBOUND, so RunPod, Lambda, another GPU cloud, or future infrastructure can be swapped without changing Sentinel identity.
+- public inbound access: DENY;
+- provider binding: UNBOUND;
+- paid compute: DENY;
+- large run: DENY;
+- ClickHouse: optional hot analytics only;
+- ClickHouse retention: short by default;
+- object storage: large-run-only by default;
+- Google Drive: cold persistent archive;
+- local NVMe/cache: disposable working state, never the only persistent copy;
+- manifests and promoted artifacts: SHA256-bound before release.
 
 ## Preflight
 
+Normal cost-aware runtime:
+
 ```bash
-sentinel-cloud-runtime-preflight --profile configs/runtime/ephemeral-cloud-gpu.v1.json
+sentinel-cloud-runtime-preflight \
+  --profile configs/runtime/ephemeral-cloud-gpu-cost-aware.v2.json
 ```
 
-A missing ClickHouse/object-store binding or missing paid-run authorization returns a non-zero exit code. The preflight never prints secret values.
+Explicit large-run gate:
 
-This runtime contract does not authorize a 397B training run. The Sentinel-native ~397B total / ~35B active architecture remains the target, and large paid runs remain separately gated by training readiness, dataset/evaluation requirements, and explicit launch approval.
+```bash
+sentinel-cloud-runtime-preflight \
+  --profile configs/runtime/ephemeral-cloud-gpu-cost-aware.v2.json \
+  --large-run
+```
+
+The v1 object-storage-plus-ClickHouse profile remains supported for compatibility, but v2 is the recommended low-cost operating model.
+
+This runtime contract does not authorize a 397B training run. The Sentinel-native ~397B total / ~35B active architecture remains the target, and large paid runs remain separately gated.

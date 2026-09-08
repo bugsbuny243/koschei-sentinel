@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sentinel.cloud-runtime-profile.v2",
+  "title": "Koschei Sentinel Cost-Aware Cloud Runtime Profile v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "ownership",
+    "provider_binding",
+    "own_server_required",
+    "compute_lifecycle",
+    "persistent_local_state",
+    "training_backend",
+    "stores",
+    "model_sources",
+    "network",
+    "budget",
+    "termination"
+  ],
+  "properties": {
+    "schema_version": {"const": "sentinel.cloud-runtime-profile.v2"},
+    "profile_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+    "ownership": {"const": "EXTERNAL_EPHEMERAL_COMPUTE"},
+    "provider_binding": {"const": "UNBOUND"},
+    "own_server_required": {"const": false},
+    "compute_lifecycle": {"const": "EPHEMERAL"},
+    "persistent_local_state": {"const": false},
+    "training_backend": {"const": "megatron-swift"},
+    "stores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "persistent_archive",
+        "hot_analytics",
+        "large_run_checkpoint_staging"
+      ],
+      "properties": {
+        "persistent_archive": {"$ref": "#/$defs/driveArchive"},
+        "hot_analytics": {"$ref": "#/$defs/hotAnalytics"},
+        "large_run_checkpoint_staging": {"$ref": "#/$defs/largeRunStore"}
+      }
+    },
+    "model_sources": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "GOOGLE_DRIVE_ARCHIVE",
+          "LOCAL_CACHE",
+          "OBJECT_STORAGE_LARGE_RUN_ONLY",
+          "EXTERNAL_REGISTRY_OPTIONAL"
+        ]
+      },
+      "allOf": [
+        {"contains": {"const": "GOOGLE_DRIVE_ARCHIVE"}},
+        {"contains": {"const": "LOCAL_CACHE"}}
+      ]
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["public_inbound_default", "cluster_rendezvous"],
+      "properties": {
+        "public_inbound_default": {"const": "DENY"},
+        "cluster_rendezvous": {"const": "PRIVATE_OR_PROVIDER_INTERNAL"}
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paid_compute_default", "approval_env", "session_env", "large_run"],
+      "properties": {
+        "paid_compute_default": {"const": "DENY"},
+        "approval_env": {"const": "KOSCHEI_CLOUD_RUNTIME_APPROVED"},
+        "session_env": {"const": "KOSCHEI_CLOUD_RUNTIME_SESSION"},
+        "large_run": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["default", "approval_env", "require_object_storage"],
+          "properties": {
+            "default": {"const": "DENY"},
+            "approval_env": {"const": "KOSCHEI_LARGE_RUN_APPROVED"},
+            "require_object_storage": {"const": true}
+          }
+        }
+      }
+    },
+    "termination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "require_archive_sync",
+        "require_manifest_sha256",
+        "require_remote_persistence_before_release",
+        "large_run_require_object_storage_sync",
+        "clickhouse_flush_required"
+      ],
+      "properties": {
+        "require_archive_sync": {"const": true},
+        "require_manifest_sha256": {"const": true},
+        "require_remote_persistence_before_release": {"const": true},
+        "large_run_require_object_storage_sync": {"const": true},
+        "clickhouse_flush_required": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "driveArchive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "required", "folder_id_env", "role"],
+      "properties": {
+        "kind": {"const": "GOOGLE_DRIVE_ARCHIVE"},
+        "required": {"const": true},
+        "folder_id_env": {"const": "KOSCHEI_DRIVE_ARCHIVE_FOLDER_ID"},
+        "role": {"const": "COLD_PERSISTENT_ARCHIVE"}
+      }
+    },
+    "hotAnalytics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "required", "uri_env", "role", "retention_days"],
+      "properties": {
+        "kind": {"const": "CLICKHOUSE"},
+        "required": {"const": false},
+        "uri_env": {"const": "KOSCHEI_CLICKHOUSE_DSN"},
+        "role": {"const": "HOT_ANALYTICS_ONLY"},
+        "retention_days": {"type": "integer", "minimum": 1, "maximum": 30}
+      }
+    },
+    "largeRunStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "required", "uri_env", "role", "activation"],
+      "properties": {
+        "kind": {"const": "OBJECT_STORAGE"},
+        "required": {"const": false},
+        "uri_env": {"const": "KOSCHEI_OBJECT_STORE_URI"},
+        "role": {"const": "LARGE_RUN_CHECKPOINT_STAGING"},
+        "activation": {"const": "LARGE_RUN_ONLY"}
+      }
+    }
+  }
+}
