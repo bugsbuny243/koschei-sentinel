@@ -28,6 +28,15 @@
       "frontend": "planned",
       "telemetry": "planned",
       "notes": "Read-only event/evidence integration starts in observe mode; paid 397B training gates are unaffected."
+    },
+    {
+      "id": "pq-network-intelligence",
+      "domain": "web6",
+      "status": "experimental",
+      "backend": "existing",
+      "frontend": "planned",
+      "telemetry": "existing",
+      "notes": "Existing Sentinel PQ network-intelligence capability is preserved and surfaced to Fabric without triggering training or paid compute."
     }
   ]
 }
