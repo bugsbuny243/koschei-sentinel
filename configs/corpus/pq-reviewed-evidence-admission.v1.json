@@ -1,0 +1,21 @@
+{
+  "schema_version": "sentinel.pq-reviewed-evidence-admission-policy.v1",
+  "policy_id": "pq-reviewed-research-catalog-v1",
+  "catalog_tier": "REVIEWED_RESEARCH_CATALOG",
+  "require_verified_review": true,
+  "require_owner_authorized_reviewer": true,
+  "accepted_license_statuses": [
+    "REVIEW_REQUIRED",
+    "EVAL_ONLY",
+    "ALLOW_WITH_ATTRIBUTION",
+    "ALLOW_TRAINING"
+  ],
+  "blocked_license_statuses": ["BLOCKED"],
+  "resolved_license_requires_reference": true,
+  "resolved_training_license_requires_resolved_scope": true,
+  "split_assignment_allowed": false,
+  "evaluation_authorization_default": false,
+  "training_authorization_default": false,
+  "gold_eligibility_default": false,
+  "production_activation_allowed": false
+}
