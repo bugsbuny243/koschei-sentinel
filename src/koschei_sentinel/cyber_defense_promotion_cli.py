@@ -15,8 +15,8 @@ from koschei_sentinel.gold_holdout_evaluation_evidence import (
     GoldHoldoutEvaluationEvidence,
 )
 from koschei_sentinel.gold_holdout_pack_signing import load_gold_holdout_pack_signature
-from koschei_sentinel.gold_reviewer_trust import load_gold_reviewer_trust_policy
 from koschei_sentinel.gold_review_signing import load_reviewer_public_key
+from koschei_sentinel.gold_reviewer_trust import load_gold_reviewer_trust_policy
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
