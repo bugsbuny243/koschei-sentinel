@@ -14,8 +14,8 @@ from koschei_sentinel.gold_holdout_pack_signing import (
     load_gold_holdout_pack_signature,
     verify_gold_holdout_inference_pack_signature,
 )
-from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 from koschei_sentinel.gold_review_signing import load_reviewer_public_key
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 
 
 @dataclass(frozen=True)
