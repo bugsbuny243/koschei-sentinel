@@ -70,6 +70,68 @@ jobs:
           tests/test_cyber_defense_promotion_cli.py
           tests/test_gold_holdout_promotion_e2e.py
           tests/test_gold_holdout_promotion_relocation.py
+      - name: Web4 review operator fail-closed gate
+        run: pytest tests/test_web4_review_ops_cli.py
+      - name: Validate Web4 review operator entrypoint
+        run: sentinel-web4-review-ops --help
+      - name: Web4 HOLDOUT operator fail-closed gate
+        run: pytest tests/test_web4_holdout_ops_cli.py
+      - name: Validate Web4 HOLDOUT operator entrypoint
+        run: sentinel-web4-holdout-ops --help
+      - name: Web4 HOLDOUT capacity fail-closed gate
+        run: pytest tests/test_web4_holdout_capacity.py
+      - name: Validate Web4 HOLDOUT capacity entrypoint
+        run: sentinel-web4-holdout-capacity --help
+      - name: Web4 signed review fail-closed gate
+        run: pytest tests/test_web4_benchmark_review.py
+      - name: Web4 signed HOLDOUT release fail-closed gate
+        run: pytest tests/test_web4_holdout_release.py
+      - name: Web4 offline HOLDOUT evaluation fail-closed gate
+        run: pytest tests/test_web4_holdout_evaluation.py
+      - name: Web4 owner evaluation decision fail-closed gate
+        run: pytest tests/test_web4_holdout_evaluation_decision.py
+      - name: Validate Web4 review verifier entrypoint
+        run: sentinel-web4-review-verify --help
+      - name: Validate Web4 HOLDOUT release verifier entrypoint
+        run: sentinel-web4-holdout-release-verify --help
+      - name: Validate Web4 HOLDOUT evaluation verifier entrypoint
+        run: sentinel-web4-holdout-eval-verify --help
+      - name: Validate Web4 evaluation decision verifier entrypoint
+        run: sentinel-web4-holdout-eval-decision-verify --help
+      - run: sentinel-web4-research-readiness
+      - name: Web4 Agent Trust Chain fail-closed gate
+        run: pytest tests/test_web4_agent_trust_chain.py
+      - name: Validate Web4 Agent Trust Chain contract
+        run: sentinel-web4-agent-trust-chain
+      - name: Web4 Agent Trust authoring plan fail-closed gate
+        run: pytest tests/test_web4_agent_trust_authoring.py
+      - name: Validate Web4 Agent Trust authoring plan
+        run: sentinel-web4-agent-trust-authoring
+      - name: Web4 research snapshot receipt fail-closed gate
+        run: pytest tests/test_web4_research_snapshot.py
+      - name: Validate Web4 research snapshot capture and verify
+        run: |
+          mkdir -p build/web4
+          sentinel-web4-research-snapshot capture \
+            --source-id ietf.draft.nemethi.aid-agent-identity-discovery-00 \
+            --snapshot fixtures/web4/research-snapshot/fixture-source.txt \
+            --captured-at 2026-09-07T10:57:00+03:00 \
+            --output build/web4/research-snapshot-receipt.json
+          sentinel-web4-research-snapshot verify \
+            --receipt build/web4/research-snapshot-receipt.json \
+            --snapshot fixtures/web4/research-snapshot/fixture-source.txt
+      - name: Web4 benchmark snapshot receipt binding gate
+        run: pytest tests/test_web4_benchmark_snapshot_receipt_binding.py
+      - name: Validate Web4 benchmark intake isolation
+        run: >-
+          sentinel-web4-benchmark-intake
+          --proposal fixtures/web4/benchmark-intake/proposal.json
+          --answer-key fixtures/web4/benchmark-intake/answer-key.json
+          --output build/web4/benchmark-intake.json
+      - name: Web4 batch benchmark intake fail-closed gate
+        run: pytest tests/test_web4_benchmark_batch_queue.py
+      - name: Validate Web4 batch benchmark intake entrypoint
+        run: sentinel-web4-benchmark-batch-intake --help
       - run: >-
           sentinel-curriculum-check
           --config configs/curriculum/language-first.v1.json
