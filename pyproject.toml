@@ -20,7 +20,7 @@ dependencies = [
 dev = [
   "httpx>=0.27,<1",
   "pytest>=8,<10",
-  "ruff>=0.5,<1",
+  "ruff==0.16.6",
 ]
 neon = [
   "psycopg[binary]>=3.2,<4",
@@ -40,6 +40,7 @@ megatron = [
 
 [project.scripts]
 koschei-sentinel = "koschei_sentinel.__main__:main"
+sentinel-cloud-runtime-preflight = "koschei_sentinel.cloud_runtime_cli:main"
 sentinel-dataset-export = "koschei_sentinel.dataset_cli:main"
 sentinel-dataset-split = "koschei_sentinel.split_cli:main"
 sentinel-dataset-build = "koschei_sentinel.dataset_build_cli:main"
@@ -112,6 +113,19 @@ sentinel-shadow-regression = "koschei_sentinel.shadow_regression_cli:main"
 sentinel-shadow-baseline = "koschei_sentinel.shadow_baseline_cli:main"
 sentinel-owner-rotation = "koschei_sentinel.owner_rotation_cli:main"
 sentinel-curriculum-check = "koschei_sentinel.curriculum_cli:main"
+sentinel-web4-research-readiness = "koschei_sentinel.web4_research_readiness_cli:main"
+sentinel-web4-research-snapshot = "koschei_sentinel.web4_research_snapshot_cli:main"
+sentinel-web4-agent-trust-chain = "koschei_sentinel.web4_agent_trust_chain_cli:main"
+sentinel-web4-agent-trust-authoring = "koschei_sentinel.web4_agent_trust_authoring_cli:main"
+sentinel-web4-benchmark-intake = "koschei_sentinel.web4_benchmark_intake_cli:main"
+sentinel-web4-benchmark-batch-intake = "koschei_sentinel.web4_benchmark_batch_queue_cli:main"
+sentinel-web4-review-ops = "koschei_sentinel.web4_review_ops_cli:main"
+sentinel-web4-review-verify = "koschei_sentinel.web4_benchmark_review_verify_cli:main"
+sentinel-web4-holdout-ops = "koschei_sentinel.web4_holdout_ops_cli:main"
+sentinel-web4-holdout-capacity = "koschei_sentinel.web4_holdout_capacity_cli:main"
+sentinel-web4-holdout-release-verify = "koschei_sentinel.web4_holdout_release_verify_cli:main"
+sentinel-web4-holdout-eval-verify = "koschei_sentinel.web4_holdout_evaluation_verify_cli:main"
+sentinel-web4-holdout-eval-decision-verify = "koschei_sentinel.web4_holdout_evaluation_decision_verify_cli:main"
 sentinel-language-foundation = "koschei_sentinel.language_foundation_cli:main"
 sentinel-language-train = "koschei_sentinel.language_training_cli:main"
 
@@ -125,6 +139,8 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
