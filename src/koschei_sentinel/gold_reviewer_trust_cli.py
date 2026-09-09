@@ -3,13 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 
+from koschei_sentinel.gold_review_signing import load_reviewer_public_key
 from koschei_sentinel.gold_reviewer_trust import (
     build_gold_reviewer_trust_policy,
     load_gold_reviewer_trust_policy,
     verify_gold_reviewer_trust_policy,
     write_gold_reviewer_trust_policy,
 )
-from koschei_sentinel.gold_review_signing import load_reviewer_public_key
 from koschei_sentinel.promotion import load_owner_private_key, load_owner_public_key
 
 
