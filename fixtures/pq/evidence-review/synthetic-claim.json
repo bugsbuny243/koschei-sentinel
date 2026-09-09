@@ -1,0 +1,35 @@
+{
+  "schema_version": "sentinel.pq-network-claim.v1",
+  "source_id": "fixture.pq.evidence-review",
+  "record_id": "fixture-pq-review-0001",
+  "network": "FixtureNet",
+  "observed_at": "2026-09-09T05:56:00+03:00",
+  "event_type": "PROPOSAL",
+  "lifecycle": "PROPOSED",
+  "graph": {
+    "entity": ["FixtureNet"],
+    "event": "Synthetic PQ review fixture proposal",
+    "intent": "Exercise signed evidence review provenance",
+    "capability": null,
+    "vulnerability": null,
+    "action": "Review synthetic evidence binding",
+    "consequence": "No production or training authority",
+    "evidence_summary": "Synthetic fixture bytes are bound to a test-only source registry."
+  },
+  "cryptography": {
+    "current_signature_or_key_scheme": null,
+    "proposed_pq_scheme": null,
+    "hybrid_mode": null,
+    "key_exposure_model": null
+  },
+  "migration_surface": {
+    "accounts": "UNKNOWN",
+    "validators": "UNKNOWN",
+    "consensus": "UNKNOWN",
+    "wallets_hsm": "UNKNOWN",
+    "bridges_cross_chain": "UNKNOWN"
+  },
+  "target_date": null,
+  "confidence": 0.5,
+  "uncertainty": "Synthetic test-only claim; not protocol intelligence."
+}
