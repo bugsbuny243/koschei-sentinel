@@ -416,6 +416,8 @@ def materialize_pq_network_research_record(
 ) -> tuple[PQNetworkIntelligenceRecord, PQNetworkMaterializationReceipt]:
     output = Path(output_path)
     materialization_output = Path(materialization_receipt_path)
+    if output.resolve(strict=False) == materialization_output.resolve(strict=False):
+        raise ValueError("PQ record and materialization receipt outputs must be different files")
     if output.exists():
         raise FileExistsError(f"PQ network intelligence output already exists: {output}")
     if materialization_output.exists():
