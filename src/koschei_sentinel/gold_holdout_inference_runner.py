@@ -8,7 +8,15 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from koschei_sentinel.cyber_sft_artifact_verify import verify_cyber_sft_run
+from koschei_sentinel.cyber_sft_export_verify import (
+    CyberSFTExportVerification,
+    verify_cyber_sft_export,
+)
+from koschei_sentinel.cyber_sft_run_attestation import (
+    CyberSFTRunAttestation,
+    _attestation_digest,
+    _config_sha256,
+)
 from koschei_sentinel.cyber_sft_text_trainer import (
     _assert_requested_model_dtype,
     _assert_text_only_model,
@@ -28,7 +36,9 @@ from koschei_sentinel.gold_holdout_evaluation import (
     build_gold_holdout_prediction,
 )
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.training import canonical_json, resolve_under_root
+from koschei_sentinel.training import canonical_json
+
+_EXPECTED_INFERENCE_PACK_FILES = frozenset({"inputs.jsonl", "manifest.json"})
 
 
 class GoldHoldoutGenerationPolicy(StrictModel):
@@ -41,8 +51,8 @@ class GoldHoldoutGenerationPolicy(StrictModel):
 
 
 class GoldHoldoutInferencePlan(StrictModel):
-    schema_version: Literal["sentinel.gold-holdout-inference-plan.v1"] = (
-        "sentinel.gold-holdout-inference-plan.v1"
+    schema_version: Literal["sentinel.gold-holdout-inference-plan.v2"] = (
+        "sentinel.gold-holdout-inference-plan.v2"
     )
     model_ref: str = Field(min_length=3, max_length=512)
     model_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -50,6 +60,9 @@ class GoldHoldoutInferencePlan(StrictModel):
     base_model: str
     base_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
     run_id: str
+    training_config_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    run_attestation_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    candidate_export_verification_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     case_count: int = Field(gt=0)
     inputs_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     inference_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -68,15 +81,19 @@ class GoldHoldoutInferenceFailure(StrictModel):
 
 
 class GoldHoldoutInferenceRunReceipt(StrictModel):
-    schema_version: Literal["sentinel.gold-holdout-inference-run-receipt.v1"] = (
-        "sentinel.gold-holdout-inference-run-receipt.v1"
+    schema_version: Literal["sentinel.gold-holdout-inference-run-receipt.v2"] = (
+        "sentinel.gold-holdout-inference-run-receipt.v2"
     )
     plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    run_id: str
     model_ref: str
     model_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
     adapter_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     base_model: str
     base_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
+    training_config_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    run_attestation_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    candidate_export_verification_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     case_count: int = Field(gt=0)
     prediction_count: int = Field(ge=0)
     failure_count: int = Field(ge=0)
@@ -107,12 +124,17 @@ def _policy_sha256(policy: GoldHoldoutGenerationPolicy) -> str:
     return _sha256_text(canonical_json(policy.model_dump(mode="json")))
 
 
+def _export_verification_sha256(report: CyberSFTExportVerification) -> str:
+    return _sha256_text(canonical_json(report.model_dump(mode="json")))
+
+
 def _allowed_input_context(case: GoldHoldoutInferenceCase) -> None:
     expected_keys = {"scenario_id", "critical_entity_ids", "graph_snapshots"}
     observed_keys = set(case.input_context)
     if observed_keys != expected_keys:
         raise ValueError(
-            "Gold HOLDOUT inference input contains fields outside the answer-key-isolated contract: "
+            "Gold HOLDOUT inference input contains fields outside the "
+            "answer-key-isolated contract: "
             + ", ".join(sorted(observed_keys - expected_keys))
         )
     if case.input_context.get("scenario_id") != case.scenario_id:
@@ -123,10 +145,37 @@ def _load_inference_pack(
     inference_pack_dir: str | Path,
 ) -> tuple[list[GoldHoldoutInferenceCase], GoldHoldoutInferenceManifest, bytes]:
     root = Path(inference_pack_dir)
+    if root.is_symlink():
+        raise ValueError("Gold HOLDOUT inference pack directory must not be a symlink")
+    if not root.is_dir():
+        raise ValueError("Gold HOLDOUT inference pack directory is missing")
+
+    observed_files: list[str] = []
+    for path in root.rglob("*"):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            raise ValueError(
+                f"Gold HOLDOUT inference pack must not contain symlinks: {relative}"
+            )
+        if path.is_file():
+            observed_files.append(relative)
+    expected_files = sorted(_EXPECTED_INFERENCE_PACK_FILES)
+    observed_files = sorted(observed_files)
+    if observed_files != expected_files:
+        missing = sorted(set(expected_files) - set(observed_files))
+        extra = sorted(set(observed_files) - set(expected_files))
+        detail: list[str] = []
+        if missing:
+            detail.append("missing=" + ",".join(missing[:8]))
+        if extra:
+            detail.append("extra=" + ",".join(extra[:8]))
+        raise ValueError(
+            "Gold HOLDOUT inference pack file set differs from answer-key-isolated contract: "
+            + ("; ".join(detail) or "file-set mismatch")
+        )
+
     manifest_path = root / "manifest.json"
     inputs_path = root / "inputs.jsonl"
-    if not manifest_path.is_file() or not inputs_path.is_file():
-        raise ValueError("Gold HOLDOUT inference pack requires manifest.json and inputs.jsonl")
     manifest_raw = manifest_path.read_bytes()
     manifest = GoldHoldoutInferenceManifest.model_validate_json(manifest_raw)
     if not manifest.answer_key_excluded:
@@ -171,16 +220,36 @@ def _load_inference_pack(
 
 def _load_candidate_identity(
     *,
-    run_dir: str,
-    training_config_path: str | Path,
-    root: str | Path,
-) -> tuple[CyberSFTConfig, CyberSFTAdapterManifest, Path]:
-    root_path = Path(root).resolve()
-    config = load_cyber_sft_config(training_config_path)
-    run_path = resolve_under_root(root_path, run_dir)
-    verification = verify_cyber_sft_run(run_dir, root=root_path)
-    if not verification.valid:
-        raise ValueError("Gold HOLDOUT inference requires a valid Cyber SFT run")
+    candidate_export_dir: str | Path,
+) -> tuple[
+    CyberSFTConfig,
+    CyberSFTAdapterManifest,
+    Path,
+    CyberSFTRunAttestation,
+    CyberSFTExportVerification,
+]:
+    export_root = Path(candidate_export_dir).resolve()
+    export_verification = verify_cyber_sft_export(export_root)
+    if not export_verification.valid:
+        detail = "; ".join(export_verification.violations[:5])
+        raise ValueError(
+            "Gold HOLDOUT inference requires a valid Cyber SFT candidate export"
+            + (f": {detail}" if detail else "")
+        )
+
+    config = load_cyber_sft_config(export_root / "training-config.json")
+    attestation = CyberSFTRunAttestation.model_validate_json(
+        (export_root / "run-attestation.json").read_bytes()
+    )
+    attestation_payload = attestation.model_dump(mode="json")
+    if _attestation_digest(attestation_payload) != attestation.attestation_sha256:
+        raise ValueError(
+            "Gold HOLDOUT candidate run attestation self-hash does not verify"
+        )
+    if _config_sha256(config) != attestation.config_sha256:
+        raise ValueError("Gold HOLDOUT training config SHA differs from run attestation")
+
+    run_path = export_root / "run"
     manifest = CyberSFTAdapterManifest.model_validate_json(
         (run_path / "adapter-manifest.json").read_bytes()
     )
@@ -188,45 +257,64 @@ def _load_candidate_identity(
         ("run_id", manifest.run_id, config.run_id),
         ("base_model", manifest.base_model, config.base_model),
         ("base_revision", manifest.base_revision, config.base_revision),
-        ("output_dir", manifest.output_dir, config.output_dir),
+        ("attestation run_id", attestation.run_id, config.run_id),
+        ("attestation base_model", attestation.base_model, config.base_model),
+        (
+            "attestation base_revision",
+            attestation.base_revision,
+            config.base_revision,
+        ),
+        (
+            "attestation adapter_digest",
+            attestation.adapter_digest,
+            manifest.adapter_digest,
+        ),
     )
     for label, observed, expected in checks:
         if observed != expected:
-            raise ValueError(f"Gold HOLDOUT candidate config/run mismatch: {label}")
+            raise ValueError(f"Gold HOLDOUT candidate export mismatch: {label}")
     if manifest.corpus_promotion_eligible is not True:
         raise ValueError(
             "Gold HOLDOUT promotion evaluation requires a promotion-eligible adapter"
         )
+    if attestation.promotion_eligible is not True or attestation.smoke_only:
+        raise ValueError(
+            "Gold HOLDOUT promotion evaluation requires a promotion-eligible "
+            "run attestation"
+        )
     adapter_path = run_path / "adapter"
     if not adapter_path.is_dir():
-        raise ValueError("verified Cyber SFT run is missing its adapter directory")
-    return config, manifest, adapter_path
+        raise ValueError(
+            "verified Cyber SFT candidate export is missing its adapter directory"
+        )
+    return config, manifest, adapter_path, attestation, export_verification
 
 
 def build_gold_holdout_inference_plan(
     *,
     inference_pack_dir: str | Path,
-    run_dir: str,
-    training_config_path: str | Path,
+    candidate_export_dir: str | Path,
     model_ref: str,
     generation_policy: GoldHoldoutGenerationPolicy | None = None,
-    root: str | Path = ".",
 ) -> GoldHoldoutInferencePlan:
     rows, inference_manifest, manifest_raw = _load_inference_pack(inference_pack_dir)
-    config, adapter_manifest, _adapter_path = _load_candidate_identity(
-        run_dir=run_dir,
-        training_config_path=training_config_path,
-        root=root,
+    config, adapter_manifest, _adapter_path, attestation, export_verification = (
+        _load_candidate_identity(candidate_export_dir=candidate_export_dir)
     )
     policy = generation_policy or GoldHoldoutGenerationPolicy()
     payload: dict[str, object] = {
-        "schema_version": "sentinel.gold-holdout-inference-plan.v1",
+        "schema_version": "sentinel.gold-holdout-inference-plan.v2",
         "model_ref": model_ref,
         "model_revision": adapter_manifest.adapter_digest,
         "adapter_digest": adapter_manifest.adapter_digest,
         "base_model": config.base_model,
         "base_revision": config.base_revision,
         "run_id": config.run_id,
+        "training_config_sha256": attestation.config_sha256,
+        "run_attestation_sha256": attestation.attestation_sha256,
+        "candidate_export_verification_sha256": _export_verification_sha256(
+            export_verification
+        ),
         "case_count": len(rows),
         "inputs_sha256": inference_manifest.inputs_sha256,
         "inference_manifest_sha256": _sha256_bytes(manifest_raw),
@@ -265,7 +353,9 @@ def _prediction_from_generated_text(
     if not isinstance(payload, dict):
         raise ValueError("model output must be one JSON object")
     if set(payload) != {"interpretation", "defense_sequence"}:
-        raise ValueError("model output must contain exactly interpretation and defense_sequence")
+        raise ValueError(
+            "model output must contain exactly interpretation and defense_sequence"
+        )
     interpretation = payload.get("interpretation")
     sequence_payload = payload.get("defense_sequence")
     if not isinstance(interpretation, str) or not interpretation.strip():
@@ -290,7 +380,11 @@ def _prediction_from_generated_text(
 
 def _serialize_predictions(rows: list[GoldHoldoutPrediction]) -> str:
     return "".join(
-        json.dumps(row.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            row.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         + "\n"
         for row in sorted(rows, key=lambda item: item.case_id)
     )
@@ -298,7 +392,11 @@ def _serialize_predictions(rows: list[GoldHoldoutPrediction]) -> str:
 
 def _serialize_failures(rows: list[GoldHoldoutInferenceFailure]) -> str:
     return "".join(
-        json.dumps(row.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            row.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         + "\n"
         for row in sorted(rows, key=lambda item: item.case_id)
     )
@@ -318,6 +416,7 @@ def _prepare_prompt(
     case: GoldHoldoutInferenceCase,
     tokenizer: Any,
     max_sequence_length: int,
+    max_new_tokens: int,
 ) -> tuple[dict[str, Any] | None, int, GoldHoldoutInferenceFailure | None]:
     prompt = tokenizer.apply_chat_template(
         _prompt_messages(case),
@@ -327,7 +426,8 @@ def _prepare_prompt(
     )
     encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
     prompt_tokens = int(encoded["input_ids"].shape[-1])
-    if prompt_tokens <= max_sequence_length:
+    required_tokens = prompt_tokens + max_new_tokens
+    if required_tokens <= max_sequence_length:
         return encoded, prompt_tokens, None
     failure = GoldHoldoutInferenceFailure(
         case_id=case.case_id,
@@ -335,7 +435,8 @@ def _prepare_prompt(
         input_context_sha256=case.input_context_sha256,
         failure_type="PROMPT_TOO_LONG",
         detail=(
-            f"prompt requires {prompt_tokens} tokens, above "
+            f"prompt requires {prompt_tokens} tokens plus generation reserve "
+            f"max_new_tokens={max_new_tokens}, total={required_tokens}, above "
             f"max_sequence_length={max_sequence_length}"
         ),
     )
@@ -345,32 +446,28 @@ def _prepare_prompt(
 def execute_gold_holdout_inference(
     *,
     inference_pack_dir: str | Path,
-    run_dir: str,
-    training_config_path: str | Path,
+    candidate_export_dir: str | Path,
     model_ref: str,
     output_dir: str | Path,
     generation_policy: GoldHoldoutGenerationPolicy | None = None,
-    root: str | Path = ".",
 ) -> GoldHoldoutInferenceRunReceipt:
     rows, _inference_manifest, _manifest_raw = _load_inference_pack(inference_pack_dir)
-    config, adapter_manifest, adapter_path = _load_candidate_identity(
-        run_dir=run_dir,
-        training_config_path=training_config_path,
-        root=root,
+    config, adapter_manifest, adapter_path, attestation, export_verification = (
+        _load_candidate_identity(candidate_export_dir=candidate_export_dir)
     )
     policy = generation_policy or GoldHoldoutGenerationPolicy()
     plan = build_gold_holdout_inference_plan(
         inference_pack_dir=inference_pack_dir,
-        run_dir=run_dir,
-        training_config_path=training_config_path,
+        candidate_export_dir=candidate_export_dir,
         model_ref=model_ref,
         generation_policy=policy,
-        root=root,
     )
 
     destination = Path(output_dir)
     if destination.exists():
-        raise FileExistsError(f"Gold HOLDOUT inference output already exists: {destination}")
+        raise FileExistsError(
+            f"Gold HOLDOUT inference output already exists: {destination}"
+        )
 
     try:
         import torch
@@ -408,12 +505,15 @@ def execute_gold_holdout_inference(
             case,
             tokenizer,
             config.max_sequence_length,
+            policy.max_new_tokens,
         )
         if failure is not None:
             failures.append(failure)
             continue
         if encoded is None:
-            raise RuntimeError("Gold HOLDOUT prompt preparation returned no inputs or failure")
+            raise RuntimeError(
+                "Gold HOLDOUT prompt preparation returned no inputs or failure"
+            )
         prepared.append((case, encoded, prompt_tokens))
 
     predictions: list[GoldHoldoutPrediction] = []
@@ -497,15 +597,39 @@ def execute_gold_holdout_inference(
         json.dumps(policy.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    (destination / "training-config.json").write_text(
+        json.dumps(config.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (destination / "run-attestation.json").write_text(
+        json.dumps(attestation.model_dump(mode="json"), indent=2, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    (destination / "candidate-export-verification.json").write_text(
+        json.dumps(
+            export_verification.model_dump(mode="json"),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     device_name = str(torch.cuda.get_device_properties(device_index).name)
     receipt_payload: dict[str, object] = {
-        "schema_version": "sentinel.gold-holdout-inference-run-receipt.v1",
+        "schema_version": "sentinel.gold-holdout-inference-run-receipt.v2",
         "plan_sha256": plan.plan_sha256,
+        "run_id": config.run_id,
         "model_ref": model_ref,
         "model_revision": adapter_manifest.adapter_digest,
         "adapter_digest": adapter_manifest.adapter_digest,
         "base_model": config.base_model,
         "base_revision": config.base_revision,
+        "training_config_sha256": attestation.config_sha256,
+        "run_attestation_sha256": attestation.attestation_sha256,
+        "candidate_export_verification_sha256": _export_verification_sha256(
+            export_verification
+        ),
         "case_count": len(rows),
         "prediction_count": len(predictions),
         "failure_count": len(failures),

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import Literal
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import Field, model_validator
 
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
@@ -15,7 +17,13 @@ from koschei_sentinel.gold_holdout_evaluation import (
 )
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     GoldHoldoutEvaluationEvidence,
+    build_owner_trusted_gold_holdout_evaluation_evidence,
     verify_gold_holdout_evaluation_evidence,
+)
+from koschei_sentinel.gold_holdout_pack_signing import GoldHoldoutPackSignatureProof
+from koschei_sentinel.gold_reviewer_trust import (
+    GoldReviewerTrustPolicy,
+    verify_gold_reviewer_trust_policy,
 )
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.multi_incident_cyber_range_suite import (
@@ -41,6 +49,9 @@ class CyberDefensePromotionEvidence(StrictModel):
     gold_holdout_evaluation_report_sha256: str = Field(pattern=_DIGEST)
     gold_holdout_policy_sha256: str = Field(pattern=_DIGEST)
     gold_holdout_source_audit_sha256: str = Field(pattern=_DIGEST)
+    gold_review_signature_audit_sha256: str = Field(pattern=_DIGEST)
+    gold_candidate_training_binding_sha256: str = Field(pattern=_DIGEST)
+    gold_holdout_pack_signature_proof_sha256: str = Field(pattern=_DIGEST)
     gold_holdout_inference_verification_sha256: str = Field(pattern=_DIGEST)
     cyber_range_passed: bool
     multi_incident_range_passed: bool
@@ -128,10 +139,66 @@ def build_cyber_defense_promotion_evidence(
     defense_load_range_report: DefenseLoadRangeReport,
     gold_holdout_evidence: GoldHoldoutEvaluationEvidence,
     gold_holdout_policy: GoldHoldoutEvaluationPolicy,
+    gold_reviewer_public_key: Ed25519PublicKey | None = None,
+    gold_reviewer_trust_policy: GoldReviewerTrustPolicy | None = None,
+    gold_owner_public_key: Ed25519PublicKey | None = None,
 ) -> CyberDefensePromotionEvidence:
+    """Assemble Promotion v4 from already-verified evidence.
+
+    This is a low-level assembly primitive, not the production trust boundary. Production
+    callers must use ``build_cyber_defense_promotion_evidence_from_sources`` so reviewer
+    delegation and Gold source artifacts are cryptographically reverified first. Low-level
+    callers may optionally supply all three trust objects to recheck the recorded trust
+    provenance while assembling the receipt.
+    """
     if not training_bundle.ready_for_training:
         raise ValueError("cyber training bundle is not ready")
     verify_gold_holdout_evaluation_evidence(gold_holdout_evidence)
+
+    trust_inputs = (
+        gold_reviewer_public_key,
+        gold_reviewer_trust_policy,
+        gold_owner_public_key,
+    )
+    if any(value is not None for value in trust_inputs) and not all(
+        value is not None for value in trust_inputs
+    ):
+        raise ValueError("low-level Promotion trust inputs must be supplied together")
+    if all(value is not None for value in trust_inputs):
+        assert gold_reviewer_public_key is not None
+        assert gold_reviewer_trust_policy is not None
+        assert gold_owner_public_key is not None
+        verify_gold_reviewer_trust_policy(
+            gold_reviewer_trust_policy,
+            gold_reviewer_public_key,
+            gold_owner_public_key,
+        )
+
+    if gold_holdout_evidence.review_signature_audit_sha256 is None:
+        raise ValueError("Promotion v4 requires signed Gold human-review evidence")
+    if gold_holdout_evidence.candidate_training_binding_verification_sha256 is None:
+        raise ValueError(
+            "Promotion v4 requires Gold candidate TRAIN/VALIDATION binding evidence"
+        )
+    if gold_holdout_evidence.inference_pack_signature_proof_sha256 is None:
+        raise ValueError("Promotion v4 requires signed Gold HOLDOUT inference-pack evidence")
+    if gold_holdout_evidence.reviewer_trust_policy_sha256 is None:
+        raise ValueError("Promotion v4 requires owner-signed Gold reviewer trust evidence")
+    if gold_holdout_evidence.owner_key_fingerprint is None:
+        raise ValueError("Promotion v4 requires the Gold owner trust-root fingerprint")
+
+    if gold_reviewer_trust_policy is not None:
+        if (
+            gold_holdout_evidence.reviewer_trust_policy_sha256
+            != gold_reviewer_trust_policy.policy_digest
+        ):
+            raise ValueError("Gold HOLDOUT evidence reviewer trust policy digest differs")
+        if (
+            gold_holdout_evidence.owner_key_fingerprint
+            != gold_reviewer_trust_policy.owner_key_fingerprint
+        ):
+            raise ValueError("Gold HOLDOUT evidence owner trust-root fingerprint differs")
+
     if gold_holdout_evidence.model_ref != candidate_model_ref:
         raise ValueError("Gold HOLDOUT evidence model_ref differs from promotion candidate")
     if gold_holdout_evidence.model_revision != candidate_model_revision:
@@ -156,6 +223,11 @@ def build_cyber_defense_promotion_evidence(
         and defense_load_range_report.passed
         and gold_passed
     )
+    review_signature_sha = gold_holdout_evidence.review_signature_audit_sha256
+    candidate_training_binding_sha = (
+        gold_holdout_evidence.candidate_training_binding_verification_sha256
+    )
+    pack_signature_sha = gold_holdout_evidence.inference_pack_signature_proof_sha256
     digest_payload = "|".join(
         [
             promotion_id,
@@ -170,6 +242,9 @@ def build_cyber_defense_promotion_evidence(
             report.report_sha256,
             gold_policy_sha,
             gold_holdout_evidence.source_gold_audit_sha256,
+            review_signature_sha,
+            candidate_training_binding_sha,
+            pack_signature_sha,
             gold_holdout_evidence.inference_verification_sha256,
             str(int(cyber_range_report.passed)),
             str(int(multi_incident_range_report.passed)),
@@ -192,6 +267,9 @@ def build_cyber_defense_promotion_evidence(
         gold_holdout_evaluation_report_sha256=report.report_sha256,
         gold_holdout_policy_sha256=gold_policy_sha,
         gold_holdout_source_audit_sha256=gold_holdout_evidence.source_gold_audit_sha256,
+        gold_review_signature_audit_sha256=review_signature_sha,
+        gold_candidate_training_binding_sha256=candidate_training_binding_sha,
+        gold_holdout_pack_signature_proof_sha256=pack_signature_sha,
         gold_holdout_inference_verification_sha256=(
             gold_holdout_evidence.inference_verification_sha256
         ),
@@ -236,4 +314,72 @@ def build_cyber_defense_promotion_evidence(
         gold_holdout_outcome_verification_rate=report.outcome_verification_rate,
         ready_for_promotion=ready,
         evidence_sha256=digest,
+    )
+
+
+def build_cyber_defense_promotion_evidence_from_sources(
+    *,
+    promotion_id: str,
+    candidate_model_ref: str,
+    candidate_model_revision: str,
+    training_bundle: CyberTrainingBundle,
+    cyber_range_report: CyberRangeSuiteReport,
+    multi_incident_range_report: MultiIncidentCyberRangeSuiteReport,
+    defense_load_range_report: DefenseLoadRangeReport,
+    supplied_gold_holdout_evidence: GoldHoldoutEvaluationEvidence,
+    gold_holdout_policy: GoldHoldoutEvaluationPolicy,
+    gold_release_dir: str | Path,
+    gold_inference_pack_dir: str | Path,
+    gold_inference_output_dir: str | Path,
+    gold_candidate_export_dir: str | Path,
+    gold_reviewer_public_key: Ed25519PublicKey,
+    gold_reviewer_trust_policy: GoldReviewerTrustPolicy,
+    gold_owner_public_key: Ed25519PublicKey,
+    gold_inference_pack_signature_proof: GoldHoldoutPackSignatureProof,
+) -> CyberDefensePromotionEvidence:
+    verify_gold_reviewer_trust_policy(
+        gold_reviewer_trust_policy,
+        gold_reviewer_public_key,
+        gold_owner_public_key,
+    )
+    fresh_gold_evidence = build_owner_trusted_gold_holdout_evaluation_evidence(
+        release_dir=gold_release_dir,
+        inference_pack_dir=gold_inference_pack_dir,
+        inference_output_dir=gold_inference_output_dir,
+        candidate_export_dir=gold_candidate_export_dir,
+        policy=gold_holdout_policy,
+        reviewer_public_key=gold_reviewer_public_key,
+        reviewer_trust_policy=gold_reviewer_trust_policy,
+        owner_public_key=gold_owner_public_key,
+        inference_pack_signature_proof=gold_inference_pack_signature_proof,
+    )
+    if fresh_gold_evidence.review_signature_audit_sha256 is None:
+        raise ValueError("Promotion v4 requires signed Gold human-review evidence")
+    if fresh_gold_evidence.candidate_training_binding_verification_sha256 is None:
+        raise ValueError(
+            "Promotion v4 requires Gold candidate TRAIN/VALIDATION binding evidence"
+        )
+    if fresh_gold_evidence.inference_pack_signature_proof_sha256 is None:
+        raise ValueError("Promotion v4 requires signed Gold HOLDOUT inference-pack evidence")
+    if fresh_gold_evidence.reviewer_trust_policy_sha256 is None:
+        raise ValueError("Promotion v4 requires owner-signed Gold reviewer trust evidence")
+    if fresh_gold_evidence.owner_key_fingerprint is None:
+        raise ValueError("Promotion v4 requires the Gold owner trust-root fingerprint")
+    if (
+        supplied_gold_holdout_evidence.model_dump(mode="json")
+        != fresh_gold_evidence.model_dump(mode="json")
+    ):
+        raise ValueError(
+            "supplied Gold HOLDOUT evidence differs from fresh source-artifact rebuild"
+        )
+    return build_cyber_defense_promotion_evidence(
+        promotion_id=promotion_id,
+        candidate_model_ref=candidate_model_ref,
+        candidate_model_revision=candidate_model_revision,
+        training_bundle=training_bundle,
+        cyber_range_report=cyber_range_report,
+        multi_incident_range_report=multi_incident_range_report,
+        defense_load_range_report=defense_load_range_report,
+        gold_holdout_evidence=fresh_gold_evidence,
+        gold_holdout_policy=gold_holdout_policy,
     )

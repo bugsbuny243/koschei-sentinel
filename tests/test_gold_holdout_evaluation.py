@@ -188,6 +188,35 @@ def test_structurally_correct_grounded_holdout_prediction_passes(tmp_path) -> No
     assert report.violations == []
 
 
+def test_extra_defense_step_cannot_preserve_perfect_step_accuracy(tmp_path) -> None:
+    release, _inference, inference_case, gold_case = _fixture(tmp_path)
+    steps = [GoldHoldoutPredictedStep.model_validate(row) for row in gold_case.expected_sequence]
+    extra = steps[-1].model_copy(update={"sequence": len(steps) + 1})
+    prediction = build_gold_holdout_prediction(
+        inference_case=inference_case,
+        model_ref="Qwen/Qwen3.5-9B-Base",
+        model_revision="candidate:test",
+        adapter_digest="d" * 64,
+        interpretation="Matches Gold, then adds one unsupported extra defense step.",
+        defense_sequence=[*steps, extra],
+    )
+
+    report = evaluate_gold_holdout_predictions(release, [prediction])
+    expected_accuracy = len(steps) / (len(steps) + 1)
+
+    assert report.passed is False
+    assert report.compared_steps == len(steps) + 1
+    assert report.mode_accuracy == expected_accuracy
+    assert report.action_accuracy == expected_accuracy
+    assert report.target_accuracy == expected_accuracy
+    assert report.evidence_selection_accuracy == expected_accuracy
+    assert report.structural_exact_rate == 0.0
+    assert any(
+        "predicted defense sequence length differs" in row
+        for row in report.violations
+    )
+
+
 def test_perfect_single_case_still_fails_when_policy_requires_more_cases(tmp_path) -> None:
     release, _inference, inference_case, gold_case = _fixture(tmp_path)
     prediction = _perfect_prediction(inference_case, gold_case)

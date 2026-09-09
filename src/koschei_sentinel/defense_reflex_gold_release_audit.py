@@ -54,6 +54,9 @@ def _sha256_text(payload: str) -> str:
 def _audit_digest(payload: dict[str, object]) -> str:
     unsigned = dict(payload)
     unsigned.pop("audit_sha256", None)
+    # release_dir is diagnostic metadata, not release identity. Excluding it keeps
+    # the audit digest stable when the same sealed release is moved between hosts.
+    unsigned.pop("release_dir", None)
     return _sha256_text(canonical_json(unsigned))
 
 

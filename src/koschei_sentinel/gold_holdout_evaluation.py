@@ -377,7 +377,7 @@ def evaluate_gold_holdout_predictions(
     ]
 
     structural_exact_cases = sum(row.structural_exact for row in results)
-    compared_steps = sum(min(row.expected_steps, row.predicted_steps) for row in results)
+    compared_steps = sum(max(row.expected_steps, row.predicted_steps) for row in results)
     predicted_steps = sum(row.predicted_steps for row in results)
     mode_matches = sum(row.mode_matches for row in results)
     action_matches = sum(row.action_matches for row in results)

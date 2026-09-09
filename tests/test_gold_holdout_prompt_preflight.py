@@ -28,11 +28,12 @@ def _case() -> GoldHoldoutInferenceCase:
     )
 
 
-def test_prompt_preflight_accepts_case_inside_context_limit() -> None:
+def test_prompt_preflight_accepts_case_inside_total_context_limit() -> None:
     encoded, prompt_tokens, failure = _prepare_prompt(
         _case(),
         FakeTokenizer(tokens=1024),
         2048,
+        512,
     )
 
     assert encoded is not None
@@ -40,11 +41,29 @@ def test_prompt_preflight_accepts_case_inside_context_limit() -> None:
     assert failure is None
 
 
-def test_prompt_preflight_marks_overlength_without_model_execution() -> None:
+def test_prompt_preflight_reserves_generation_budget_before_model_execution() -> None:
+    encoded, prompt_tokens, failure = _prepare_prompt(
+        _case(),
+        FakeTokenizer(tokens=1600),
+        2048,
+        512,
+    )
+
+    assert encoded is None
+    assert prompt_tokens == 1600
+    assert failure is not None
+    assert failure.failure_type == "PROMPT_TOO_LONG"
+    assert "max_new_tokens=512" in failure.detail
+    assert "total=2112" in failure.detail
+    assert "max_sequence_length=2048" in failure.detail
+
+
+def test_prompt_preflight_marks_prompt_overlength_without_model_execution() -> None:
     encoded, prompt_tokens, failure = _prepare_prompt(
         _case(),
         FakeTokenizer(tokens=2300),
         2048,
+        64,
     )
 
     assert encoded is None

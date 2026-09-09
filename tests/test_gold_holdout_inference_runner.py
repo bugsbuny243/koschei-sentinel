@@ -5,6 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 import koschei_sentinel.gold_holdout_inference_runner as runner_module
+from koschei_sentinel.cyber_sft_run_attestation import (
+    _attestation_digest,
+    _config_sha256,
+)
+from koschei_sentinel.cyber_sft_training import load_cyber_sft_config
 from koschei_sentinel.defense_reflex_gold_release import write_gold_defense_release
 from koschei_sentinel.gold_holdout_evaluation import export_gold_holdout_inference_pack
 from koschei_sentinel.gold_holdout_inference_runner import (
@@ -28,7 +33,9 @@ def _pack(tmp_path):
 
 
 def _candidate_fixture(tmp_path):
-    config_path = tmp_path / "config.json"
+    export_root = tmp_path / "candidate-export"
+    export_root.mkdir()
+    config_path = export_root / "training-config.json"
     config_payload = {
         "schema_version": "sentinel.cyber-sft-config.v1",
         "run_id": "gold-inference-run",
@@ -66,16 +73,18 @@ def _candidate_fixture(tmp_path):
         },
     }
     config_path.write_text(json.dumps(config_payload), encoding="utf-8")
-    run = tmp_path / "build" / "run"
+    config = load_cyber_sft_config(config_path)
+
+    run = export_root / "run"
     adapter = run / "adapter"
     adapter.mkdir(parents=True)
     manifest = {
         "schema_version": "sentinel.cyber-sft-adapter-manifest.v1",
-        "run_id": "gold-inference-run",
+        "run_id": config.run_id,
         "stage": "DEFENSE_REFLEX",
         "execution_profile": "DENSE_SINGLE_GPU_QLORA",
-        "base_model": "Qwen/Qwen3.5-9B-Base",
-        "base_revision": "a" * 40,
+        "base_model": config.base_model,
+        "base_revision": config.base_revision,
         "corpus_examples_sha256": "b" * 64,
         "corpus_manifest_sha256": "c" * 64,
         "corpus_promotion_eligible": True,
@@ -88,10 +97,45 @@ def _candidate_fixture(tmp_path):
         "validation_examples": 1,
         "gradient_checkpointing": True,
         "optimizer": "paged_adamw_8bit",
-        "output_dir": "build/run",
+        "output_dir": config.output_dir,
     }
     (run / "adapter-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    return config_path, run, adapter
+
+    attestation_payload = {
+        "schema_version": "sentinel.cyber-sft-run-attestation.v1",
+        "run_id": config.run_id,
+        "selected_profile": "normal",
+        "repository_commit": "f" * 40,
+        "base_model": config.base_model,
+        "base_revision": config.base_revision,
+        "resolved_model_revision": config.base_revision,
+        "config_sha256": _config_sha256(config),
+        "plan_sha256": "1" * 64,
+        "training_source_sha256": "2" * 64,
+        "model_preflight_sha256": "3" * 64,
+        "verification_sha256": "4" * 64,
+        "model_runtime_sha256": "5" * 64,
+        "resume_runtime_sha256": "6" * 64,
+        "receipt_sha256": "7" * 64,
+        "adapter_digest": manifest["adapter_digest"],
+        "corpus_examples_sha256": manifest["corpus_examples_sha256"],
+        "corpus_manifest_sha256": manifest["corpus_manifest_sha256"],
+        "global_step": 1,
+        "resumed": False,
+        "resume_checkpoint": None,
+        "smoke_only": False,
+        "promotion_eligible": True,
+    }
+    attestation_payload["attestation_sha256"] = _attestation_digest(attestation_payload)
+    (export_root / "run-attestation.json").write_text(
+        json.dumps(attestation_payload),
+        encoding="utf-8",
+    )
+    return export_root, config_path, adapter
+
+
+def _valid_export_report():
+    return SimpleNamespace(valid=True, violations=[])
 
 
 def test_inference_pack_contains_only_answer_key_isolated_input_contract(tmp_path) -> None:
@@ -129,45 +173,83 @@ def test_inference_pack_rejects_answer_key_field_even_if_hashes_are_recomputed(t
     inputs_path.write_text(payload, encoding="utf-8")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["inputs_sha256"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(ValueError, match="outside the answer-key-isolated contract"):
         _load_inference_pack(pack)
 
 
-def test_candidate_identity_resolves_verified_adapter_subdirectory(monkeypatch, tmp_path) -> None:
-    config_path, _run, adapter = _candidate_fixture(tmp_path)
-    monkeypatch.setattr(
-        runner_module,
-        "verify_cyber_sft_run",
-        lambda *_args, **_kwargs: SimpleNamespace(valid=True),
+def test_inference_pack_rejects_unlisted_answer_file(tmp_path) -> None:
+    pack = _pack(tmp_path)
+    (pack / "answers.json").write_text(
+        '{"expected_sequence":[]}\n',
+        encoding="utf-8",
     )
 
-    _config, manifest, resolved = _load_candidate_identity(
-        run_dir="build/run",
-        training_config_path=config_path,
-        root=tmp_path,
+    with pytest.raises(ValueError, match="file set differs from answer-key-isolated"):
+        _load_inference_pack(pack)
+
+
+def test_inference_pack_rejects_symlinked_inputs(tmp_path) -> None:
+    pack = _pack(tmp_path)
+    inputs = pack / "inputs.jsonl"
+    external = tmp_path / "external-inputs.jsonl"
+    inputs.replace(external)
+    inputs.symlink_to(external)
+
+    with pytest.raises(ValueError, match="must not contain symlinks"):
+        _load_inference_pack(pack)
+
+
+def test_candidate_identity_resolves_verified_export_adapter(monkeypatch, tmp_path) -> None:
+    export_root, _config_path, adapter = _candidate_fixture(tmp_path)
+    monkeypatch.setattr(
+        runner_module,
+        "verify_cyber_sft_export",
+        lambda *_args, **_kwargs: _valid_export_report(),
+    )
+
+    _config, manifest, resolved, attestation, _verification = _load_candidate_identity(
+        candidate_export_dir=export_root,
     )
 
     assert resolved == adapter
     assert manifest.adapter_digest == "d" * 64
+    assert attestation.adapter_digest == manifest.adapter_digest
 
 
 def test_candidate_identity_rejects_missing_adapter_subdirectory(monkeypatch, tmp_path) -> None:
-    config_path, _run, adapter = _candidate_fixture(tmp_path)
+    export_root, _config_path, adapter = _candidate_fixture(tmp_path)
     adapter.rmdir()
     monkeypatch.setattr(
         runner_module,
-        "verify_cyber_sft_run",
-        lambda *_args, **_kwargs: SimpleNamespace(valid=True),
+        "verify_cyber_sft_export",
+        lambda *_args, **_kwargs: _valid_export_report(),
     )
 
     with pytest.raises(ValueError, match="missing its adapter directory"):
-        _load_candidate_identity(
-            run_dir="build/run",
-            training_config_path=config_path,
-            root=tmp_path,
-        )
+        _load_candidate_identity(candidate_export_dir=export_root)
+
+
+def test_candidate_identity_rejects_training_config_drift_even_with_stale_valid_report(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    export_root, config_path, _adapter = _candidate_fixture(tmp_path)
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    payload["max_sequence_length"] = 4096
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(
+        runner_module,
+        "verify_cyber_sft_export",
+        lambda *_args, **_kwargs: _valid_export_report(),
+    )
+
+    with pytest.raises(ValueError, match="training config SHA differs"):
+        _load_candidate_identity(candidate_export_dir=export_root)
 
 
 def test_generated_prediction_is_strict_json_and_revision_is_adapter_digest(tmp_path) -> None:

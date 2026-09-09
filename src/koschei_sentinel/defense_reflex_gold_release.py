@@ -165,7 +165,15 @@ def _training_example(
         training_authorization=True,
         promotion_eligible=True,
     )
-    return build_defense_reflex_v3_example(scenario, lesson)
+    example = build_defense_reflex_v3_example(scenario, lesson)
+    provenance = dict(example.provenance)
+    provenance.update(
+        {
+            "gold_packet_sha256": reviewed.packet_sha256,
+            "gold_review_sha256": reviewed.review_sha256,
+        }
+    )
+    return example.model_copy(update={"provenance": provenance})
 
 
 def _holdout_case(

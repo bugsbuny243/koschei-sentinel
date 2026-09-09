@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from koschei_sentinel.cyber_defense_promotion import (
-    build_cyber_defense_promotion_evidence,
+    build_cyber_defense_promotion_evidence_from_sources,
 )
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
 from koschei_sentinel.cyber_training_bundle import CyberTrainingBundle
@@ -14,14 +14,21 @@ from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     GoldHoldoutEvaluationEvidence,
 )
+from koschei_sentinel.gold_holdout_pack_signing import load_gold_holdout_pack_signature
+from koschei_sentinel.gold_review_signing import load_reviewer_public_key
+from koschei_sentinel.gold_reviewer_trust import load_gold_reviewer_trust_policy
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
+from koschei_sentinel.promotion import load_owner_public_key
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Bind Sentinel training and all required defense gates to one promotion receipt"
+        description=(
+            "Reverify signed Gold HOLDOUT source artifacts and bind all required defense "
+            "gates to one promotion receipt"
+        )
     )
     parser.add_argument("--promotion-id", required=True)
     parser.add_argument("--candidate-model", required=True)
@@ -32,6 +39,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--defense-load-range-report", required=True)
     parser.add_argument("--gold-holdout-evidence", required=True)
     parser.add_argument("--gold-holdout-policy", required=True)
+    parser.add_argument("--gold-release-dir", required=True)
+    parser.add_argument("--gold-inference-pack", required=True)
+    parser.add_argument("--gold-inference-pack-signature", required=True)
+    parser.add_argument("--gold-inference-output", required=True)
+    parser.add_argument("--gold-candidate-export", required=True)
+    parser.add_argument("--gold-reviewer-public-key", required=True)
+    parser.add_argument("--gold-reviewer-trust-policy", required=True)
+    parser.add_argument("--gold-owner-public-key", required=True)
     parser.add_argument("--output", required=True)
     return parser
 
@@ -51,13 +66,13 @@ def main(argv: list[str] | None = None) -> int:
         load = DefenseLoadRangeReport.model_validate_json(
             Path(args.defense_load_range_report).read_text(encoding="utf-8")
         )
-        gold = GoldHoldoutEvaluationEvidence.model_validate_json(
+        supplied_gold = GoldHoldoutEvaluationEvidence.model_validate_json(
             Path(args.gold_holdout_evidence).read_text(encoding="utf-8")
         )
         gold_policy = GoldHoldoutEvaluationPolicy.model_validate_json(
             Path(args.gold_holdout_policy).read_text(encoding="utf-8")
         )
-        evidence = build_cyber_defense_promotion_evidence(
+        evidence = build_cyber_defense_promotion_evidence_from_sources(
             promotion_id=args.promotion_id,
             candidate_model_ref=args.candidate_model,
             candidate_model_revision=args.candidate_revision,
@@ -65,8 +80,22 @@ def main(argv: list[str] | None = None) -> int:
             cyber_range_report=single,
             multi_incident_range_report=multi,
             defense_load_range_report=load,
-            gold_holdout_evidence=gold,
+            supplied_gold_holdout_evidence=supplied_gold,
             gold_holdout_policy=gold_policy,
+            gold_release_dir=args.gold_release_dir,
+            gold_inference_pack_dir=args.gold_inference_pack,
+            gold_inference_output_dir=args.gold_inference_output,
+            gold_candidate_export_dir=args.gold_candidate_export,
+            gold_reviewer_public_key=load_reviewer_public_key(
+                args.gold_reviewer_public_key
+            ),
+            gold_reviewer_trust_policy=load_gold_reviewer_trust_policy(
+                args.gold_reviewer_trust_policy
+            ),
+            gold_owner_public_key=load_owner_public_key(args.gold_owner_public_key),
+            gold_inference_pack_signature_proof=load_gold_holdout_pack_signature(
+                args.gold_inference_pack_signature
+            ),
         )
         payload = json.dumps(
             evidence.model_dump(mode="json"),

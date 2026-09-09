@@ -9,6 +9,7 @@ from tests.test_cyber_defense_promotion import (
     _load,
     _multi,
     _single,
+    _trust_kwargs,
 )
 
 
@@ -28,6 +29,7 @@ def test_promotion_rechecks_minimum_gold_holdout_case_count() -> None:
         defense_load_range_report=_load(),
         gold_holdout_evidence=gold_evidence,
         gold_holdout_policy=policy,
+        **_trust_kwargs(),
     )
 
     assert promotion.cyber_range_passed is True

@@ -1,9 +1,12 @@
+import copy
+
 import pytest
 
 from koschei_sentinel.cyber_seed_curriculum import build_seed_curriculum
 from koschei_sentinel.defense_reflex_gold_queue import (
     GoldReviewSplit,
     GoldReviewSplitPolicy,
+    _packet_digest,
     _split_basis,
     _split_for_basis,
     build_gold_review_packet,
@@ -13,6 +16,9 @@ from koschei_sentinel.defense_reflex_gold_review import (
     review_gold_packet,
 )
 from koschei_sentinel.defense_reflex_review import CorrectionReviewDecision
+from koschei_sentinel.gold_model_visible_context import (
+    gold_model_visible_context_sha256,
+)
 
 
 def _seed_row():
@@ -40,6 +46,18 @@ def _approved_spec(lesson, *, training: bool, evaluation: bool) -> GoldHumanRevi
         outcome_verified=True,
         authorize_for_training=training,
         authorize_for_evaluation=evaluation,
+    )
+
+
+def _rehash_packet_with_context(packet, context):
+    changed = packet.model_copy(
+        update={
+            "model_visible_context": context,
+            "model_visible_context_sha256": gold_model_visible_context_sha256(context),
+        }
+    )
+    return changed.model_copy(
+        update={"packet_sha256": _packet_digest(changed.model_dump(mode="json"))}
     )
 
 
@@ -123,4 +141,38 @@ def test_gold_review_rejects_scenario_drift_after_split_assignment() -> None:
             packet,
             changed_scenario,
             _approved_spec(lesson, training=True, evaluation=False),
+        )
+
+
+def test_gold_review_rejects_rehashed_nested_answer_key_poisoning() -> None:
+    scenario, lesson = _seed_row()
+    packet = _packet_for_split(scenario, GoldReviewSplit.HOLDOUT)
+    poisoned_context = copy.deepcopy(packet.model_visible_context)
+    poisoned_context["graph_snapshots"][0]["truth"] = "MALICIOUS"
+    poisoned = _rehash_packet_with_context(packet, poisoned_context)
+
+    assert _packet_digest(poisoned.model_dump(mode="json")) == poisoned.packet_sha256
+
+    with pytest.raises(ValueError, match="forbidden answer-key/review fields"):
+        review_gold_packet(
+            poisoned,
+            scenario,
+            _approved_spec(lesson, training=False, evaluation=True),
+        )
+
+
+def test_gold_review_rejects_rehashed_noncanonical_visible_graph() -> None:
+    scenario, lesson = _seed_row()
+    packet = _packet_for_split(scenario, GoldReviewSplit.HOLDOUT)
+    poisoned_context = copy.deepcopy(packet.model_visible_context)
+    poisoned_context["graph_snapshots"][0]["graph_id"] += ":poisoned"
+    poisoned = _rehash_packet_with_context(packet, poisoned_context)
+
+    assert _packet_digest(poisoned.model_dump(mode="json")) == poisoned.packet_sha256
+
+    with pytest.raises(ValueError, match="differs from the canonical scenario view"):
+        review_gold_packet(
+            poisoned,
+            scenario,
+            _approved_spec(lesson, training=False, evaluation=True),
         )

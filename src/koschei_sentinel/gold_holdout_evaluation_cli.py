@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
+from koschei_sentinel.cyber_sft_candidate_snapshot import (
+    snapshot_verified_cyber_sft_export,
+)
+from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
 from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
 from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutEvaluationPolicy,
@@ -12,13 +19,34 @@ from koschei_sentinel.gold_holdout_evaluation import (
     evaluate_gold_holdout_predictions,
     export_gold_holdout_inference_pack,
 )
-from koschei_sentinel.gold_holdout_inference_runner import GoldHoldoutInferenceRunReceipt
+from koschei_sentinel.gold_holdout_inference_runner import (
+    GoldHoldoutInferenceRunReceipt,
+    _load_inference_pack,
+)
 from koschei_sentinel.gold_holdout_inference_verify import (
     verify_gold_holdout_inference_output,
+)
+from koschei_sentinel.gold_holdout_output_snapshot import (
+    copy_gold_holdout_inference_output_snapshot,
+)
+from koschei_sentinel.gold_holdout_pack_admission import (
+    GoldHoldoutPackAdmission,
+    admit_owner_trusted_signed_gold_holdout_pack,
+    snapshot_admitted_gold_holdout_pack,
+)
+from koschei_sentinel.gold_holdout_pack_preflight import (
+    preflight_gold_holdout_inference_pack,
+)
+from koschei_sentinel.gold_holdout_pack_signing import (
+    sign_gold_holdout_inference_pack,
+    verify_gold_holdout_inference_pack_signature,
 )
 from koschei_sentinel.gold_holdout_zero_prediction import (
     build_zero_prediction_gold_report,
 )
+from koschei_sentinel.gold_release_snapshot import snapshot_verified_gold_release
+from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_private_key
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export-inputs")
     export_parser.add_argument("--release-dir", required=True)
     export_parser.add_argument("--output-dir", required=True)
+    export_parser.add_argument("--reviewer-private-key", required=True)
+    export_parser.add_argument("--reviewer-trust-policy", required=True)
+    export_parser.add_argument("--owner-public-key", required=True)
+    export_parser.add_argument("--signature-output", required=True)
 
     evaluate_parser = subparsers.add_parser("evaluate")
     evaluate_parser.add_argument("--release-dir", required=True)
@@ -40,8 +72,13 @@ def build_parser() -> argparse.ArgumentParser:
     output_parser = subparsers.add_parser("evaluate-output")
     output_parser.add_argument("--release-dir", required=True)
     output_parser.add_argument("--inference-pack", required=True)
+    output_parser.add_argument("--inference-pack-signature", required=True)
+    output_parser.add_argument("--reviewer-public-key", required=True)
+    output_parser.add_argument("--reviewer-trust-policy", required=True)
+    output_parser.add_argument("--owner-public-key", required=True)
     output_parser.add_argument("--inference-output", required=True)
-    output_parser.add_argument("--policy")
+    output_parser.add_argument("--candidate-export", required=True)
+    output_parser.add_argument("--policy", required=True)
     output_parser.add_argument("--output")
     return parser
 
@@ -86,66 +123,281 @@ def _write_report(report, output: str | None) -> None:
     print(payload, end="")
 
 
-def _evaluate_verified_output(args):
-    verification = verify_gold_holdout_inference_output(
-        args.inference_output,
-        args.inference_pack,
-    )
-    if not verification.valid:
-        raise ValueError("Gold HOLDOUT inference output verification failed")
+def _assert_raw_candidate_export(candidate_export: str) -> None:
+    report = verify_cyber_sft_export(candidate_export)
+    if not report.valid:
+        detail = "; ".join(report.violations[:5])
+        raise ValueError(
+            "Gold HOLDOUT candidate export failed raw-path verification"
+            + (f": {detail}" if detail else "")
+        )
 
-    release_audit = audit_gold_defense_release(args.release_dir)
+
+def _verify_signed_pack(
+    *,
+    inference_pack: str,
+    signature_path: str,
+    reviewer_public_key_path: str,
+    reviewer_trust_policy_path: str,
+    owner_public_key_path: str,
+) -> GoldHoldoutPackAdmission:
+    return admit_owner_trusted_signed_gold_holdout_pack(
+        inference_pack=inference_pack,
+        signature_path=signature_path,
+        reviewer_public_key_path=reviewer_public_key_path,
+        reviewer_trust_policy_path=reviewer_trust_policy_path,
+        owner_public_key_path=owner_public_key_path,
+    )
+
+
+def _export_inputs_atomic(release_dir: str, output_dir: str) -> GoldHoldoutInferenceManifest:
+    destination = Path(output_dir)
+    if destination.exists():
+        raise FileExistsError(
+            f"Gold HOLDOUT inference pack output already exists: {destination}"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging_root = Path(
+        tempfile.mkdtemp(
+            prefix=f".{destination.name}.staging-",
+            dir=destination.parent,
+        )
+    )
+    staging = staging_root / "pack"
+    try:
+        manifest = export_gold_holdout_inference_pack(release_dir, staging)
+        rows, verified_manifest, _manifest_raw = _load_inference_pack(staging)
+        if verified_manifest != manifest or len(rows) != manifest.case_count:
+            raise ValueError(
+                "fresh Gold HOLDOUT inference pack differs from sealed loader verification"
+            )
+        preflight_gold_holdout_inference_pack(staging)
+        os.replace(staging, destination)
+        return manifest
+    finally:
+        shutil.rmtree(staging_root, ignore_errors=True)
+
+
+def _export_signed_inputs(
+    *,
+    release_dir: str,
+    output_dir: str,
+    reviewer_private_key_path: str,
+    reviewer_trust_policy_path: str,
+    owner_public_key_path: str,
+    signature_output: str,
+):
+    destination = Path(output_dir)
+    signature_destination = Path(signature_output)
+    if destination.exists():
+        raise FileExistsError(
+            f"Gold HOLDOUT inference pack output already exists: {destination}"
+        )
+    if signature_destination.exists():
+        raise FileExistsError(
+            f"Gold HOLDOUT pack signature output already exists: {signature_destination}"
+        )
+
+    reviewer_private_key = load_trusted_reviewer_private_key(
+        reviewer_private_key_path=reviewer_private_key_path,
+        trust_policy_path=reviewer_trust_policy_path,
+        owner_public_key_path=owner_public_key_path,
+    )
+    reviewer_public_key = reviewer_private_key.public_key()
+    release_audit = audit_gold_defense_release(release_dir)
     if not release_audit.valid:
-        raise ValueError("Gold HOLDOUT release audit is invalid")
-    inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
-        (Path(args.inference_pack) / "manifest.json").read_bytes()
-    )
-    if inference_manifest.source_gold_audit_sha256 != release_audit.audit_sha256:
-        raise ValueError("inference pack was exported from a different Gold release audit")
-
-    receipt = GoldHoldoutInferenceRunReceipt.model_validate_json(
-        (Path(args.inference_output) / "receipt.json").read_bytes()
-    )
-    selected_policy = _load_policy(args.policy)
-    predictions = _load_predictions(
-        str(Path(args.inference_output) / "predictions.jsonl"),
-        allow_empty=True,
-    )
-    if predictions:
-        report = evaluate_gold_holdout_predictions(
-            args.release_dir,
-            predictions,
-            policy=selected_policy,
+        detail = "; ".join(release_audit.violations[:5])
+        raise ValueError(
+            "Gold HOLDOUT pack export requires a valid Gold release"
+            + (f": {detail}" if detail else "")
         )
-    else:
-        report = build_zero_prediction_gold_report(
-            args.release_dir,
-            model_ref=receipt.model_ref,
-            model_revision=receipt.model_revision,
-            adapter_digest=receipt.adapter_digest,
-            policy=selected_policy,
+    signature_audit = audit_gold_release_review_signatures(
+        release_dir,
+        reviewer_public_key,
+    )
+    if not signature_audit.valid:
+        detail = "; ".join(signature_audit.violations[:5])
+        raise ValueError(
+            "Gold HOLDOUT pack export requires a valid signed Gold release"
+            + (f": {detail}" if detail else "")
         )
 
-    identity = (report.model_ref, report.model_revision, report.adapter_digest)
-    expected_identity = (receipt.model_ref, receipt.model_revision, receipt.adapter_digest)
-    if identity != expected_identity:
-        raise ValueError("Gold HOLDOUT evaluation identity differs from inference receipt")
-    if report.case_count != verification.case_count:
-        raise ValueError("Gold HOLDOUT evaluation case count differs from inference verification")
-    if report.prediction_count != verification.prediction_count:
-        raise ValueError("Gold HOLDOUT evaluation prediction count differs from inference verification")
-    return report
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    transaction_root = Path(
+        tempfile.mkdtemp(
+            prefix=f".{destination.name}.signed-staging-",
+            dir=destination.parent,
+        )
+    )
+    staged_pack = transaction_root / "pack"
+    signature_temp: Path | None = None
+    signature_published = False
+    try:
+        release_snapshot, release_verification = snapshot_verified_gold_release(
+            release_dir,
+            transaction_root / "release",
+            reviewer_public_key=reviewer_public_key,
+            expected_release_audit_sha256=release_audit.audit_sha256,
+            expected_review_signature_audit_sha256=signature_audit.audit_sha256,
+        )
+        manifest = _export_inputs_atomic(str(release_snapshot), str(staged_pack))
+        if (
+            manifest.source_gold_audit_sha256
+            != release_verification.release_audit.audit_sha256
+        ):
+            raise ValueError(
+                "fresh Gold HOLDOUT pack manifest differs from release snapshot audit"
+            )
+        proof = sign_gold_holdout_inference_pack(
+            staged_pack / "manifest.json",
+            reviewer_private_key,
+            review_signature_audit_sha256=(
+                release_verification.review_signature_audit.audit_sha256
+            ),
+        )
+        verify_gold_holdout_inference_pack_signature(
+            proof,
+            staged_pack / "manifest.json",
+            reviewer_public_key,
+        )
+
+        signature_destination.parent.mkdir(parents=True, exist_ok=True)
+        handle = tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f".{signature_destination.name}.staging-",
+            dir=signature_destination.parent,
+            delete=False,
+        )
+        signature_temp = Path(handle.name)
+        with handle:
+            handle.write(
+                json.dumps(proof.model_dump(mode="json"), indent=2, sort_keys=True)
+                + "\n"
+            )
+        os.replace(signature_temp, signature_destination)
+        signature_temp = None
+        signature_published = True
+
+        os.replace(staged_pack, destination)
+        return manifest, proof
+    except (OSError, TypeError, ValueError):
+        if signature_published:
+            signature_destination.unlink(missing_ok=True)
+        raise
+    finally:
+        if signature_temp is not None:
+            signature_temp.unlink(missing_ok=True)
+        shutil.rmtree(transaction_root, ignore_errors=True)
+
+
+def _evaluate_verified_output(args):
+    admission = _verify_signed_pack(
+        inference_pack=args.inference_pack,
+        signature_path=args.inference_pack_signature,
+        reviewer_public_key_path=args.reviewer_public_key,
+        reviewer_trust_policy_path=args.reviewer_trust_policy,
+        owner_public_key_path=args.owner_public_key,
+    )
+    _assert_raw_candidate_export(args.candidate_export)
+    with tempfile.TemporaryDirectory(prefix="gold-holdout-eval-snapshot-") as temp_dir:
+        snapshot_root = Path(temp_dir)
+        inference_snapshot = snapshot_admitted_gold_holdout_pack(
+            admission,
+            args.inference_pack,
+            snapshot_root / "pack",
+        )
+        candidate_snapshot = snapshot_verified_cyber_sft_export(
+            args.candidate_export,
+            snapshot_root / "candidate-export",
+        )
+        release_snapshot, release_verification = snapshot_verified_gold_release(
+            args.release_dir,
+            snapshot_root / "release",
+            reviewer_public_key=admission.reviewer_public_key,
+            expected_release_audit_sha256=admission.proof.source_gold_audit_sha256,
+            expected_review_signature_audit_sha256=(
+                admission.proof.review_signature_audit_sha256
+            ),
+        )
+        output_snapshot = copy_gold_holdout_inference_output_snapshot(
+            args.inference_output,
+            snapshot_root / "output",
+        )
+        verification = verify_gold_holdout_inference_output(
+            output_snapshot,
+            inference_snapshot,
+            candidate_snapshot,
+        )
+        if not verification.valid:
+            raise ValueError("Gold HOLDOUT inference output verification failed")
+        inference_manifest = GoldHoldoutInferenceManifest.model_validate_json(
+            (inference_snapshot / "manifest.json").read_bytes()
+        )
+        if (
+            inference_manifest.source_gold_audit_sha256
+            != release_verification.release_audit.audit_sha256
+        ):
+            raise ValueError("inference pack was exported from a different Gold release audit")
+
+        receipt = GoldHoldoutInferenceRunReceipt.model_validate_json(
+            (output_snapshot / "receipt.json").read_bytes()
+        )
+        selected_policy = _load_policy(args.policy)
+        predictions = _load_predictions(
+            str(output_snapshot / "predictions.jsonl"),
+            allow_empty=True,
+        )
+        if predictions:
+            report = evaluate_gold_holdout_predictions(
+                release_snapshot,
+                predictions,
+                policy=selected_policy,
+            )
+        else:
+            report = build_zero_prediction_gold_report(
+                release_snapshot,
+                model_ref=receipt.model_ref,
+                model_revision=receipt.model_revision,
+                adapter_digest=receipt.adapter_digest,
+                policy=selected_policy,
+            )
+
+        identity = (report.model_ref, report.model_revision, report.adapter_digest)
+        expected_identity = (receipt.model_ref, receipt.model_revision, receipt.adapter_digest)
+        if identity != expected_identity:
+            raise ValueError("Gold HOLDOUT evaluation identity differs from inference receipt")
+        if report.case_count != verification.case_count:
+            raise ValueError("Gold HOLDOUT evaluation case count differs from inference verification")
+        if report.prediction_count != verification.prediction_count:
+            raise ValueError(
+                "Gold HOLDOUT evaluation prediction count differs from inference verification"
+            )
+        return report
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.command == "export-inputs":
-            result = export_gold_holdout_inference_pack(
-                args.release_dir,
-                args.output_dir,
+            result, proof = _export_signed_inputs(
+                release_dir=args.release_dir,
+                output_dir=args.output_dir,
+                reviewer_private_key_path=args.reviewer_private_key,
+                reviewer_trust_policy_path=args.reviewer_trust_policy,
+                owner_public_key_path=args.owner_public_key,
+                signature_output=args.signature_output,
             )
-            print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
+            print(
+                json.dumps(
+                    {
+                        "manifest": result.model_dump(mode="json"),
+                        "pack_signature": proof.model_dump(mode="json"),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
 
         if args.command == "evaluate-output":
@@ -161,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         _write_report(report, args.output)
         return 0 if report.passed else 1
-    except (OSError, TypeError, ValueError) as exc:
+    except (FileExistsError, OSError, TypeError, ValueError) as exc:
         print(f"sentinel-gold-holdout-eval: {exc}")
         return 2
 

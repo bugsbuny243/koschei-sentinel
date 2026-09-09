@@ -4,6 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
+from koschei_sentinel.cyber_sft_execution_preflight import (
+    resolve_planned_cyber_sft_corpora,
+)
 from koschei_sentinel.cyber_sft_text_trainer import execute_cyber_sft_text
 from koschei_sentinel.cyber_sft_training import load_cyber_sft_config, plan_cyber_sft
 from koschei_sentinel.cyber_training_readiness import audit_cyber_training_readiness
@@ -55,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
                 encoding="utf-8",
             )
         if args.execute:
+            resolve_planned_cyber_sft_corpora(config, plan)
             _assert_gold_execution_gate(config, plan)
             result = execute_cyber_sft_text(config, plan)
         else:

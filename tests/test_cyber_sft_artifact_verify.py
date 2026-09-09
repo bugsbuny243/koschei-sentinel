@@ -20,12 +20,33 @@ def _directory_digest(root, files):
     return digest.hexdigest()
 
 
+def _rewrite_receipt_adapter_digest(run, adapter_digest):
+    receipt_path = run / "training-receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["adapter_digest"] = adapter_digest
+    receipt.pop("receipt_sha256")
+    receipt["receipt_sha256"] = hashlib.sha256(
+        canonical_json(receipt).encode("utf-8")
+    ).hexdigest()
+    receipt_path.write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _write_run(tmp_path, *, global_step=8):
     run = tmp_path / "build" / "run"
     adapter = run / "adapter"
     adapter.mkdir(parents=True)
+    (adapter / "adapter_config.json").write_text(
+        '{"peft_type":"LORA"}\n',
+        encoding="utf-8",
+    )
     (adapter / "adapter_model.safetensors").write_bytes(b"sentinel-adapter")
-    files = ["adapter/adapter_model.safetensors"]
+    files = [
+        "adapter/adapter_config.json",
+        "adapter/adapter_model.safetensors",
+    ]
     adapter_digest = _directory_digest(run, files)
 
     manifest = CyberSFTAdapterManifest(
@@ -131,6 +152,86 @@ def test_adapter_tamper_is_detected(tmp_path) -> None:
     report = verify_cyber_sft_run("build/run", root=tmp_path)
     assert report.valid is False
     assert report.adapter_digest_verified is False
+
+
+def test_unlisted_adapter_file_is_detected(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    (run / "adapter" / "unexpected.bin").write_bytes(b"tampered")
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+
+    assert report.valid is False
+    assert report.adapter_digest_verified is False
+    assert any(
+        "adapter file set differs" in row and "extra=adapter/unexpected.bin" in row
+        for row in report.violations
+    )
+
+
+def test_adapter_symlink_is_detected(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    target = run / "unexpected-adapter-config.json"
+    target.write_text('{"tampered": true}\n', encoding="utf-8")
+    (run / "adapter" / "unexpected-link.json").symlink_to(target)
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+
+    assert report.valid is False
+    assert report.adapter_digest_verified is False
+    assert any("must not be a symlink" in row for row in report.violations)
+
+
+def test_empty_adapter_manifest_is_detected_even_with_rewritten_receipt(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    empty_digest = hashlib.sha256(b"").hexdigest()
+
+    manifest_path = run / "adapter-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["adapter_files"] = []
+    manifest["adapter_digest"] = empty_digest
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run / "adapter" / "adapter_config.json").unlink()
+    (run / "adapter" / "adapter_model.safetensors").unlink()
+    _rewrite_receipt_adapter_digest(run, empty_digest)
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+
+    assert report.valid is False
+    assert report.adapter_digest_verified is False
+    assert report.receipt_digest_verified is True
+    assert report.receipt_bindings_verified is True
+    assert any("contains no adapter files" in row for row in report.violations)
+
+
+def test_missing_required_peft_config_is_detected_with_rewritten_hashes(tmp_path) -> None:
+    run = _write_run(tmp_path)
+    (run / "adapter" / "adapter_config.json").unlink()
+    remaining_files = ["adapter/adapter_model.safetensors"]
+    adapter_digest = _directory_digest(run, remaining_files)
+
+    manifest_path = run / "adapter-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["adapter_files"] = remaining_files
+    manifest["adapter_digest"] = adapter_digest
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _rewrite_receipt_adapter_digest(run, adapter_digest)
+
+    report = verify_cyber_sft_run("build/run", root=tmp_path)
+
+    assert report.valid is False
+    assert report.adapter_digest_verified is False
+    assert report.receipt_digest_verified is True
+    assert report.receipt_bindings_verified is True
+    assert any(
+        "lacks required PEFT files" in row and "adapter/adapter_config.json" in row
+        for row in report.violations
+    )
 
 
 def test_receipt_tamper_is_detected(tmp_path) -> None:

@@ -26,9 +26,28 @@ def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _build_export(tmp_path: Path, monkeypatch) -> Path:
+def _build_export(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    promotion_eligible: bool = False,
+    corpus_examples_raw: bytes | None = None,
+    corpus_manifest_raw: bytes | None = None,
+    validation_examples_sha256: str | None = None,
+    validation_manifest_sha256: str | None = None,
+    training_examples: int = 9,
+    validation_examples: int = 1,
+) -> Path:
     root = tmp_path / "export"
     root.mkdir()
+    explicit_validation = (
+        validation_examples_sha256 is not None
+        or validation_manifest_sha256 is not None
+    )
+    if explicit_validation and (
+        validation_examples_sha256 is None or validation_manifest_sha256 is None
+    ):
+        raise ValueError("explicit validation fixture requires both validation digests")
 
     config = CyberSFTConfig(
         run_id="portable-export-test",
@@ -36,6 +55,8 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         base_model="Qwen/Qwen3.5-9B-Base",
         base_revision="a" * 40,
         corpus_dir="build/corpus",
+        validation_corpus_dir=("build/validation" if explicit_validation else None),
+        validation_ratio=(0.0 if explicit_validation else 0.10),
         output_dir="build/run",
         minimum_cuda_memory_gb=0.0,
         quantization={"bits": 4, "compute_dtype": "float16"},
@@ -44,16 +65,22 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
     _write_json(config_path, config.model_dump(mode="json"))
     config_sha = _config_sha256(config)
 
-    examples_raw = b'{"example_id":"portable"}\n'
+    examples_raw = corpus_examples_raw or b'{"example_id":"portable"}\n'
     (root / "corpus-examples.jsonl").write_bytes(examples_raw)
     examples_sha = _sha(examples_raw)
-    corpus_manifest_raw = _write_json(
-        root / "corpus-manifest.json",
-        {
-            "schema_version": "sentinel.defense-reflex-corpus-manifest.v3",
-            "examples_sha256": examples_sha,
-        },
-    )
+    if corpus_manifest_raw is None:
+        corpus_manifest_raw = (
+            json.dumps(
+                {
+                    "schema_version": "sentinel.defense-reflex-corpus-manifest.v3",
+                    "examples_sha256": examples_sha,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+    (root / "corpus-manifest.json").write_bytes(corpus_manifest_raw)
     corpus_manifest_sha = _sha(corpus_manifest_raw)
 
     plan_path = root / "training-plan.json"
@@ -65,14 +92,17 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
             "stage": "DEFENSE_REFLEX",
             "execution_profile": "DENSE_SINGLE_GPU_QLORA",
             "executable_with_current_trainer": True,
-            "corpus_promotion_eligible": False,
+            "corpus_promotion_eligible": promotion_eligible,
             "base_model": config.base_model,
             "base_revision": config.base_revision,
             "corpus_examples_sha256": examples_sha,
             "corpus_manifest_sha256": corpus_manifest_sha,
-            "example_count": 10,
-            "training_examples": 9,
-            "validation_examples": 1,
+            "validation_corpus_examples_sha256": validation_examples_sha256,
+            "validation_corpus_manifest_sha256": validation_manifest_sha256,
+            "explicit_validation": explicit_validation,
+            "example_count": training_examples + validation_examples,
+            "training_examples": training_examples,
+            "validation_examples": validation_examples,
             "effective_batch_size": config.effective_batch_size,
             "estimated_optimizer_steps": 1,
             "input_adapter_dir": None,
@@ -109,11 +139,12 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         },
     )
 
+    smoke_only = not promotion_eligible
     verification_payload = {
         "schema_version": "sentinel.cyber-sft-artifact-verification.v1",
         "run_id": config.run_id,
         "valid": True,
-        "smoke_only": True,
+        "smoke_only": smoke_only,
         "adapter_digest_verified": True,
         "receipt_digest_verified": True,
         "receipt_bindings_verified": True,
@@ -132,6 +163,7 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
     adapter_digest = "d" * 64
     receipt_sha = "e" * 64
     run = root / "run"
+    (run / "adapter").mkdir(parents=True)
     _write_json(
         run / "adapter-manifest.json",
         {
@@ -143,14 +175,14 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
             "base_revision": config.base_revision,
             "corpus_examples_sha256": examples_sha,
             "corpus_manifest_sha256": corpus_manifest_sha,
-            "corpus_promotion_eligible": False,
+            "corpus_promotion_eligible": promotion_eligible,
             "input_adapter_dir": None,
             "adapter_digest": adapter_digest,
             "adapter_files": [],
             "trainable_target_module_count": 1,
             "trainable_target_modules_sha256": "1" * 64,
-            "training_examples": 9,
-            "validation_examples": 1,
+            "training_examples": training_examples,
+            "validation_examples": validation_examples,
             "gradient_checkpointing": True,
             "optimizer": "paged_adamw_8bit",
             "output_dir": config.output_dir,
@@ -166,7 +198,7 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
             "base_revision": config.base_revision,
             "corpus_examples_sha256": examples_sha,
             "corpus_manifest_sha256": corpus_manifest_sha,
-            "corpus_promotion_eligible": False,
+            "corpus_promotion_eligible": promotion_eligible,
             "adapter_digest": adapter_digest,
             "optimizer": "paged_adamw_8bit",
             "global_step": 3,
@@ -243,8 +275,8 @@ def _build_export(tmp_path: Path, monkeypatch) -> Path:
         "global_step": 3,
         "resumed": False,
         "resume_checkpoint": None,
-        "smoke_only": True,
-        "promotion_eligible": False,
+        "smoke_only": smoke_only,
+        "promotion_eligible": promotion_eligible,
     }
     attestation_payload["attestation_sha256"] = _attestation_digest(
         attestation_payload
@@ -346,3 +378,42 @@ def test_portable_export_rejects_dtype_semantic_leak(
     assert report.valid is False
     assert report.model_runtime_sha256_verified is True
     assert any("runtime semantic bindings" in row for row in report.violations)
+
+
+def test_portable_export_rejects_unlisted_extra_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = _build_export(tmp_path, monkeypatch)
+    (root / "holdout-answers.json").write_text(
+        '{"answer_key":"must-not-travel"}\n',
+        encoding="utf-8",
+    )
+
+    report = verify_cyber_sft_export(root)
+
+    assert report.valid is False
+    assert any(
+        "candidate export file set differs" in row
+        and "extra=holdout-answers.json" in row
+        for row in report.violations
+    )
+
+
+def test_portable_export_rejects_metadata_symlink(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = _build_export(tmp_path, monkeypatch)
+    config_path = root / "training-config.json"
+    external = tmp_path / "external-training-config.json"
+    config_path.replace(external)
+    config_path.symlink_to(external)
+
+    report = verify_cyber_sft_export(root)
+
+    assert report.valid is False
+    assert any(
+        "candidate export artifact must not be a symlink: training-config.json" in row
+        for row in report.violations
+    )

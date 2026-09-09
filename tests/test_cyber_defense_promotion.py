@@ -1,6 +1,7 @@
 import hashlib
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.cyber_defense_promotion import (
     build_cyber_defense_promotion_evidence,
@@ -22,6 +23,7 @@ from koschei_sentinel.gold_holdout_evaluation import (
 from koschei_sentinel.gold_holdout_evaluation_evidence import (
     GoldHoldoutEvaluationEvidence,
 )
+from koschei_sentinel.gold_reviewer_trust import build_gold_reviewer_trust_policy
 from koschei_sentinel.multi_incident_cyber_range_suite import (
     MultiIncidentCyberRangeSuiteReport,
 )
@@ -34,6 +36,28 @@ STAGES = [
     CyberTrainingStage.CYBER_RANGE_REGRESSION,
 ]
 ADAPTER_DIGEST = "9" * 64
+REVIEW_SIGNATURE_AUDIT_DIGEST = "7" * 64
+CANDIDATE_TRAINING_BINDING_DIGEST = "8" * 64
+PACK_SIGNATURE_PROOF_DIGEST = "a" * 64
+OWNER_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(b"\x11" * 32)
+REVIEWER_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(b"\x22" * 32)
+OWNER_PUBLIC_KEY = OWNER_PRIVATE_KEY.public_key()
+REVIEWER_PUBLIC_KEY = REVIEWER_PRIVATE_KEY.public_key()
+REVIEWER_TRUST_POLICY = build_gold_reviewer_trust_policy(
+    REVIEWER_PUBLIC_KEY,
+    OWNER_PRIVATE_KEY,
+    policy_id="promotion-test-reviewer-v1",
+)
+REVIEWER_TRUST_POLICY_DIGEST = REVIEWER_TRUST_POLICY.policy_digest
+OWNER_KEY_FINGERPRINT = REVIEWER_TRUST_POLICY.owner_key_fingerprint
+
+
+def _trust_kwargs() -> dict[str, object]:
+    return {
+        "gold_reviewer_public_key": REVIEWER_PUBLIC_KEY,
+        "gold_reviewer_trust_policy": REVIEWER_TRUST_POLICY,
+        "gold_owner_public_key": OWNER_PUBLIC_KEY,
+    }
 
 
 def _bundle() -> CyberTrainingBundle:
@@ -174,6 +198,13 @@ def _gold_evidence(
         "model_revision": report.model_revision,
         "adapter_digest": report.adapter_digest,
         "source_gold_audit_sha256": "1" * 64,
+        "review_signature_audit_sha256": REVIEW_SIGNATURE_AUDIT_DIGEST,
+        "candidate_training_binding_verification_sha256": (
+            CANDIDATE_TRAINING_BINDING_DIGEST
+        ),
+        "inference_pack_signature_proof_sha256": PACK_SIGNATURE_PROOF_DIGEST,
+        "reviewer_trust_policy_sha256": REVIEWER_TRUST_POLICY_DIGEST,
+        "owner_key_fingerprint": OWNER_KEY_FINGERPRINT,
         "inference_inputs_sha256": "2" * 64,
         "inference_plan_sha256": "3" * 64,
         "inference_receipt_sha256": "4" * 64,
@@ -188,6 +219,55 @@ def _gold_evidence(
         "report": report.model_dump(mode="json"),
         "passed": report.passed,
     }
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
+
+
+def _unsigned_gold_evidence() -> GoldHoldoutEvaluationEvidence:
+    signed = _gold_evidence()
+    payload = signed.model_dump(mode="json")
+    payload.pop("evidence_sha256")
+    payload.pop("review_signature_audit_sha256")
+    payload.pop("candidate_training_binding_verification_sha256")
+    payload.pop("inference_pack_signature_proof_sha256")
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
+
+
+def _gold_unbound_evidence() -> GoldHoldoutEvaluationEvidence:
+    bound = _gold_evidence()
+    payload = bound.model_dump(mode="json")
+    payload.pop("evidence_sha256")
+    payload.pop("candidate_training_binding_verification_sha256")
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
+
+
+def _gold_unsigned_pack_evidence() -> GoldHoldoutEvaluationEvidence:
+    bound = _gold_evidence()
+    payload = bound.model_dump(mode="json")
+    payload.pop("evidence_sha256")
+    payload.pop("inference_pack_signature_proof_sha256")
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
+
+
+def _gold_untrusted_owner_evidence() -> GoldHoldoutEvaluationEvidence:
+    bound = _gold_evidence()
+    payload = bound.model_dump(mode="json")
+    payload.pop("evidence_sha256")
+    payload.pop("reviewer_trust_policy_sha256")
+    payload.pop("owner_key_fingerprint")
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
+
+
+def _gold_forged_owner_evidence() -> GoldHoldoutEvaluationEvidence:
+    bound = _gold_evidence()
+    payload = bound.model_dump(mode="json")
+    payload.pop("evidence_sha256")
+    payload["reviewer_trust_policy_sha256"] = "d" * 64
+    payload["owner_key_fingerprint"] = "e" * 64
     digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
     return GoldHoldoutEvaluationEvidence(**payload, evidence_sha256=digest)
 
@@ -215,6 +295,7 @@ def _evidence(
             policy=policy,
         ),
         gold_holdout_policy=policy,
+        **_trust_kwargs(),
     )
 
 
@@ -236,6 +317,105 @@ def test_promotion_requires_all_four_defense_gate_families_to_pass() -> None:
     assert gold_failed.gold_holdout_passed is False
 
 
+def test_promotion_rejects_unsigned_gold_evidence_at_low_level_builder() -> None:
+    with pytest.raises(ValueError, match="requires signed Gold human-review evidence"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:unsigned",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision=ADAPTER_DIGEST,
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_evidence=_unsigned_gold_evidence(),
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+            **_trust_kwargs(),
+        )
+
+
+def test_promotion_rejects_gold_evidence_without_candidate_training_binding() -> None:
+    with pytest.raises(ValueError, match="TRAIN/VALIDATION binding evidence"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:gold-unbound",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision=ADAPTER_DIGEST,
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_evidence=_gold_unbound_evidence(),
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+            **_trust_kwargs(),
+        )
+
+
+def test_promotion_rejects_gold_evidence_without_signed_pack_binding() -> None:
+    with pytest.raises(ValueError, match="signed Gold HOLDOUT inference-pack evidence"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:unsigned-pack",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision=ADAPTER_DIGEST,
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_evidence=_gold_unsigned_pack_evidence(),
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+            **_trust_kwargs(),
+        )
+
+
+def test_promotion_rejects_gold_evidence_without_owner_trust_provenance() -> None:
+    with pytest.raises(ValueError, match="owner-signed Gold reviewer trust evidence"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:untrusted-reviewer",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision=ADAPTER_DIGEST,
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_evidence=_gold_untrusted_owner_evidence(),
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+            **_trust_kwargs(),
+        )
+
+
+def test_promotion_rejects_forged_owner_trust_fields_even_with_valid_self_hash() -> None:
+    with pytest.raises(ValueError, match="reviewer trust policy digest differs"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:forged-owner-fields",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision=ADAPTER_DIGEST,
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_evidence=_gold_forged_owner_evidence(),
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+            **_trust_kwargs(),
+        )
+
+
+def test_promotion_rejects_wrong_owner_key_before_trusting_evidence() -> None:
+    wrong_owner_public_key = Ed25519PrivateKey.from_private_bytes(b"\x33" * 32).public_key()
+    with pytest.raises(ValueError, match="owner public key does not match"):
+        build_cyber_defense_promotion_evidence(
+            promotion_id="promotion:wrong-owner",
+            candidate_model_ref="sentinel:candidate",
+            candidate_model_revision=ADAPTER_DIGEST,
+            training_bundle=_bundle(),
+            cyber_range_report=_single(),
+            multi_incident_range_report=_multi(),
+            defense_load_range_report=_load(),
+            gold_holdout_evidence=_gold_evidence(),
+            gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+            gold_reviewer_public_key=REVIEWER_PUBLIC_KEY,
+            gold_reviewer_trust_policy=REVIEWER_TRUST_POLICY,
+            gold_owner_public_key=wrong_owner_public_key,
+        )
+
+
 def test_gold_holdout_evidence_must_belong_to_candidate_revision() -> None:
     with pytest.raises(ValueError, match="model_revision differs"):
         build_cyber_defense_promotion_evidence(
@@ -248,6 +428,7 @@ def test_gold_holdout_evidence_must_belong_to_candidate_revision() -> None:
             defense_load_range_report=_load(),
             gold_holdout_evidence=_gold_evidence(ADAPTER_DIGEST),
             gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+            **_trust_kwargs(),
         )
 
 
@@ -272,6 +453,7 @@ def test_promotion_requires_same_policy_used_to_build_gold_evidence() -> None:
             defense_load_range_report=_load(),
             gold_holdout_evidence=evidence,
             gold_holdout_policy=stricter,
+            **_trust_kwargs(),
         )
 
 
@@ -289,6 +471,7 @@ def test_gold_evidence_self_hash_is_verified() -> None:
             defense_load_range_report=_load(),
             gold_holdout_evidence=tampered,
             gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+            **_trust_kwargs(),
         )
 
 
@@ -305,6 +488,7 @@ def test_candidate_revision_is_bound_into_promotion_digest() -> None:
         defense_load_range_report=_load(),
         gold_holdout_evidence=_gold_evidence(other_revision),
         gold_holdout_policy=GoldHoldoutEvaluationPolicy(),
+        **_trust_kwargs(),
     )
     assert first.evidence_sha256 != second.evidence_sha256
 
@@ -319,5 +503,11 @@ def test_promotion_evidence_is_deterministic() -> None:
     assert first.gold_holdout_structural_exact_rate == 1.0
     assert first.gold_holdout_evidence_selection_accuracy == 1.0
     assert first.gold_holdout_policy_sha256
+    assert first.gold_review_signature_audit_sha256 == REVIEW_SIGNATURE_AUDIT_DIGEST
+    assert (
+        first.gold_candidate_training_binding_sha256
+        == CANDIDATE_TRAINING_BINDING_DIGEST
+    )
+    assert first.gold_holdout_pack_signature_proof_sha256 == PACK_SIGNATURE_PROOF_DIGEST
     assert first.gold_holdout_inference_verification_sha256 == "5" * 64
     assert first.schema_version == "sentinel.cyber-defense-promotion-evidence.v4"

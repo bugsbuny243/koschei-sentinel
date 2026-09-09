@@ -1,6 +1,14 @@
 # Koschei Sentinel Gold Defense Training and HOLDOUT
 
-This document defines the promotion-eligible Defense Reflex training and unseen evaluation path.
+This document defines the promotion-eligible Defense Reflex training and unseen evaluation trust path.
+
+The only active training target is:
+
+```text
+Qwen/Qwen3.5-397B-A17B@8472618112abcbd45acbcdc58436aff4233c23f7
+```
+
+`3.5` is the Qwen generation. There is no separate active 35B development model. Historical dense-PEFT fixtures remain only for regression coverage and must not be presented as the active Sentinel training path.
 
 ## 1. Pre-review split assignment
 
@@ -16,7 +24,46 @@ TRAIN / VALIDATION / HOLDOUT review packets
 
 Changing a review result cannot move the scenario to another split.
 
-## 2. Human review
+## 2. Canonical model-visible context
+
+The model-visible context is not trusted merely because a packet SHA verifies. It is independently re-derived from the source `CyberRangeScenario` and must contain exactly the intended visible fields:
+
+```text
+scenario_id
+critical_entity_ids
+graph_snapshots
+```
+
+Human review and signed-release construction both re-check this canonical view. A packet whose visible context was modified and then fully re-hashed is rejected.
+
+A recursive fail-closed guard rejects answer-key or review-only fields anywhere inside model-visible data, including nested graph objects. This includes truth, expected sequence/interpretation, range reports, simulated outcomes, failure candidates, review results, and authorization fields.
+
+## 3. Owner-rooted reviewer trust
+
+The production trust root is the **Gold owner public key**, not a loose reviewer key. A reviewer key is accepted only when an owner-signed `GoldReviewerTrustPolicy` delegates the narrow `gold_review_signing_only` authority to that exact reviewer-key fingerprint.
+
+Issue the policy on isolated owner/admin infrastructure:
+
+```bash
+sentinel-gold-reviewer-trust issue \
+  --policy-id gold-reviewer-primary-v1 \
+  --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --owner-private-key /secure/keys/gold-owner-private.pem \
+  --output /secure/policies/gold-reviewer-trust.json
+```
+
+Verify it independently:
+
+```bash
+sentinel-gold-reviewer-trust verify \
+  --policy /secure/policies/gold-reviewer-trust.json \
+  --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --owner-public-key /secure/keys/gold-owner-public.pem
+```
+
+The owner private key stays off review, training, inference, and GPU hosts. The reviewer private key is restricted to trusted review/export infrastructure. Public verification material may be distributed to verifiers.
+
+## 4. Signed human review
 
 Human review is fail-closed. Reviewed targets and supporting evidence must exist in the scenario graph. `HOLDOUT` can never receive training authorization.
 
@@ -26,9 +73,39 @@ VALIDATION  → human-approved + training-authorized
 HOLDOUT     → human-approved + evaluation-authorized only
 ```
 
-## 3. Split-safe Gold release
+Production review signing requires the reviewer private key and the owner-rooted trust policy:
 
-`sentinel-defense-reflex-gold-release` writes physically separate artifacts:
+```bash
+sentinel-defense-reflex-gold-review \
+  --packet build/gold-review-packets/case-001.json \
+  --scenario build/cyber-range/case-001.json \
+  --review-spec /secure/gold-reviews/case-001.review.json \
+  --reviewer-private-key /secure/keys/gold-reviewer-private.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
+  --output build/gold-reviewed/case-001.json \
+  --signature-output build/gold-reviewed/case-001.signature.json
+```
+
+The proof binds reviewer identity, reviewer-key fingerprint, packet SHA, scenario ID, assigned split, and final review SHA.
+
+## 5. Split-safe signed Gold release
+
+A production release requires one valid trusted signature proof for every reviewed packet.
+
+```bash
+sentinel-defense-reflex-gold-release \
+  --scenario build/cyber-range/case-001.json \
+  --packet build/gold-review-packets/case-001.json \
+  --reviewed build/gold-reviewed/case-001.json \
+  --review-signature build/gold-reviewed/case-001.signature.json \
+  --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
+  --output-dir build/gold-defense-release
+```
+
+The release is physically split:
 
 ```text
 gold-defense-release/
@@ -41,41 +118,36 @@ gold-defense-release/
   holdout/
     cases.jsonl
     manifest.json
+  review-signatures.jsonl
   release-manifest.json
 ```
 
-The HOLDOUT schema is intentionally different from the training-example schema.
+The builder re-checks canonical model-visible context even when packet and signature hashes are internally consistent. The signature-proof set must exactly match the release review set.
 
-## 4. Gold release audit
+## 6. Gold release audit
 
-Run before promotion-eligible training:
+Production verification uses structural and trusted-signature audits:
 
 ```bash
 sentinel-defense-reflex-gold-audit \
   --release-dir build/gold-defense-release \
+  --reviewer-public-key /secure/keys/gold-reviewer-public.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
   --output build/gold-defense-release-audit.json
 ```
 
-The audit re-parses every artifact and verifies:
+The audit verifies split isolation, hashes, release identity, human-review status, HOLDOUT training exclusion, reviewer signatures, owner delegation, and the exact proof set. The signed-review audit identity is carried downstream.
 
-- TRAIN and VALIDATION are human-reviewed and promotion-eligible.
-- Synthetic-policy examples are absent.
-- HOLDOUT is evaluation-only and contains no `examples.jsonl`.
-- TRAIN, VALIDATION, and HOLDOUT scenario IDs do not overlap.
-- Split manifests, case self-hashes, release manifest hashes, and release digest verify.
-- HOLDOUT cases cannot parse as Defense Reflex training examples.
+## 7. Active 397B TRAIN and VALIDATION path
 
-Promotion-eligible `sentinel-cyber-training-readiness` automatically runs this audit. `sentinel-cyber-sft --execute` also refuses promotion-eligible Defense Reflex execution when the audited Gold release is invalid.
-
-## 5. Explicit TRAIN and VALIDATION
-
-The promotion-eligible single-model 397B example config is:
+Promotion-eligible training uses the single-model Gold config:
 
 ```text
 configs/training/cyber-sft.qwen3.5-397b-a17b.gold.example.json
 ```
 
-It uses:
+Its explicit sources are:
 
 ```text
 corpus_dir            = build/gold-defense-release/train
@@ -83,141 +155,97 @@ validation_corpus_dir = build/gold-defense-release/validation
 validation_ratio      = 0.0
 ```
 
-The Megatron dataset renderer never re-splits these datasets. Validation hashes are included in
-the rendered-dataset manifest and static launch plan.
+Materialize and seal the Megatron-SWIFT dataset without re-splitting:
 
-## 6. Export answer-key-isolated HOLDOUT inputs
+```bash
+sentinel-cyber-megatron-sft \
+  --config configs/training/cyber-sft.qwen3.5-397b-a17b.gold.example.json \
+  --materialize-dataset \
+  --plan-output build/cyber-training/megatron/397b-gold-plan.json
+```
 
-Never give the inference runtime `holdout/cases.jsonl` directly. Export an answer-key-free inference pack instead:
+The 397B renderer binds the source release/audit, TRAIN and VALIDATION bytes and counts, model ID/revision, rendered JSONL digests, tokenizer preflight, and run identity into the static plan. Any drift blocks execution before the paid process starts.
+
+The paid run remains separately guarded by the distributed topology checks and explicit launch approval/session variables documented in `CYBER_SFT_397B_MEGATRON.md`.
+
+## 8. Signed answer-key-isolated HOLDOUT pack
+
+Never mount `holdout/cases.jsonl` on the inference host. Export only model-visible HOLDOUT input data.
 
 ```bash
 sentinel-gold-holdout-eval export-inputs \
   --release-dir build/gold-defense-release \
-  --output-dir build/gold-holdout-inference
+  --output-dir build/gold-holdout-inference \
+  --reviewer-private-key /secure/keys/gold-reviewer-private.pem \
+  --reviewer-trust-policy /secure/policies/gold-reviewer-trust.json \
+  --owner-public-key /secure/keys/gold-owner-public.pem \
+  --signature-output build/gold-holdout-inference.signature.json
 ```
 
-The inference pack contains only:
+The pack contains exactly:
 
 ```text
-scenario_id
-critical_entity_ids
-graph_snapshots
+gold-holdout-inference/
+  inputs.jsonl
+  manifest.json
 ```
 
-It does not contain the expected interpretation, expected defense sequence, range truth, simulated outcomes, or reviewer-only context.
+The detached signature remains outside the pack. Export snapshots and re-audits the source release, recursively rejects answer-key/review-only fields, binds input/manifest/audit identities, signs the pack identity, verifies it, and publishes atomically. The reviewer private key must never be copied to the GPU host.
 
-The GPU inference host should receive only the answer-key-isolated inference pack plus the verified adapter and its training config. The full Gold release, especially `holdout/cases.jsonl`, belongs on the evaluation side and should not be mounted into the model-inference environment.
+## 9. Legacy PEFT candidate path is not the 397B bridge
 
-## 7. Run the trained model against HOLDOUT
+The existing `sentinel-cyber-sft-export`, `sentinel-cyber-sft-export-verify`, and `sentinel-gold-holdout-infer` path is retained because PR regression tests exercise a real fail-closed candidate/export/HOLDOUT contract for dense PEFT artifacts.
 
-The legacy `sentinel-gold-holdout-infer` adapter loader accepts dense PEFT run artifacts and must
-not be used to claim evaluation of a 397B Megatron checkpoint. A dedicated 397B inference-artifact
-binding is required before promotion. Until that binding exists, 397B training outputs are
-promotion-blocked even when training itself succeeds.
+That path enforces exact candidate inventories, no symlinks, source stability, TRAIN/VALIDATION binding, adapter identity, detached HOLDOUT proof verification, deterministic generation, complete case accounting, offline verification, evaluation evidence, and relocation safety.
 
-The commands below are retained only as the answer-key-isolation contract that the 397B runner must
-preserve; their old 9B paths are historical examples.
+It **must not** be used to claim that a Qwen3.5-397B-A17B Megatron-SWIFT/MCore checkpoint has passed HOLDOUT. The current dense-PEFT candidate loader and portable adapter assumptions are not equivalent to a 397B Megatron checkpoint.
 
-First create a CPU-side inference plan. The plan re-verifies the Cyber SFT run and binds the candidate identity to the adapter digest.
+Historical 9B examples in tests or old artifacts are fixtures/provenance only. They are not an active development tier and cannot satisfy the single-model 397B policy.
 
-```bash
-sentinel-gold-holdout-infer \
-  --inference-pack build/gold-holdout-inference \
-  --run-dir build/cyber-training/runs/qwen35-9b-gold-defense-v1 \
-  --training-config configs/training/cyber-sft.qwen3.5-9b.gold.example.json \
-  --model-ref koschei-sentinel:qwen35-9b-gold-defense-v1 \
-  --generation-policy configs/training/gold-holdout-generation-policy.v1.json \
-  --plan-output build/gold-holdout-inference-plan.json
-```
+## 10. Required 397B candidate/HOLDOUT bridge
 
-Then execute on the GPU host:
+Before a real 397B HOLDOUT or Promotion v4 attempt, Sentinel needs a dedicated content-addressed bridge from the 397B training output to the signed HOLDOUT path.
 
-```bash
-sentinel-gold-holdout-infer \
-  --inference-pack build/gold-holdout-inference \
-  --run-dir build/cyber-training/runs/qwen35-9b-gold-defense-v1 \
-  --training-config configs/training/cyber-sft.qwen3.5-9b.gold.example.json \
-  --model-ref koschei-sentinel:qwen35-9b-gold-defense-v1 \
-  --generation-policy configs/training/gold-holdout-generation-policy.v1.json \
-  --output-dir build/gold-holdout-inference-output \
-  --execute
-```
+At minimum that bridge must bind and independently verify:
 
-Generation is deterministic: sampling is disabled and the model must return exactly one JSON object with `interpretation` and `defense_sequence`. The runner does not repair malformed model output. Parse failures are recorded as failed cases.
+- exact `Qwen/Qwen3.5-397B-A17B` revision;
+- Megatron-SWIFT/MCore model and LoRA checkpoint identity;
+- the self-hashed 397B run-identity manifest;
+- training config and final plan digest;
+- signed Gold release/audit identity;
+- rendered TRAIN and VALIDATION digests/counts;
+- checkpoint inventory or content-addressed storage manifest with no path escape/symlink ambiguity;
+- deterministic generation policy;
+- signed answer-key-isolated HOLDOUT pack and owner-rooted reviewer trust;
+- complete prediction/failure accounting; and
+- an offline verification receipt consumed by evaluation and Promotion v4.
 
-The output also contains `generation-policy.json`. This makes the exact generation policy independently verifiable against the policy SHA already bound into the inference plan.
+No free-form model revision and no loose run directory may substitute for this binding.
 
-For real runner outputs, `model_revision` is the verified adapter digest. Operators do not supply a free-form model revision.
+**Boundary:** 397B training may be authorized only after its Gold TRAIN/VALIDATION and cluster gates pass. A successful 397B training run remains promotion-blocked until this dedicated candidate/inference binding exists and passes its own regression gate.
 
-## 8. Offline-verify inference output
+## 11. Offline verification and evaluation trust contract
 
-Before evaluation, independently re-verify the inference artifacts:
+For the legacy PEFT fixture path, offline verification re-checks signed pack admission, candidate export, plan/receipt, generation policy, training config, attestation, prediction hashes, model/adapter identity, and complete case accounting. Extra files or symlinks fail closed.
 
-```bash
-sentinel-gold-holdout-infer-verify \
-  --inference-pack build/gold-holdout-inference \
-  --output-dir build/gold-holdout-inference-output
-```
+Production evaluation evidence must bind all of the following, irrespective of the candidate storage backend:
 
-Verification checks:
+- structural Gold release audit;
+- exact signed-review audit;
+- owner-signed reviewer trust policy and owner fingerprint;
+- detached HOLDOUT pack proof;
+- candidate TRAIN/VALIDATION binding;
+- independently verified inference output;
+- complete case accounting; and
+- exact evaluation policy/report identity.
 
-- inference plan and receipt self-hashes,
-- exact input-pack binding,
-- persisted generation-policy schema and SHA,
-- prediction self-hashes,
-- model/adapter identity consistency,
-- prediction and failure input-context bindings,
-- prediction/failure SHA values,
-- complete case accounting.
+Malformed output is failure evidence, not something to repair silently. Missing HOLDOUT predictions fail evaluation. A candidate cannot be promoted from training loss alone.
 
-Every HOLDOUT case must appear exactly once: either as a valid prediction or as an inference failure.
+The production policy requires at least **50 unseen HOLDOUT cases**. Smaller policies are test-only plumbing policies.
 
-## 9. Evaluate and bind evidence
+## 12. Promotion v4
 
-The production evaluation path consumes the verified inference output rather than an operator-authored prediction file:
-
-```bash
-sentinel-gold-holdout-eval evaluate-output \
-  --release-dir build/gold-defense-release \
-  --inference-pack build/gold-holdout-inference \
-  --inference-output build/gold-holdout-inference-output \
-  --policy configs/training/gold-holdout-evaluation-policy.v1.json \
-  --output build/gold-holdout-report.json
-```
-
-The evaluator measures:
-
-- structural sequence exactness,
-- mode accuracy,
-- action accuracy,
-- target accuracy,
-- evidence-selection accuracy,
-- evidence grounding,
-- target grounding,
-- outcome-verification discipline.
-
-Evidence grounding and evidence selection are intentionally different. Grounding asks whether cited evidence exists in the model-visible graph. Selection accuracy asks whether the model selected the same supporting evidence set as the reviewed Gold defense step. A visible but wrong or incomplete evidence set can therefore be fully grounded and still fail Gold evidence-selection accuracy.
-
-Evidence or targets absent from the model-visible graph fail grounding. Missing HOLDOUT predictions also fail the evaluation.
-
-If every HOLDOUT answer fails parsing, the verified runner output is not discarded as an exception-only failure. Evaluation emits a formal report with the exact adapter identity, zero predictions, all HOLDOUT cases marked missing, all quality metrics at `0.0`, and `passed=false`. The same failure is then bindable into Gold evaluation evidence, preserving why the candidate failed.
-
-Then bind the release audit, input pack, verified inference run, generation policy, evaluation policy, and evaluation report into one evidence object:
-
-```bash
-sentinel-gold-holdout-evidence \
-  --release-dir build/gold-defense-release \
-  --inference-pack build/gold-holdout-inference \
-  --inference-output build/gold-holdout-inference-output \
-  --policy configs/training/gold-holdout-evaluation-policy.v1.json \
-  --output build/gold-holdout-evidence.json
-```
-
-The Gold evidence passes only when the evaluation passes and the inference run contains zero failed cases.
-
-## 10. Promotion v4
-
-Cyber Defense Promotion v4 requires four independent gate families:
+Promotion v4 requires four independent gate families:
 
 ```text
 Single-Incident Cyber Range
@@ -226,11 +254,32 @@ Multi-Incident / World-Line Range
         +
 Defense Load Range
         +
-Verified Unseen Gold HOLDOUT Evidence
+Verified Unseen Signed Gold HOLDOUT Evidence
         ↓
 CyberDefensePromotionEvidence v4
 ```
 
-Promotion requires the Gold evidence to belong to the exact candidate model reference and adapter-digest revision, re-verifies the evidence and nested report self-hashes, requires the same versioned evaluation policy used to build the evidence, re-applies all Gold thresholds including evidence-selection accuracy, and binds the Gold source audit and inference verification digests into the promotion receipt.
+`build_cyber_defense_promotion_evidence_from_sources` is the authoritative production trust boundary. It verifies the owner-signed reviewer policy, revalidates source artifacts, rebuilds Gold evidence, and requires semantic equality with supplied evidence before promotion can become ready.
 
-If any gate fails, `ready_for_promotion=false`.
+`build_cyber_defense_promotion_evidence` is only a low-level assembly primitive for already-verified evidence. It is not a replacement for source revalidation.
+
+For the active 397B model, Promotion v4 remains fail-closed until the dedicated 397B candidate/HOLDOUT bridge described above produces source-rebuildable evidence.
+
+## 13. Portability and migration
+
+Artifact identity must be content-based rather than host-path-based. Release, HOLDOUT pack, detached proof, trust policy, owner public root, inference evidence, and the future 397B checkpoint manifest must survive relocation without weakening verification.
+
+Legacy artifacts produced before canonical visible-context revalidation, exact inventories, signed-review binding, detached HOLDOUT signing, candidate-training binding, or owner-rooted reviewer trust must be regenerated. Do not mix legacy artifacts with a real Promotion v4 attempt.
+
+CPU fixture tests may synthesize deterministic inference artifacts only to exercise plumbing. Synthetic predictions must never be used as real promotion evidence.
+
+## 14. Current execution boundary
+
+No real GPU HOLDOUT and no Promotion v4 should run until:
+
+1. the complete repository suite and named Gold fail-closed regression gate execute successfully on a real runner;
+2. a signed/audited Gold release with enough unseen HOLDOUT cases exists;
+3. the 397B Megatron training output binding is implemented and verified; and
+4. real 397B inference is connected to the signed answer-key-isolated HOLDOUT pack without exposing answer keys to the model host.
+
+Until then, Sentinel remains fail-closed rather than treating historical PEFT plumbing as proof for the 397B model.

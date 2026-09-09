@@ -6,14 +6,19 @@ from pathlib import Path
 
 from koschei_sentinel.cyber_range import CyberRangeScenario
 from koschei_sentinel.defense_reflex_gold_queue import GoldDefenseReviewPacket
-from koschei_sentinel.defense_reflex_gold_release import write_gold_defense_release
 from koschei_sentinel.defense_reflex_gold_review import GoldReviewedPacket
+from koschei_sentinel.gold_review_signing import (
+    GoldReviewSignatureProof,
+    write_signed_gold_defense_release,
+)
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Build a split-safe human Gold Defense Reflex release with training and holdout isolation"
+            "Build a split-safe, reviewer-signed Gold Defense Reflex release with "
+            "training and holdout isolation"
         )
     )
     parser.add_argument(
@@ -34,6 +39,15 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Human-reviewed Gold packet JSON; repeat in scenario order",
     )
+    parser.add_argument(
+        "--review-signature",
+        action="append",
+        required=True,
+        help="Ed25519 Gold review signature proof; repeat in scenario order",
+    )
+    parser.add_argument("--reviewer-public-key", required=True)
+    parser.add_argument("--reviewer-trust-policy", required=True)
+    parser.add_argument("--owner-public-key", required=True)
     parser.add_argument("--output-dir", required=True)
     return parser
 
@@ -52,10 +66,16 @@ def _load(path: str, model_type, label: str):
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        counts = {len(args.scenario), len(args.packet), len(args.reviewed)}
+        counts = {
+            len(args.scenario),
+            len(args.packet),
+            len(args.reviewed),
+            len(args.review_signature),
+        }
         if len(counts) != 1:
             raise ValueError(
-                "--scenario, --packet and --reviewed must be repeated the same number of times"
+                "--scenario, --packet, --reviewed and --review-signature must be "
+                "repeated the same number of times"
             )
         rows = [
             (
@@ -70,7 +90,21 @@ def main(argv: list[str] | None = None) -> int:
                 strict=True,
             )
         ]
-        manifest = write_gold_defense_release(rows, args.output_dir)
+        proofs = [
+            _load(path, GoldReviewSignatureProof, "Gold review signature proof")
+            for path in args.review_signature
+        ]
+        reviewer_public_key = load_trusted_reviewer_public_key(
+            reviewer_public_key_path=args.reviewer_public_key,
+            trust_policy_path=args.reviewer_trust_policy,
+            owner_public_key_path=args.owner_public_key,
+        )
+        manifest = write_signed_gold_defense_release(
+            rows,
+            proofs,
+            args.output_dir,
+            reviewer_public_key,
+        )
         print(json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True))
         return 0
     except (OSError, TypeError, ValueError) as exc:

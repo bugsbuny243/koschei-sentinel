@@ -1,0 +1,131 @@
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from koschei_sentinel.cyber_defense_promotion import (
+    build_cyber_defense_promotion_evidence_from_sources,
+)
+from koschei_sentinel.gold_holdout_evaluation import GoldHoldoutEvaluationPolicy
+from koschei_sentinel.gold_holdout_evaluation_evidence import (
+    build_owner_trusted_gold_holdout_evaluation_evidence,
+)
+from koschei_sentinel.gold_holdout_inference_verify import (
+    verify_gold_holdout_inference_output,
+)
+from koschei_sentinel.gold_holdout_pack_signing import (
+    sign_gold_holdout_inference_pack,
+)
+from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
+from koschei_sentinel.gold_reviewer_trust import build_gold_reviewer_trust_policy
+from tests.gold_candidate_binding_helpers import (
+    rebind_inference_fixture_to_gold_candidate,
+)
+from tests.gold_review_signing_helpers import attach_signed_review_proofs
+from tests.test_cyber_defense_promotion import _bundle, _load, _multi, _single
+from tests.test_gold_holdout_evaluation_evidence import _passing_fixture
+
+
+def test_gold_holdout_to_promotion_v4_end_to_end(tmp_path, monkeypatch) -> None:
+    release, pack, output, plan, _candidate_export = _passing_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    plan, candidate_export = rebind_inference_fixture_to_gold_candidate(
+        tmp_path,
+        monkeypatch,
+        release=release,
+        pack=pack,
+        output=output,
+        model_ref=plan.model_ref,
+    )
+    reviewer_private_key = attach_signed_review_proofs(
+        release,
+        return_private_key=True,
+    )
+    reviewer_public_key = reviewer_private_key.public_key()
+    owner_private_key = Ed25519PrivateKey.generate()
+    reviewer_trust_policy = build_gold_reviewer_trust_policy(
+        reviewer_public_key,
+        owner_private_key,
+        policy_id="gold-reviewer-v1",
+    )
+    signature_audit = audit_gold_release_review_signatures(
+        release,
+        reviewer_public_key,
+    )
+    assert signature_audit.valid is True
+    pack_proof = sign_gold_holdout_inference_pack(
+        pack / "manifest.json",
+        reviewer_private_key,
+        review_signature_audit_sha256=signature_audit.audit_sha256,
+    )
+
+    verification = verify_gold_holdout_inference_output(
+        output,
+        pack,
+        candidate_export,
+    )
+    assert verification.valid is True
+    assert verification.complete_case_accounting is True
+    assert verification.failure_count == 0
+
+    policy = GoldHoldoutEvaluationPolicy(minimum_case_count=1)
+    evidence = build_owner_trusted_gold_holdout_evaluation_evidence(
+        release_dir=release,
+        inference_pack_dir=pack,
+        inference_output_dir=output,
+        candidate_export_dir=candidate_export,
+        policy=policy,
+        reviewer_public_key=reviewer_public_key,
+        reviewer_trust_policy=reviewer_trust_policy,
+        owner_public_key=owner_private_key.public_key(),
+        inference_pack_signature_proof=pack_proof,
+    )
+    assert evidence.passed is True
+    assert evidence.review_signature_audit_sha256 == signature_audit.audit_sha256
+    assert evidence.review_signature_audit_sha256 == pack_proof.review_signature_audit_sha256
+    assert evidence.candidate_training_binding_verification_sha256 is not None
+    assert evidence.inference_pack_signature_proof_sha256 == pack_proof.proof_sha256
+    assert evidence.reviewer_trust_policy_sha256 == reviewer_trust_policy.policy_digest
+    assert evidence.owner_key_fingerprint == reviewer_trust_policy.owner_key_fingerprint
+    assert evidence.inference_verification_sha256 == verification.verification_sha256
+    assert evidence.inference_plan_sha256 == plan.plan_sha256
+    assert evidence.adapter_digest == plan.adapter_digest
+
+    promotion = build_cyber_defense_promotion_evidence_from_sources(
+        promotion_id="promotion:gold-holdout-e2e",
+        candidate_model_ref=plan.model_ref,
+        candidate_model_revision=plan.adapter_digest,
+        training_bundle=_bundle(),
+        cyber_range_report=_single(),
+        multi_incident_range_report=_multi(),
+        defense_load_range_report=_load(),
+        supplied_gold_holdout_evidence=evidence,
+        gold_holdout_policy=policy,
+        gold_release_dir=release,
+        gold_inference_pack_dir=pack,
+        gold_inference_output_dir=output,
+        gold_candidate_export_dir=candidate_export,
+        gold_reviewer_public_key=reviewer_public_key,
+        gold_reviewer_trust_policy=reviewer_trust_policy,
+        gold_owner_public_key=owner_private_key.public_key(),
+        gold_inference_pack_signature_proof=pack_proof,
+    )
+
+    assert promotion.schema_version == "sentinel.cyber-defense-promotion-evidence.v4"
+    assert promotion.gold_holdout_passed is True
+    assert promotion.ready_for_promotion is True
+    assert promotion.candidate_model_revision == plan.adapter_digest
+    assert promotion.gold_review_signature_audit_sha256 == evidence.review_signature_audit_sha256
+    assert (
+        promotion.gold_candidate_training_binding_sha256
+        == evidence.candidate_training_binding_verification_sha256
+    )
+    assert (
+        promotion.gold_holdout_pack_signature_proof_sha256
+        == evidence.inference_pack_signature_proof_sha256
+    )
+    assert promotion.gold_holdout_evaluation_evidence_sha256 == evidence.evidence_sha256
+    assert promotion.gold_holdout_evaluation_report_sha256 == evidence.report.report_sha256
+    assert (
+        promotion.gold_holdout_inference_verification_sha256
+        == verification.verification_sha256
+    )
