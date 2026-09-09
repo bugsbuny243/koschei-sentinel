@@ -4,11 +4,11 @@ This module is metadata-only: importing or reading the contract must never start
 training, HOLDOUT inference, active defense execution, network collection, or
 paid compute. Runtime adapters may consume this contract in observe mode.
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from typing import Final
-
 
 
 FABRIC_SCHEMA_VERSION: Final = "1.0"
