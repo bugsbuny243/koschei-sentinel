@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 import koschei_sentinel.cyber_sft_execution_preflight as preflight_module
