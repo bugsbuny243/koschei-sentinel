@@ -55,6 +55,34 @@ The event schema is `schemas/pq-network-intelligence-v1.schema.json`.
 `training_authorization=false`. A title or secondary report may create a discovery lead, but it
 cannot authorize a protocol fact, a target date, an EIP ranking, or a training row.
 
+## Research ingestion operator
+
+`sentinel-pq-network-intelligence` provides the repository-side research intake path without
+performing network fetching or granting evidence authority.
+
+The operator sequence is:
+
+1. `capture`: bind a repository source row to operator-supplied local snapshot bytes and emit a
+   self-hashed `sentinel.pq-research-snapshot-receipt.v1` receipt.
+2. `verify-snapshot`: re-hash the local snapshot and rebuild the source binding before accepting the
+   receipt.
+3. `materialize`: combine a structured `sentinel.pq-network-claim.v1` claim with the freshly
+   verified snapshot receipt and emit a `sentinel.pq-network-intelligence.v1` research record plus
+   a self-hashed materialization receipt.
+4. `verify-materialization`: independently rebuild the record and receipt from the current claim,
+   source registry, snapshot receipt, and snapshot bytes.
+
+This stage is intentionally non-authorizing. A successful materialization means only that the
+claim, registry row, local snapshot bytes, record, and receipts are cryptographically bound to each
+other. It does **not** prove that the local file actually came from the canonical locator. Research
+receipts therefore keep `source_match_verified=false`, materialized evidence keeps
+`verified=false`, and `training_authorization=false` remains mandatory. Human/provenance review is
+required before any later evidence-verification or dataset-admission stage may change that status.
+
+Sources whose canonical locator is still unresolved cannot be captured by this operator. Synthetic
+CI fixtures are explicitly marked as synthetic and must never be interpreted as authenticated
+protocol evidence.
+
 ## Initial high-priority discoveries
 
 The intake queue preserves two 2026-09-07 Ethereum Protocol Cluster discoveries as priority leads:

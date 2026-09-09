@@ -1,0 +1,37 @@
+{
+  "confidence": 0.0,
+  "cryptography": {
+    "current_signature_or_key_scheme": null,
+    "hybrid_mode": null,
+    "key_exposure_model": null,
+    "proposed_pq_scheme": null
+  },
+  "event_type": "PROTOCOL_PRIORITY",
+  "graph": {
+    "action": null,
+    "capability": null,
+    "consequence": null,
+    "entity": [
+      "Ethereum"
+    ],
+    "event": "Synthetic PQ ingestion contract fixture",
+    "evidence_summary": "Synthetic fixture; no protocol fact is asserted or verified.",
+    "intent": null,
+    "vulnerability": null
+  },
+  "lifecycle": "DISCOVERED",
+  "migration_surface": {
+    "accounts": "UNKNOWN",
+    "bridges_cross_chain": "UNKNOWN",
+    "consensus": "UNKNOWN",
+    "validators": "UNKNOWN",
+    "wallets_hsm": "UNKNOWN"
+  },
+  "network": "Ethereum",
+  "observed_at": "2026-09-09T02:00:00+03:00",
+  "record_id": "fixture-ethereum-pq-0001",
+  "schema_version": "sentinel.pq-network-claim.v1",
+  "source_id": "ethereum-protocol-priorities-2026-02-18",
+  "target_date": null,
+  "uncertainty": "Synthetic test fixture. Source authenticity and protocol claims are intentionally unverified."
+}
