@@ -1,0 +1,36 @@
+{
+  "schema_version": "sentinel.pq-network-watch.v1",
+  "lane_id": "fixture-pq-evidence-review",
+  "status": "RESEARCH_INTAKE",
+  "event_schema": "schemas/pq-network-intelligence-v1.schema.json",
+  "watch_networks": ["FixtureNet"],
+  "tracked_dimensions": ["evidence"],
+  "source_policy": {
+    "prefer_primary_protocol_sources": true,
+    "require_canonical_locator_before_verification": true,
+    "require_snapshot_sha256_before_verification": true,
+    "require_provenance_receipt_before_dataset_admission": true,
+    "require_human_review_before_gold": true,
+    "training_authorization_default": false,
+    "secondary_sources_may_discover_but_not_authorize": true
+  },
+  "promotion_policy": {
+    "minimum_independent_evidence": 1,
+    "primary_protocol_evidence_required_for_protocol_status_claims": true,
+    "unknown_is_not_negative_evidence": true,
+    "unverified_target_dates_are_blocked": true
+  },
+  "seed_discoveries": [
+    {
+      "source_id": "fixture.pq.evidence-review",
+      "title": "Synthetic PQ Evidence Review Fixture",
+      "publisher": "Koschei Sentinel Test Fixture",
+      "canonical_locator": "https://example.invalid/koschei/pq-evidence-review-fixture",
+      "source_class": "CONTEXT_ONLY",
+      "review_status": "PROPOSED",
+      "snapshot_sha256": null,
+      "training_authorization": false,
+      "notes": "Synthetic test-only source. Not protocol evidence and never training-authorized."
+    }
+  ]
+}
