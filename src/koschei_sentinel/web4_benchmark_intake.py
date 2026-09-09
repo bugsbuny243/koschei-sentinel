@@ -5,15 +5,18 @@ import json
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
+from koschei_sentinel.strict_json import require_json_value, strict_json_loads
 from koschei_sentinel.training import atomic_write, canonical_json
 from koschei_sentinel.web4_research_snapshot import verify_web4_research_snapshot_receipt
 
 _DIGEST = r"^[a-f0-9]{64}$"
+_SourceRef = Annotated[str, Field(min_length=3, max_length=256)]
+_SourceDigest = Annotated[str, Field(pattern=_DIGEST)]
 _FORBIDDEN_MODEL_INPUT_KEYS = {
     "answer_key",
     "correct_answer",
@@ -112,19 +115,19 @@ class Web4BenchmarkIntakePacket(StrictModel):
     schema_version: Literal["sentinel.web4-benchmark-intake-packet.v1"] = (
         "sentinel.web4-benchmark-intake-packet.v1"
     )
-    case_id: str
-    family: str
-    created_at: str
+    case_id: str = Field(min_length=3, max_length=256)
+    family: str = Field(min_length=3, max_length=256)
+    created_at: str = Field(min_length=10, max_length=64)
     split: Web4BenchmarkSplit
-    split_seed: str
+    split_seed: str = Field(min_length=8, max_length=256)
     split_material_sha256: str = Field(pattern=_DIGEST)
     benchmark_policy_sha256: str = Field(pattern=_DIGEST)
     intake_policy_sha256: str = Field(pattern=_DIGEST)
     source_registry_sha256: str = Field(pattern=_DIGEST)
-    source_refs: list[str]
-    source_revision_status: dict[str, str]
-    source_snapshot_sha256s: dict[str, str]
-    source_snapshot_receipt_sha256s: dict[str, str]
+    source_refs: list[_SourceRef] = Field(min_length=1, max_length=16)
+    source_revision_status: dict[str, Annotated[str, Field(min_length=1, max_length=256)]]
+    source_snapshot_sha256s: dict[str, _SourceDigest]
+    source_snapshot_receipt_sha256s: dict[str, _SourceDigest]
     source_match_verified: dict[str, Literal[False]]
     source_provenance_review_status: dict[str, Literal["REVIEW_REQUIRED"]]
     model_input: dict[str, object]
@@ -140,6 +143,8 @@ class Web4BenchmarkIntakePacket(StrictModel):
 
     @model_validator(mode="after")
     def packet_contract_verifies(self) -> Web4BenchmarkIntakePacket:
+        if self.source_refs != sorted(set(self.source_refs)):
+            raise ValueError("Web4 benchmark packet source refs must be unique and sorted")
         expected = set(self.source_refs)
         if expected != set(self.source_revision_status):
             raise ValueError("Web4 benchmark packet source revision bindings differ")
@@ -156,10 +161,31 @@ class Web4BenchmarkIntakePacket(StrictModel):
         observed = str(unsigned.pop("packet_sha256"))
         if _sha256_canonical(unsigned) != observed:
             raise ValueError("Web4 benchmark intake packet self-hash does not verify")
+        try:
+            created_at = datetime.fromisoformat(self.created_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("Web4 benchmark created_at must be ISO-8601") from exc
+        if created_at.tzinfo is None or created_at.utcoffset() is None:
+            raise ValueError("Web4 benchmark created_at must include a timezone")
+        if not self.model_input:
+            raise ValueError("Web4 benchmark packet requires model-visible input")
+        if _sha256_canonical(self.model_input) != self.model_input_sha256:
+            raise ValueError("Web4 benchmark packet model input hash does not verify")
+        material_sha = _split_material_sha256(
+            split_seed=self.split_seed,
+            case_id=self.case_id,
+            family=self.family,
+            source_refs=self.source_refs,
+            source_snapshot_sha256s=self.source_snapshot_sha256s,
+            source_snapshot_receipt_sha256s=self.source_snapshot_receipt_sha256s,
+        )
+        if material_sha != self.split_material_sha256:
+            raise ValueError("Web4 benchmark packet split material hash does not verify")
         return self
 
 
 def _sha256_canonical(payload: object) -> str:
+    require_json_value(payload)
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
@@ -182,8 +208,8 @@ def _sha256_file(path: Path, label: str) -> str:
 def _load_json(path: Path, label: str) -> tuple[dict[str, object], str]:
     raw = _read_regular(path, label)
     try:
-        payload = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        payload = strict_json_loads(raw)
+    except ValueError as exc:
         raise ValueError(f"invalid {label} JSON") from exc
     if not isinstance(payload, dict):
         raise ValueError(f"{label} must contain one JSON object")
@@ -202,8 +228,8 @@ def _load_source_registry(path: Path) -> tuple[dict[str, dict[str, object]], str
         if not line.strip():
             continue
         try:
-            payload = json.loads(line)
-        except json.JSONDecodeError as exc:
+            payload = strict_json_loads(line)
+        except ValueError as exc:
             raise ValueError(f"invalid Web4 source row at line {line_number}") from exc
         if not isinstance(payload, dict):
             raise ValueError(f"Web4 source row {line_number} must be a JSON object")
@@ -219,17 +245,20 @@ def _load_source_registry(path: Path) -> tuple[dict[str, dict[str, object]], str
 
 
 def _reject_answer_key_fields(value: object) -> None:
-    if isinstance(value, dict):
-        for key, child in value.items():
-            normalized = key.strip().lower().replace("-", "_").replace(" ", "_")
-            if normalized in _FORBIDDEN_MODEL_INPUT_KEYS:
-                raise ValueError(
-                    f"Web4 model-visible input contains answer-key-like field: {key}"
-                )
-            _reject_answer_key_fields(child)
-    elif isinstance(value, list):
-        for child in value:
-            _reject_answer_key_fields(child)
+    require_json_value(value)
+    pending = [value]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, dict):
+            for key, child in current.items():
+                normalized = key.strip().lower().replace("-", "_").replace(" ", "_")
+                if normalized in _FORBIDDEN_MODEL_INPUT_KEYS:
+                    raise ValueError(
+                        f"Web4 model-visible input contains answer-key-like field: {key}"
+                    )
+                pending.append(child)
+        elif isinstance(current, list):
+            pending.extend(current)
 
 
 def _validate_benchmark_policy(payload: dict[str, object]) -> set[str]:
@@ -285,6 +314,26 @@ def _resolve_snapshot(root: Path, relative_path: str, label: str) -> Path:
     return candidate
 
 
+def _split_material_sha256(
+    *,
+    split_seed: str,
+    case_id: str,
+    family: str,
+    source_refs: list[str],
+    source_snapshot_sha256s: dict[str, str],
+    source_snapshot_receipt_sha256s: dict[str, str],
+) -> str:
+    material = {
+        "split_seed": split_seed,
+        "case_id": case_id,
+        "family": family,
+        "source_refs": source_refs,
+        "source_snapshot_sha256s": source_snapshot_sha256s,
+        "source_snapshot_receipt_sha256s": source_snapshot_receipt_sha256s,
+    }
+    return _sha256_canonical(material)
+
+
 def _assign_split(
     *,
     policy: Web4BenchmarkIntakePolicy,
@@ -294,15 +343,14 @@ def _assign_split(
     source_snapshot_sha256s: dict[str, str],
     source_snapshot_receipt_sha256s: dict[str, str],
 ) -> tuple[Web4BenchmarkSplit, str]:
-    material = {
-        "split_seed": policy.split_seed,
-        "case_id": case_id,
-        "family": family,
-        "source_refs": source_refs,
-        "source_snapshot_sha256s": source_snapshot_sha256s,
-        "source_snapshot_receipt_sha256s": source_snapshot_receipt_sha256s,
-    }
-    material_sha = _sha256_canonical(material)
+    material_sha = _split_material_sha256(
+        split_seed=policy.split_seed,
+        case_id=case_id,
+        family=family,
+        source_refs=source_refs,
+        source_snapshot_sha256s=source_snapshot_sha256s,
+        source_snapshot_receipt_sha256s=source_snapshot_receipt_sha256s,
+    )
     bucket = int(material_sha[:16], 16) % 10000
     if bucket < policy.development_bps:
         return Web4BenchmarkSplit.DEVELOPMENT, material_sha
@@ -474,6 +522,9 @@ def write_web4_benchmark_intake_packet(
     packet: Web4BenchmarkIntakePacket,
     path: str | Path,
 ) -> None:
+    # Nested model input can be mutated even after construction. Revalidate the
+    # serialized fields rather than trusting an already-validated instance.
+    packet = Web4BenchmarkIntakePacket.model_validate(packet.model_dump(mode="python"))
     destination = Path(path)
     if destination.exists():
         raise FileExistsError(f"Web4 benchmark intake output already exists: {destination}")
