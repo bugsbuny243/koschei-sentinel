@@ -7,11 +7,11 @@ from pathlib import Path
 from koschei_sentinel.cyber_range import CyberRangeScenario
 from koschei_sentinel.defense_reflex_gold_queue import GoldDefenseReviewPacket
 from koschei_sentinel.defense_reflex_gold_review import GoldReviewedPacket
-from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 from koschei_sentinel.gold_review_signing import (
     GoldReviewSignatureProof,
     write_signed_gold_defense_release,
 )
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 
 
 def build_parser() -> argparse.ArgumentParser:
