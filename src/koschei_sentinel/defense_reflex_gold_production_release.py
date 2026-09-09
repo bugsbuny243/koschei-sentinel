@@ -19,14 +19,14 @@ from koschei_sentinel.defense_reflex_gold_capacity import (
 from koschei_sentinel.defense_reflex_gold_queue import GoldDefenseReviewPacket
 from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
 from koschei_sentinel.defense_reflex_gold_review import GoldReviewedPacket
-from koschei_sentinel.gold_reviewer_trust import (
-    load_gold_reviewer_trust_policy,
-    load_trusted_reviewer_public_key,
-)
 from koschei_sentinel.gold_review_signing import (
     GoldReviewSignatureProof,
     audit_gold_release_review_signatures,
     write_signed_gold_defense_release,
+)
+from koschei_sentinel.gold_reviewer_trust import (
+    load_gold_reviewer_trust_policy,
+    load_trusted_reviewer_public_key,
 )
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import atomic_write, canonical_json
