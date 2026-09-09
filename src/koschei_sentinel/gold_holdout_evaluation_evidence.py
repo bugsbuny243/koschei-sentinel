@@ -98,7 +98,7 @@ class GoldHoldoutEvaluationEvidence(StrictModel):
     evidence_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def evidence_is_fail_closed(self) -> "GoldHoldoutEvaluationEvidence":
+    def evidence_is_fail_closed(self) -> GoldHoldoutEvaluationEvidence:
         if self.model_revision != self.adapter_digest:
             raise ValueError("Gold HOLDOUT model revision must equal the verified adapter digest")
         if self.report.model_ref != self.model_ref:
