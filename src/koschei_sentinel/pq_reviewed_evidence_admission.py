@@ -10,8 +10,8 @@ from pydantic import Field, model_validator
 from koschei_sentinel.cyber_corpus_catalog import LicenseScope, LicenseStatus
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.pq_evidence_review import (
-    PQEvidenceReviewProof,
     PQEvidenceReviewerTrustPolicy,
+    PQEvidenceReviewProof,
     load_pq_evidence_review_proof,
     load_pq_evidence_reviewer_trust_policy,
     verify_pq_evidence_review_proof,
