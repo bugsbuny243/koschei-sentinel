@@ -19,16 +19,16 @@ from koschei_sentinel.defense_reflex_gold_queue import (
 )
 from koschei_sentinel.defense_reflex_gold_release import _verify_review_binding
 from koschei_sentinel.defense_reflex_gold_review import GoldReviewedPacket
-from koschei_sentinel.gold_reviewer_trust import (
-    GoldReviewerTrustPolicy,
-    load_gold_reviewer_trust_policy,
-    verify_gold_reviewer_trust_policy,
-)
 from koschei_sentinel.gold_review_signing import (
     GoldReviewSignatureProof,
     load_reviewer_public_key,
     reviewer_public_key_fingerprint,
     verify_gold_review_signature,
+)
+from koschei_sentinel.gold_reviewer_trust import (
+    GoldReviewerTrustPolicy,
+    load_gold_reviewer_trust_policy,
+    verify_gold_reviewer_trust_policy,
 )
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.promotion import load_owner_public_key
