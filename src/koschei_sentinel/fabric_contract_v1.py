@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Final
 
-
 FABRIC_SCHEMA_VERSION: Final = "1.0"
 FABRIC_COMPONENT: Final = "koschei-sentinel"
 
