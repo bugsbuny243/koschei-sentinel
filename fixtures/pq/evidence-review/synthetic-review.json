@@ -1,0 +1,11 @@
+{
+  "schema_version": "sentinel.pq-evidence-review-input.v1",
+  "reviewer_id": "fixture-pq-reviewer",
+  "reviewed_at": "2026-09-09T05:57:00+03:00",
+  "decision": "VERIFIED",
+  "source_match_verified": true,
+  "claim_supported": true,
+  "evidence_confidence": 0.8,
+  "uncertainty": "Synthetic fixture only; no real protocol claim is being verified.",
+  "notes": "Confirms only that the fixture bytes and fixture claim match the synthetic test source."
+}
