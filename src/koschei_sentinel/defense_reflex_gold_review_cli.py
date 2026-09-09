@@ -10,8 +10,8 @@ from koschei_sentinel.defense_reflex_gold_review import (
     GoldHumanReviewSpec,
     review_gold_packet,
 )
-from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_private_key
 from koschei_sentinel.gold_review_signing import sign_gold_reviewed_packet
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_private_key
 
 
 def build_parser() -> argparse.ArgumentParser:
