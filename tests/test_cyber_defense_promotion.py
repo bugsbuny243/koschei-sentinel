@@ -29,7 +29,6 @@ from koschei_sentinel.multi_incident_cyber_range_suite import (
 )
 from koschei_sentinel.training import canonical_json
 
-
 STAGES = [
     CyberTrainingStage.KNOWLEDGE_CONTINUED_PRETRAINING,
     CyberTrainingStage.DEFENSE_REFLEX_SFT,
