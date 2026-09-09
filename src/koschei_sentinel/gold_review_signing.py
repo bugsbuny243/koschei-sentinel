@@ -241,8 +241,10 @@ def write_signed_gold_defense_release(
     return manifest
 
 
-def _expected_release_reviews(release_dir: Path) -> set[tuple[str, str, str, str]]:
-    expected: set[tuple[str, str, str, str]] = set()
+def _expected_release_reviews(
+    release_dir: Path,
+) -> set[tuple[str, str, str, str, str]]:
+    expected: set[tuple[str, str, str, str, str]] = set()
     for split in (GoldReviewSplit.TRAIN, GoldReviewSplit.VALIDATION):
         path = release_dir / split.value.lower() / "examples.jsonl"
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -250,9 +252,23 @@ def _expected_release_reviews(release_dir: Path) -> set[tuple[str, str, str, str
                 continue
             row = DefenseReflexTrainingExampleV3.model_validate_json(line)
             reviewer_id = row.provenance.get("reviewer_id")
+            packet_sha256 = row.provenance.get("gold_packet_sha256")
+            review_sha256 = row.provenance.get("gold_review_sha256")
             if reviewer_id is None:
                 raise ValueError("Gold training example lacks reviewer_id provenance")
-            expected.add((split.value, row.scenario_id, reviewer_id, row.review_sha256))
+            if packet_sha256 is None:
+                raise ValueError("Gold training example lacks gold_packet_sha256 provenance")
+            if review_sha256 is None:
+                raise ValueError("Gold training example lacks gold_review_sha256 provenance")
+            expected.add(
+                (
+                    split.value,
+                    row.scenario_id,
+                    reviewer_id,
+                    packet_sha256,
+                    review_sha256,
+                )
+            )
 
     holdout_path = release_dir / "holdout" / "cases.jsonl"
     for line in holdout_path.read_text(encoding="utf-8").splitlines():
@@ -264,6 +280,7 @@ def _expected_release_reviews(release_dir: Path) -> set[tuple[str, str, str, str
                 GoldReviewSplit.HOLDOUT.value,
                 row.scenario_id,
                 row.reviewer_id,
+                row.packet_sha256,
                 row.review_sha256,
             )
         )
@@ -278,7 +295,7 @@ def audit_gold_release_review_signatures(
     fingerprint = reviewer_public_key_fingerprint(reviewer_public_key)
     violations: list[str] = []
     proofs: list[GoldReviewSignatureProof] = []
-    expected: set[tuple[str, str, str, str]] = set()
+    expected: set[tuple[str, str, str, str, str]] = set()
     signatures_verified = False
     exact_set_verified = False
 
@@ -298,7 +315,13 @@ def audit_gold_release_review_signatures(
                 ) from exc
             proofs.append(proof)
         observed = {
-            (proof.split.value, proof.scenario_id, proof.reviewer_id, proof.review_sha256)
+            (
+                proof.split.value,
+                proof.scenario_id,
+                proof.reviewer_id,
+                proof.packet_sha256,
+                proof.review_sha256,
+            )
             for proof in proofs
         }
         if len(observed) != len(proofs):
