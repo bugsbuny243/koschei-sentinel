@@ -10,8 +10,8 @@ from koschei_sentinel.gold_holdout_evaluation_evidence import (
 from koschei_sentinel.gold_holdout_pack_signing import (
     sign_gold_holdout_inference_pack,
 )
-from koschei_sentinel.gold_reviewer_trust import build_gold_reviewer_trust_policy
 from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
+from koschei_sentinel.gold_reviewer_trust import build_gold_reviewer_trust_policy
 from tests.gold_candidate_binding_helpers import (
     rebind_inference_fixture_to_gold_candidate,
 )
