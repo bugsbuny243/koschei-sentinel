@@ -1,0 +1,3 @@
+SYNTHETIC TEST FIXTURE ONLY.
+This file exists solely to exercise PQ evidence review provenance and signing.
+It is not protocol evidence and must never authorize training.
