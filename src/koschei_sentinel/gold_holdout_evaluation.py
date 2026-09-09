@@ -65,7 +65,7 @@ class GoldHoldoutPrediction(StrictModel):
     prediction_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def sequence_is_contiguous(self) -> "GoldHoldoutPrediction":
+    def sequence_is_contiguous(self) -> GoldHoldoutPrediction:
         sequences = [row.sequence for row in self.defense_sequence]
         if sequences != list(range(1, len(sequences) + 1)):
             raise ValueError("Gold holdout prediction steps must be contiguous from 1")
