@@ -9,11 +9,11 @@ from koschei_sentinel.defense_reflex_gold_capacity import (
     build_gold_review_capacity_report,
 )
 from koschei_sentinel.defense_reflex_gold_queue import GoldReviewSplit
+from koschei_sentinel.gold_review_signing import sign_gold_reviewed_packet
 from koschei_sentinel.gold_reviewer_trust import (
     build_gold_reviewer_trust_policy,
     write_gold_reviewer_trust_policy,
 )
-from koschei_sentinel.gold_review_signing import sign_gold_reviewed_packet
 from tests.test_defense_reflex_gold_release import _release_rows
 
 
