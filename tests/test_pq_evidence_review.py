@@ -8,9 +8,9 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.pq_evidence_review import (
+    PQEvidenceReviewerTrustPolicy,
     PQEvidenceReviewInput,
     PQEvidenceReviewProof,
-    PQEvidenceReviewerTrustPolicy,
     build_pq_evidence_review_proof,
     build_pq_evidence_reviewer_trust_policy,
     verify_pq_evidence_review_proof,
