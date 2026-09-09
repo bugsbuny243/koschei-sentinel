@@ -36,7 +36,7 @@ class GoldHumanReviewSpec(StrictModel):
     authorize_for_evaluation: bool = False
 
     @model_validator(mode="after")
-    def decision_is_coherent(self) -> "GoldHumanReviewSpec":
+    def decision_is_coherent(self) -> GoldHumanReviewSpec:
         if self.decision is CorrectionReviewDecision.APPROVE:
             if not self.expected_steps:
                 raise ValueError("approved Gold review requires expected defensive steps")
@@ -73,7 +73,7 @@ class GoldReviewedPacket(StrictModel):
     review_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def authorization_is_fail_closed(self) -> "GoldReviewedPacket":
+    def authorization_is_fail_closed(self) -> GoldReviewedPacket:
         if self.decision is CorrectionReviewDecision.REJECT:
             if self.training_authorization or self.evaluation_authorization:
                 raise ValueError("rejected Gold packet cannot carry authorization")
