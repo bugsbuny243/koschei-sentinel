@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "component": "koschei-sentinel",
+  "repository": "bugsbuny243/koschei-sentinel",
+  "role": "observation-detection-response-and-model-intelligence",
+  "preserveExisting": true,
+  "defaultMode": "observe",
+  "compatibility": {
+    "breakingChangesAllowed": false,
+    "crossProjectAccess": "contract-only",
+    "legacyInterfaces": "preserve"
+  },
+  "capabilities": [
+    {
+      "id": "sentinel-evaluation-and-provenance",
+      "domain": "core",
+      "status": "experimental",
+      "evidenceState": "partial",
+      "workPackages": ["MODEL-01", "MODEL-03", "MODEL-04", "OPS-04"],
+      "backend": "existing",
+      "frontend": "planned",
+      "telemetry": "existing",
+      "notes": "Existing dataset/provenance/HOLDOUT/promotion gates are preserved, but the native 397B total / 35B active target still requires candidate-bound training and independent evaluation evidence before completion can be claimed."
+    },
+    {
+      "id": "fabric-observation-plane",
+      "domain": "web4",
+      "status": "experimental",
+      "evidenceState": "research",
+      "workPackages": ["AGENT-01", "MODEL-02", "OPS-01", "OPS-04"],
+      "backend": "adapter",
+      "frontend": "planned",
+      "telemetry": "planned",
+      "notes": "Read-only event/evidence integration starts in observe mode. Sentinel may interpret evidence but cannot mint Lang authority, Web3 decision signatures or new tool permissions."
+    },
+    {
+      "id": "pq-network-intelligence",
+      "domain": "web6",
+      "status": "experimental",
+      "evidenceState": "research",
+      "workPackages": ["PQ-01", "PQ-02", "PQ-03", "PQ-04"],
+      "backend": "existing",
+      "frontend": "planned",
+      "telemetry": "existing",
+      "notes": "An existing PQ watch/research line is surfaced to Fabric. Research, recommendation, test and live migration remain distinct; this is not a claim that supported networks have completed PQ migration."
+    }
+  ]
+}
