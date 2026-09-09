@@ -7,8 +7,8 @@ from pathlib import Path
 from koschei_sentinel.defense_reflex_gold_release_audit import (
     audit_gold_defense_release,
 )
-from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_public_key
 
 
 def build_parser() -> argparse.ArgumentParser:
