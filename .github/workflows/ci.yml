@@ -128,6 +128,31 @@ jobs:
           sentinel-web4-research-snapshot verify \
             --receipt build/web4/research-snapshot-receipt.json \
             --snapshot fixtures/web4/research-snapshot/fixture-source.txt
+      - name: PQ research ingestion fail-closed gate
+        run: pytest tests/test_pq_network_intelligence.py
+      - name: Validate PQ research ingestion capture and materialization
+        run: |
+          mkdir -p build/pq
+          sentinel-pq-network-intelligence capture \
+            --source-id ethereum-protocol-priorities-2026-02-18 \
+            --snapshot fixtures/pq/research-snapshot/synthetic-source.txt \
+            --captured-at 2026-09-09T02:05:00+03:00 \
+            --output build/pq/snapshot-receipt.json
+          sentinel-pq-network-intelligence verify-snapshot \
+            --receipt build/pq/snapshot-receipt.json \
+            --snapshot fixtures/pq/research-snapshot/synthetic-source.txt
+          sentinel-pq-network-intelligence materialize \
+            --claim fixtures/pq/research-snapshot/synthetic-claim.json \
+            --snapshot-receipt build/pq/snapshot-receipt.json \
+            --snapshot fixtures/pq/research-snapshot/synthetic-source.txt \
+            --output build/pq/record.json \
+            --receipt-output build/pq/materialization-receipt.json
+          sentinel-pq-network-intelligence verify-materialization \
+            --claim fixtures/pq/research-snapshot/synthetic-claim.json \
+            --snapshot-receipt build/pq/snapshot-receipt.json \
+            --snapshot fixtures/pq/research-snapshot/synthetic-source.txt \
+            --record build/pq/record.json \
+            --receipt build/pq/materialization-receipt.json
       - name: Web4 benchmark snapshot receipt binding gate
         run: pytest tests/test_web4_benchmark_snapshot_receipt_binding.py
       - name: Validate Web4 benchmark intake isolation
