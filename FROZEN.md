@@ -15,19 +15,31 @@ Koschei Sentinel was frozen without deleting repository history, model contracts
 - Preserve branches, commits, manifests, hashes, provenance contracts, evaluation code, and Gold HOLDOUT work.
 - Do not treat external models as Koschei Sentinel itself.
 - Resume from the exact recorded refs below rather than rebuilding infrastructure from scratch.
+- Fabric integration starts in observe/contract-only mode and must not bypass model, Gold, HOLDOUT, promotion, or paid-compute gates.
 
 ## MODEL STATE
 
-Single long-term training target:
+Koschei Sentinel long-term architecture target:
+
+- Product target ID: `koschei-sentinel-moe-397b-a35b`
+- Product identity: `KOSCHEI_SENTINEL`
+- Architecture target: sparse/MoE, 397B total parameters, 35B active parameters.
+- Target status: `ARCHITECTURE_TARGET`; this is not evidence that a trained 397B/35B production checkpoint exists.
+
+External bootstrap / trainer-proof model:
 
 - Model: `Qwen/Qwen3.5-397B-A17B`
 - Immutable revision: `8472618112abcbd45acbcdc58436aff4233c23f7`
-- Architecture target: sparse/MoE, 397B total parameters, 17B activated parameters for this concrete base model.
+- Role: external bootstrap and trainer proof only; it does not define Koschei Sentinel product identity.
+- Concrete external base architecture: 397B total / 17B active.
+
+Training infrastructure retained from the earlier plan:
+
 - Training backend: Megatron-SWIFT / MCore
 - Pinned `ms-swift==4.5.2`
-- Planned training topology: 4 nodes x 8 GPUs, TP=4, PP=1, CP=1, EP=8, DP=8, LoRA, bf16.
+- Previously planned external-bootstrap topology: 4 nodes x 8 GPUs, TP=4, PP=1, CP=1, EP=8, DP=8, LoRA, bf16.
 
-No paid 397B training run has been launched.
+No paid 397B training run has been launched. Real candidate-bound training evidence, checkpoint identity, and independent HOLDOUT evaluation are still required before any production promotion claim.
 
 ## DATASET STATE
 
@@ -41,7 +53,7 @@ Production Gold remains blocked because there is no confirmed committed bulk hum
 
 - `7581292de5f7800e6f14f9670ec34015ff294a8d` — `Train only Qwen3.5-397B-A17B with Megatron-SWIFT (#68)`
 
-Paid launch remains fail-closed behind the explicit 397B approval/session gates. No paid GPU job was started during the freeze.
+That historical training branch concerns the external bootstrap model, not the final Koschei Sentinel 397B/35B product target. Paid launch remains fail-closed behind the explicit 397B approval/session gates. No paid GPU job was started during the freeze.
 
 ## VERIFIED / PRESERVED
 
@@ -53,9 +65,13 @@ Preserve the following completed or substantially implemented infrastructure:
 - answer-key-isolated HOLDOUT packaging;
 - fail-closed 397B candidate/HOLDOUT planning;
 - SWIFT/vLLM/Ray worker contracts and offline replay verification;
-- 397B-native Gold evaluation evidence;
+- 397B-native Gold evaluation evidence infrastructure;
 - Promotion v4 regression path and Promotion v5 design/work;
-- paid-compute safety gates.
+- paid-compute safety gates;
+- Web4 security-event and agent-trust-chain research infrastructure;
+- PQ research/evidence/watch infrastructure.
+
+The presence of these files, schemas, gates, or research paths is not by itself proof of a trained or production-promoted Sentinel model.
 
 ## REACTIVATED WORK
 
@@ -71,15 +87,17 @@ Preserve the following completed or substantially implemented infrastructure:
 - Branch: `feat/397b-gold-holdout-binding`
 - Preserved head at reactivation: `c3869449e87ecaa1e13a34e60d77c6f923bc9f00`
 - Base: PR #67 branch.
-- Purpose: bind Qwen3.5-397B Megatron checkpoints to signed Gold HOLDOUT and Promotion v5 evidence.
+- Purpose: bind the external Qwen3.5-397B bootstrap/trainer-proof work to signed Gold HOLDOUT and Promotion v5 evidence without redefining the final Sentinel architecture target.
 - Reactivation action: reopen as stacked draft and continue the in-progress production Gold capacity/release layer.
 
 ## FAILURES / BLOCKERS AT REACTIVATION
 
 - No confirmed production Gold dataset with deterministic >=50 unseen HOLDOUT cases.
-- GitHub-hosted CI had not produced a trustworthy complete Ruff + full pytest + named Gold gate execution for the trust-chain work.
 - Real multi-node 397B runtime compatibility has not been proven on the target GPU environment.
-- Real 397B merged checkpoint, real HOLDOUT inference evidence, and Promotion v5 production evidence do not exist yet.
+- A real Koschei Sentinel 397B/35B trained checkpoint, independent HOLDOUT inference evidence, and production promotion evidence do not exist yet.
+- External 397B-A17B bootstrap/trainer proof must not be reported as the Koschei Sentinel 397B/35B product model.
+
+The integration branch has since produced trustworthy Ruff, full pytest, named Gold/Web4/PQ gate executions in CI, but that does not remove the model/data/runtime blockers above.
 
 ## ARTIFACT / REF CHECKPOINT
 
@@ -90,13 +108,14 @@ Restart anchors:
 - Reactivation marker commit: `c6f0c1809d8c8cd5a990da3af11f8154e126f4c8`.
 - PR #67 preserved head: `fde029e0b4a164b5dc71a0301ce5abe14cbee95a`.
 - PR #69 preserved head: `c3869449e87ecaa1e13a34e60d77c6f923bc9f00`.
-- Base-model revision: `8472618112abcbd45acbcdc58436aff4233c23f7`.
+- External bootstrap model revision: `8472618112abcbd45acbcdc58436aff4233c23f7`.
+- Koschei Sentinel architecture target: `configs/model/sentinel-moe-397b-a35b.target.json`.
 
 ## NEXT
 
-1. re-open #67 and #69;
-2. audit #67 and #69 against current `main`;
-3. finish the production Gold capacity/release layer on #69;
-4. execute trustworthy Ruff + full pytest + named Gold gates before any merge;
-5. build a genuinely human-reviewed signed Gold corpus that yields >=50 deterministic HOLDOUT cases;
-6. only then consider an explicitly funded/approved 397B run.
+1. keep the current full CI / Gold / Web4 / PQ gates green on integration work;
+2. finish the production Gold capacity/release layer without weakening HOLDOUT isolation;
+3. build a genuinely human-reviewed signed Gold corpus that yields >=50 deterministic HOLDOUT cases;
+4. prove runtime/trainer compatibility with explicitly authorized compute;
+5. bind real candidate checkpoint identity, data version, tokenizer, training receipt and independent HOLDOUT result;
+6. only then consider an explicitly funded/approved 397B run or production promotion.
