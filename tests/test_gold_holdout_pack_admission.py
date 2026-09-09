@@ -16,7 +16,6 @@ from koschei_sentinel.gold_reviewer_trust import (
 )
 from tests.test_gold_holdout_inference_runner import _pack
 
-
 _REVIEW_AUDIT_SHA = "d" * 64
 
 
