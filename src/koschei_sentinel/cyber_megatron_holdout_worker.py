@@ -70,6 +70,15 @@ def _sha256_canonical(payload: object) -> str:
     return _sha256_text(canonical_json(payload))
 
 
+def _package_version(package: str) -> str:
+    try:
+        return importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise ValueError(
+            f"required 397B HOLDOUT runtime package is not installed: {package}"
+        ) from exc
+
+
 def _json_text(model: StrictModel) -> str:
     return json.dumps(model.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
 
