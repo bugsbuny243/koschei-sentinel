@@ -23,8 +23,8 @@ from koschei_sentinel.gold_holdout_inference_runner import (
 from koschei_sentinel.gold_holdout_pack_admission import (
     admit_owner_trusted_signed_gold_holdout_pack,
 )
-from koschei_sentinel.gold_reviewer_trust import load_gold_reviewer_trust_policy
 from koschei_sentinel.gold_review_signing import reviewer_public_key_fingerprint
+from koschei_sentinel.gold_reviewer_trust import load_gold_reviewer_trust_policy
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.promotion import load_owner_public_key, public_key_fingerprint
 from koschei_sentinel.training import atomic_write, canonical_json, resolve_under_root
@@ -147,9 +147,13 @@ def _expected_holdout_plan(
         )
     candidate = candidate_verification.manifest
     if candidate.model != QWEN35_397B_MODEL:
-        raise ValueError("397B HOLDOUT candidate model is not the active Sentinel target")
+        raise ValueError(
+            "397B HOLDOUT candidate model is not the pinned external bootstrap candidate"
+        )
     if candidate.model_revision != QWEN35_397B_REVISION:
-        raise ValueError("397B HOLDOUT candidate revision is not the pinned Sentinel revision")
+        raise ValueError(
+            "397B HOLDOUT candidate revision is not the pinned external bootstrap revision"
+        )
 
     candidate_raw = _read_regular_bytes(
         candidate_manifest_path,
