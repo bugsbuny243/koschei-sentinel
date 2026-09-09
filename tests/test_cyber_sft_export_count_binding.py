@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from test_cyber_sft_export_verify import _build_export, _write_json
-
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
+from tests.test_cyber_sft_export_verify import _build_export, _write_json
 
 
 def test_portable_export_rejects_adapter_example_count_drift(
