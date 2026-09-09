@@ -45,8 +45,8 @@ from koschei_sentinel.gold_holdout_zero_prediction import (
     build_zero_prediction_gold_report,
 )
 from koschei_sentinel.gold_release_snapshot import snapshot_verified_gold_release
-from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_private_key
 from koschei_sentinel.gold_review_signing import audit_gold_release_review_signatures
+from koschei_sentinel.gold_reviewer_trust import load_trusted_reviewer_private_key
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -279,8 +279,6 @@ def _export_signed_inputs(
         signature_temp = None
         signature_published = True
 
-        # Final pack publication is intentionally last: a final pack path is never
-        # visible unless its detached trusted signature has already been published.
         os.replace(staged_pack, destination)
         return manifest, proof
     except (OSError, TypeError, ValueError):
