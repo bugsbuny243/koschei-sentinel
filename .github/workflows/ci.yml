@@ -40,6 +40,8 @@ jobs:
           tests/test_cyber_sft_execution_cli_preflight.py
           tests/test_cyber_sft_trainer_explicit_validation.py
           tests/test_defense_reflex_gold_review.py
+          tests/test_defense_reflex_gold_capacity.py
+          tests/test_defense_reflex_gold_production_release.py
           tests/test_gold_review_signing.py
           tests/test_gold_reviewer_trust.py
           tests/test_gold_reviewer_trust_cli.py
@@ -65,6 +67,12 @@ jobs:
           tests/test_gold_holdout_evaluation_evidence_cli.py
           tests/test_gold_holdout_evidence_snapshot.py
           tests/test_gold_holdout_signed_evidence.py
+          tests/test_cyber_megatron_candidate.py
+          tests/test_cyber_megatron_holdout.py
+          tests/test_cyber_megatron_holdout_worker.py
+          tests/test_cyber_megatron_gold_evidence.py
+          tests/test_cyber_defense_promotion_v5.py
+          tests/test_cyber_defense_promotion_v5_sources.py
           tests/test_cyber_defense_promotion.py
           tests/test_cyber_defense_promotion_gold_case_count.py
           tests/test_cyber_defense_promotion_cli.py
