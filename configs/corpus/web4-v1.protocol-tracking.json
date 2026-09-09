@@ -1,0 +1,171 @@
+{
+  "schema_version": "sentinel.web4-protocol-tracking.v1",
+  "observed_at": "2026-09-07",
+  "status": "research_only",
+  "training_authorization": false,
+  "policy": {
+    "internet_drafts_are_work_in_progress": true,
+    "protocol_name_is_not_a_unique_identity": true,
+    "issuer_author_revision_tuple_required": true,
+    "latest_revision_must_be_rechecked_before_dataset_materialization": true,
+    "superseded_revision_metadata_must_be_preserved": true,
+    "model_must_not_infer_ietf_endorsement_from_datatracker_presence": true
+  },
+  "families": [
+    {
+      "family_id": "agent-identity-protocol-singla",
+      "display_name": "Agent Identity Protocol",
+      "document_id": "draft-singla-agent-identity-protocol",
+      "author_identity": "P. Singla",
+      "current_observed_revision": "03",
+      "current_observed_publication_date": "2026-06-10",
+      "current_observed_expiry": "2026-12-12",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_IDENTITY", "DELEGATION", "AUTHORIZATION", "DID", "CAPABILITY_AUTHORIZATION"],
+      "source_ref": "ietf.draft.singla.agent-identity-protocol-03"
+    },
+    {
+      "family_id": "agent-identity-protocol-prakash",
+      "display_name": "Agent Identity Protocol",
+      "document_id": "draft-prakash-aip",
+      "author_identity": "S. Prakash",
+      "current_observed_revision": "01",
+      "current_observed_publication_date": "2026-08-19",
+      "current_observed_expiry": "2027-02-20",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_IDENTITY", "VERIFIABLE_DELEGATION", "CAPABILITY_TOKENS", "PROVENANCE"],
+      "source_ref": "ietf.draft.prakash.agent-identity-protocol-01"
+    },
+    {
+      "family_id": "agent-identity-protocol-cao-arango",
+      "display_name": "Agent Identity Protocol",
+      "document_id": "draft-aip-agent-identity-protocol",
+      "author_identity": "J. Cao; C. Arango Gutierrez",
+      "current_observed_revision": "00",
+      "current_observed_publication_date": "2026-03-16",
+      "current_observed_expiry": "2026-09-17",
+      "standing": "INTERNET_DRAFT_WORK_IN_PROGRESS",
+      "topics": ["AGENT_IDENTITY", "AUTHENTICATION", "AUTHORIZED_POLICY_ENFORCEMENT"],
+      "source_ref": "ietf.draft.aip.agent-identity-protocol-00"
+    },
+    {
+      "family_id": "agent-security-principal-verifier-binding",
+      "display_name": "Security Principal and Verifier Binding for Agent Communication Protocols",
+      "document_id": "draft-bu-agentproto-security-principal-binding",
+      "author_identity": "S. Bu",
+      "current_observed_revision": "00",
+      "current_observed_publication_date": "2026-07-04",
+      "current_observed_expiry": "2027-01-05",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["PRINCIPAL_BINDING", "VERIFIER_BINDING", "DELEGATION_STATE", "SESSION_CONTINUITY", "ACTION_EVIDENCE"],
+      "source_ref": "ietf.draft.bu.agentproto-security-principal-binding-00"
+    },
+    {
+      "family_id": "agent-identity-discovery-nemethi",
+      "display_name": "Agent Identity and Discovery (AID)",
+      "document_id": "draft-nemethi-aid-agent-identity-discovery",
+      "author_identity": "B. Nemethi",
+      "current_observed_revision": "00",
+      "current_observed_publication_date": "2026-03-16",
+      "current_observed_expiry": "2026-09-17",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_DISCOVERY", "DNS_TXT", "ENDPOINT_METADATA", "AUTH_HINT", "ENDPOINT_PROOF", "ED25519"],
+      "source_ref": "ietf.draft.nemethi.aid-agent-identity-discovery-00"
+    },
+    {
+      "family_id": "dns-ai-discovery-mozleywilliams",
+      "display_name": "DNS for AI Discovery",
+      "document_id": "draft-mozleywilliams-dnsop-dnsaid",
+      "author_identity": "J. Mozley; N. Williams; B. Sarikaya; R. Schott; J. Damick",
+      "current_observed_revision": "02",
+      "current_observed_publication_date": "2026-05-27",
+      "current_observed_expiry": "2026-11-28",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_DISCOVERY", "DNS", "SVCB", "DNS_SD", "DNSSEC", "DANE", "TLSA"],
+      "source_ref": "ietf.draft.mozleywilliams.dnsop-dnsaid-02"
+    },
+    {
+      "family_id": "agent-discovery-protocol-lian",
+      "display_name": "Agent Discovery Protocol",
+      "document_id": "draft-pro-adp-agent-discovery",
+      "author_identity": "B. Lian",
+      "current_observed_revision": "02",
+      "current_observed_publication_date": "2026-06-18",
+      "current_observed_expiry": "2026-12-20",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_DISCOVERY", "DNS_AID", "WELL_KNOWN_METADATA", "ED25519_IDENTITY", "AGENT_GATEWAY_PROTOCOL"],
+      "source_ref": "ietf.draft.pro.adp-agent-discovery-02"
+    },
+    {
+      "family_id": "agent-to-agent-trust-tonyai",
+      "display_name": "Agent-to-Agent Trust, Identity, and Verifiable Provenance",
+      "document_id": "draft-tonyai-a2a-trust",
+      "author_identity": "T. Trujillo",
+      "current_observed_revision": "01",
+      "current_observed_publication_date": "2026-07-25",
+      "current_observed_expiry": "2027-01-26",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_TO_AGENT_TRUST", "IDENTITY", "SPAWN_CHAIN", "PROVENANCE", "CROSS_ORGANIZATION_AUTHORIZATION"],
+      "source_ref": "ietf.draft.tonyai.a2a-trust-01"
+    },
+    {
+      "family_id": "agent-identity-certificate-wei",
+      "display_name": "AI Agent Identity Certificate",
+      "document_id": "draft-wei-aic-identity-cert",
+      "author_identity": "J. Wei",
+      "current_observed_revision": "00",
+      "current_observed_publication_date": "2026-08-19",
+      "current_observed_expiry": "2027-02-20",
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENT_IDENTITY", "PRINCIPAL_BINDING", "X509", "ATTRIBUTION", "AUTHORIZATION_BOUNDARY"],
+      "source_ref": "ietf.draft.wei.aic-identity-cert-00"
+    },
+    {
+      "family_id": "web4-terminology-jacobs",
+      "display_name": "Web4 Terminology",
+      "document_id": "draft-jacobs-web4-terminology",
+      "author_identity": "individual Internet-Draft authors",
+      "current_observed_revision": "00",
+      "current_observed_publication_date": "2026-08-08",
+      "current_observed_expiry": null,
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["WEB4_TERMINOLOGY", "FEDERATION", "SOVEREIGN_ENTITIES", "MACHINE_COMPREHENSION"],
+      "source_ref": "ietf.draft.jacobs.web4-terminology-00"
+    },
+    {
+      "family_id": "web4-federation-jacobs",
+      "display_name": "Web4 Federation Architecture",
+      "document_id": "draft-jacobs-web4-federation-architecture",
+      "author_identity": "individual Internet-Draft authors",
+      "current_observed_revision": "00",
+      "current_observed_publication_date": "2026-08-08",
+      "current_observed_expiry": null,
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["WEB4_FEDERATION", "NODE_ADMISSION", "GATEWAYS", "INTER_NODE_TRUST"],
+      "source_ref": "ietf.draft.jacobs.web4-federation-architecture-00"
+    },
+    {
+      "family_id": "web4-orion-reilly",
+      "display_name": "Web4 Orion",
+      "document_id": "draft-reilly-web4-orion",
+      "author_identity": "individual Internet-Draft authors",
+      "current_observed_revision": "00",
+      "current_observed_publication_date": "2026-07-24",
+      "current_observed_expiry": null,
+      "standing": "INDIVIDUAL_INTERNET_DRAFT",
+      "topics": ["AGENTIC_WEB", "VERIFIABLE_ARTIFACTS", "PROVENANCE", "AGENT_ORCHESTRATION"],
+      "source_ref": "ietf.draft.reilly.web4-orion-00"
+    }
+  ],
+  "known_name_collisions": [
+    {
+      "display_name": "Agent Identity Protocol",
+      "family_ids": [
+        "agent-identity-protocol-singla",
+        "agent-identity-protocol-prakash",
+        "agent-identity-protocol-cao-arango"
+      ],
+      "required_model_behavior": "DISAMBIGUATE_BY_DOCUMENT_ID_AUTHOR_REVISION_AND_STATUS"
+    }
+  ]
+}

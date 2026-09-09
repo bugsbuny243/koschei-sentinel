@@ -1,0 +1,59 @@
+{
+  "schema_version": "sentinel.cloud-runtime-profile.v2",
+  "profile_id": "ephemeral-cloud-gpu-cost-aware-v2",
+  "ownership": "EXTERNAL_EPHEMERAL_COMPUTE",
+  "provider_binding": "UNBOUND",
+  "own_server_required": false,
+  "compute_lifecycle": "EPHEMERAL",
+  "persistent_local_state": false,
+  "training_backend": "megatron-swift",
+  "stores": {
+    "persistent_archive": {
+      "kind": "GOOGLE_DRIVE_ARCHIVE",
+      "required": true,
+      "folder_id_env": "KOSCHEI_DRIVE_ARCHIVE_FOLDER_ID",
+      "role": "COLD_PERSISTENT_ARCHIVE"
+    },
+    "hot_analytics": {
+      "kind": "CLICKHOUSE",
+      "required": false,
+      "uri_env": "KOSCHEI_CLICKHOUSE_DSN",
+      "role": "HOT_ANALYTICS_ONLY",
+      "retention_days": 7
+    },
+    "large_run_checkpoint_staging": {
+      "kind": "OBJECT_STORAGE",
+      "required": false,
+      "uri_env": "KOSCHEI_OBJECT_STORE_URI",
+      "role": "LARGE_RUN_CHECKPOINT_STAGING",
+      "activation": "LARGE_RUN_ONLY"
+    }
+  },
+  "model_sources": [
+    "GOOGLE_DRIVE_ARCHIVE",
+    "LOCAL_CACHE",
+    "OBJECT_STORAGE_LARGE_RUN_ONLY",
+    "EXTERNAL_REGISTRY_OPTIONAL"
+  ],
+  "network": {
+    "public_inbound_default": "DENY",
+    "cluster_rendezvous": "PRIVATE_OR_PROVIDER_INTERNAL"
+  },
+  "budget": {
+    "paid_compute_default": "DENY",
+    "approval_env": "KOSCHEI_CLOUD_RUNTIME_APPROVED",
+    "session_env": "KOSCHEI_CLOUD_RUNTIME_SESSION",
+    "large_run": {
+      "default": "DENY",
+      "approval_env": "KOSCHEI_LARGE_RUN_APPROVED",
+      "require_object_storage": true
+    }
+  },
+  "termination": {
+    "require_archive_sync": true,
+    "require_manifest_sha256": true,
+    "require_remote_persistence_before_release": true,
+    "large_run_require_object_storage_sync": true,
+    "clickhouse_flush_required": false
+  }
+}

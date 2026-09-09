@@ -41,7 +41,7 @@ class ReviewedDefenseLesson(StrictModel):
     review_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def review_authority_is_fail_closed(self) -> "ReviewedDefenseLesson":
+    def review_authority_is_fail_closed(self) -> ReviewedDefenseLesson:
         sequences = [row.sequence for row in self.expected_steps]
         if sequences != list(range(1, len(sequences) + 1)):
             raise ValueError("reviewed defense steps must be contiguous and ordered from 1")

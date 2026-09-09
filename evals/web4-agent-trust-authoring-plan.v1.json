@@ -1,0 +1,158 @@
+{
+  "schema_version": "sentinel.web4-agent-trust-authoring-plan.v1",
+  "plan_id": "koschei-web4-agent-trust-authoring-v1",
+  "observed_at": "2026-09-07",
+  "status": "planning_only",
+  "automatic_gold_generation_allowed": false,
+  "automatic_human_review_allowed": false,
+  "training_authorization": false,
+  "evaluation_authorization": false,
+  "promotion_eligible": false,
+  "production_activation_allowed": false,
+  "source_license_review_required": true,
+  "source_provenance_review_required": true,
+  "source_snapshot_required": true,
+  "answer_key_storage": "SEPARATE_FILE_SHA256_ONLY",
+  "batch_intake_required": true,
+  "split_is_authoritative_only_after_intake": true,
+  "planning_holdout_basis_points": 2000,
+  "planning_target_holdout_per_subfamily": 12,
+  "expected_proposals_per_subfamily_for_target_holdout": 60,
+  "expected_proposal_count_is_not_a_guarantee": true,
+  "priority_source_groups": {
+    "P0": [
+      "ietf.draft.nemethi.aid-agent-identity-discovery-00",
+      "ietf.draft.prakash.agent-identity-protocol-01",
+      "ietf.draft.tonyai.a2a-trust-01",
+      "owasp.agent-control-standard-2026"
+    ],
+    "P1": [
+      "ietf.draft.mozleywilliams.dnsop-dnsaid-02",
+      "ietf.draft.pro.adp-agent-discovery-02",
+      "ietf.draft.wei.aic-identity-cert-00",
+      "ietf.draft.daniel.ai-agent-internet-architecture-00",
+      "w3c.vc-forgery-defense-20260714",
+      "w3c.vc-recognized-entities-20260816"
+    ]
+  },
+  "subfamilies": [
+    {
+      "family_id": "dns_agent_discovery_spoofing",
+      "priority": "P0",
+      "benchmark_parent_family": "agent_identity_reasoning",
+      "required_source_refs": [
+        "ietf.draft.nemethi.aid-agent-identity-discovery-00",
+        "ietf.draft.mozleywilliams.dnsop-dnsaid-02",
+        "ietf.draft.pro.adp-agent-discovery-02"
+      ],
+      "minimum_distinct_sources_per_case": 2,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    },
+    {
+      "family_id": "endpoint_proof_mismatch",
+      "priority": "P0",
+      "benchmark_parent_family": "principal_verifier_binding",
+      "required_source_refs": [
+        "ietf.draft.nemethi.aid-agent-identity-discovery-00",
+        "ietf.draft.pro.adp-agent-discovery-02"
+      ],
+      "minimum_distinct_sources_per_case": 1,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    },
+    {
+      "family_id": "delegation_scope_escalation",
+      "priority": "P0",
+      "benchmark_parent_family": "delegation_scope_widening_detection",
+      "required_source_refs": [
+        "ietf.draft.prakash.agent-identity-protocol-01",
+        "ietf.draft.tonyai.a2a-trust-01"
+      ],
+      "minimum_distinct_sources_per_case": 1,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    },
+    {
+      "family_id": "confused_deputy_delegation",
+      "priority": "P0",
+      "benchmark_parent_family": "confused_deputy_reasoning",
+      "required_source_refs": [
+        "ietf.draft.prakash.agent-identity-protocol-01",
+        "ietf.draft.wei.aic-identity-cert-00"
+      ],
+      "minimum_distinct_sources_per_case": 1,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    },
+    {
+      "family_id": "spawn_chain_provenance_forgery",
+      "priority": "P0",
+      "benchmark_parent_family": "delegation_chain_reconstruction",
+      "required_source_refs": [
+        "ietf.draft.tonyai.a2a-trust-01"
+      ],
+      "minimum_distinct_sources_per_case": 1,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    },
+    {
+      "family_id": "provenance_stripping_or_replay",
+      "priority": "P0",
+      "benchmark_parent_family": "artifact_provenance_validation",
+      "required_source_refs": [
+        "ietf.draft.tonyai.a2a-trust-01",
+        "ietf.draft.daniel.ai-agent-internet-architecture-00"
+      ],
+      "minimum_distinct_sources_per_case": 1,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    },
+    {
+      "family_id": "runtime_policy_bypass",
+      "priority": "P0",
+      "benchmark_parent_family": "agent_authorization_reasoning",
+      "required_source_refs": [
+        "owasp.agent-control-standard-2026"
+      ],
+      "minimum_distinct_sources_per_case": 1,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    },
+    {
+      "family_id": "memory_context_poisoning_trust_chain",
+      "priority": "P0",
+      "benchmark_parent_family": "memory_context_poisoning_detection",
+      "required_source_refs": [
+        "owasp.agent-control-standard-2026"
+      ],
+      "minimum_distinct_sources_per_case": 1,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    },
+    {
+      "family_id": "stale_or_revoked_agent_identity",
+      "priority": "P1",
+      "benchmark_parent_family": "credential_status_and_freshness",
+      "required_source_refs": [
+        "ietf.draft.daniel.ai-agent-internet-architecture-00",
+        "ietf.draft.wei.aic-identity-cert-00"
+      ],
+      "minimum_distinct_sources_per_case": 1,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    },
+    {
+      "family_id": "issuer_key_compromise_valid_signature",
+      "priority": "P1",
+      "benchmark_parent_family": "artifact_provenance_validation",
+      "required_source_refs": [
+        "w3c.vc-forgery-defense-20260714",
+        "w3c.vc-recognized-entities-20260816"
+      ],
+      "minimum_distinct_sources_per_case": 2,
+      "planning_target_holdout": 12,
+      "expected_proposals_for_target_holdout": 60
+    }
+  ]
+}

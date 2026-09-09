@@ -19,7 +19,6 @@ from koschei_sentinel.defense_reflex_corpus_v3 import (
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json, resolve_under_root
 
-
 SYSTEM_PROMPT = (
     "You are Koschei Sentinel's authorized cyber-defense reasoning model. "
     "Use only the supplied cyber-state and protected-asset scope. Return exactly one "
@@ -72,7 +71,7 @@ class CyberLoraConfig(StrictModel):
     )
 
     @model_validator(mode="after")
-    def suffixes_are_safe(self) -> "CyberLoraConfig":
+    def suffixes_are_safe(self) -> CyberLoraConfig:
         if len(self.target_suffixes) != len(set(self.target_suffixes)):
             raise ValueError("Cyber LoRA target suffixes must be unique")
         if any(not row or "/" in row or "\\" in row for row in self.target_suffixes):
@@ -109,7 +108,7 @@ class CyberSFTConfig(StrictModel):
     lora: CyberLoraConfig = Field(default_factory=CyberLoraConfig)
 
     @model_validator(mode="after")
-    def config_is_safe(self) -> "CyberSFTConfig":
+    def config_is_safe(self) -> CyberSFTConfig:
         for field_name, value in (
             ("corpus_dir", self.corpus_dir),
             ("validation_corpus_dir", self.validation_corpus_dir),
@@ -293,7 +292,7 @@ def load_cyber_sft_validation_examples(
 
 
 def _bucket(example_id: str, seed: int) -> int:
-    digest = hashlib.sha256(f"{seed}|{example_id}".encode("utf-8")).digest()
+    digest = hashlib.sha256(f"{seed}|{example_id}".encode()).digest()
     return int.from_bytes(digest[:8], "big")
 
 

@@ -9,11 +9,13 @@ from typing import Literal
 from pydantic import Field
 
 from koschei_sentinel.cyber_corpus_catalog import CyberSource, load_catalog
-from koschei_sentinel.cyber_source_extractors import (
-    extract_attack_snapshot,
-    extract_kubernetes_snapshot,
-    extract_rustsec_snapshot,
+from koschei_sentinel.cyber_primary_extractors import (
+    extract_attack_stix_snapshot,
+    extract_kubernetes_security_snapshot,
     extract_yara_snapshot,
+)
+from koschei_sentinel.cyber_source_extractors import (
+    extract_rustsec_snapshot,
     snapshot_sha256,
     write_extracted_release,
 )
@@ -137,9 +139,9 @@ def materialize_snapshot(
     if provider == "rustsec":
         rows = extract_rustsec_snapshot(snapshot, **kwargs)
     elif provider == "attack":
-        rows = extract_attack_snapshot(snapshot, **kwargs)
+        rows = extract_attack_stix_snapshot(snapshot, **kwargs)
     elif provider == "kubernetes":
-        rows = extract_kubernetes_snapshot(snapshot, **kwargs)
+        rows = extract_kubernetes_security_snapshot(snapshot, **kwargs)
     else:
         rows = extract_yara_snapshot(snapshot, **kwargs)
 

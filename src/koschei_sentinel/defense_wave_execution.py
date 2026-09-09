@@ -45,7 +45,7 @@ class DefenseWaveComponentExecution(StrictModel):
     status: DefenseWaveComponentStatus = DefenseWaveComponentStatus.PENDING_AUTHORIZATION
 
     @model_validator(mode="after")
-    def component_binding_is_valid(self) -> "DefenseWaveComponentExecution":
+    def component_binding_is_valid(self) -> DefenseWaveComponentExecution:
         if self.component_id != self.schedule_item.component_id:
             raise ValueError("wave component_id differs from schedule item")
         if self.scheduling_subject_id != self.schedule_item.scheduling_subject_id:
@@ -104,7 +104,7 @@ class DefenseWaveExecution(StrictModel):
     rationale: list[str]
 
     @model_validator(mode="after")
-    def wave_integrity(self) -> "DefenseWaveExecution":
+    def wave_integrity(self) -> DefenseWaveExecution:
         ids = [row.component_id for row in self.components]
         if len(ids) != len(set(ids)):
             raise ValueError("defense wave contains duplicate component executions")

@@ -1,0 +1,21 @@
+{
+  "schema_version": "sentinel.web4-benchmark-case-proposal.v1",
+  "case_id": "fixture-web4-intake-001",
+  "family": "delegation_scope_widening_detection",
+  "created_at": "2026-09-06T18:00:00+00:00",
+  "model_input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "A draft agent protocol delegates a narrowly scoped credential. Determine whether a downstream delegate may widen that scope without a new explicit grant, and state the protocol authority status conservatively."
+      }
+    ]
+  },
+  "sources": [
+    {
+      "source_ref": "nist.ai-agent-identity-authority-2026",
+      "snapshot_path": "source-snapshot.txt",
+      "snapshot_receipt_path": "source-snapshot.receipt.json"
+    }
+  ]
+}

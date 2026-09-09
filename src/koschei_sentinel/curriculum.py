@@ -6,37 +6,51 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-CURRICULUM_SCHEMA = "sentinel.curriculum.v1"
-REQUIRED_STAGE_IDS = ("L0", "L1", "L2", "L3", "L4", "S0", "S1", "S2", "S3", "S4")
+CURRICULUM_SCHEMA = "sentinel.curriculum.v2"
+REQUIRED_STAGE_IDS = (
+    "L0",
+    "L1",
+    "L2",
+    "N0",
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N5",
+    "S0",
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+)
+REQUIRED_SEMANTIC_PLANES = ("compatibility", "native_reality")
 REQUIRED_MODEL_DENIES = {
-    "grant_capability",
-    "widen_capability",
+    "grant_capability_or_authority",
+    "widen_capability_or_authority",
     "bypass_compiler_policy",
     "bypass_runtime_policy",
     "mutate_evidence",
     "override_deterministic_verdict",
+    "reinterpret_baseline_as_permission",
     "promote_itself",
     "deploy_itself",
-}
-REQUIRED_KOSCH_DENIES = {
-    "raise_model_confidence",
-    "suppress_abstention",
-    "weaken_benchmark_policy",
-    "pass_failed_language_gate",
-    "promote_candidate",
-    "deploy_candidate",
-    "grant_compiler_runtime_authority",
 }
 REQUIRED_ZERO_TOLERANCE = {
     "invented_authority",
     "capability_rewidening",
     "dependency_ambient_authority",
-    "compiler_bypass_repair",
-    "hidden_capability_expansion",
-    "false_compile_claim",
+    "compiler_runtime_bypass_repair",
+    "hidden_authority_expansion",
+    "false_compile_or_execution_claim",
     "unimplemented_feature_claim",
     "model_confidence_as_permission",
+    "evidence_as_authority",
+    "baseline_as_authority",
+    "semantic_plane_confusion",
+    "mainstream_syntax_relabelled_as_native_reality",
 }
+
+SemanticPlane = Literal["compatibility", "native_reality"]
 
 
 class StrictModel(BaseModel):
@@ -46,9 +60,11 @@ class StrictModel(BaseModel):
 class CurriculumSourceContract(StrictModel):
     repository: str
     required_document: str
+    required_contract_generation: int
     commit_sha_required: bool
-    compiler_oracle_required: bool
+    compiler_runtime_oracle_required: bool
     mutable_branch_is_not_provenance: bool
+    semantic_plane_required: bool
 
     @model_validator(mode="after")
     def validate_source_authority(self) -> CurriculumSourceContract:
@@ -56,19 +72,25 @@ class CurriculumSourceContract(StrictModel):
             raise ValueError("language curriculum repository must be bugsbuny243/koschei-lang")
         if not self.required_document.endswith("MODEL_TRAINING_CONTRACT.md"):
             raise ValueError("language curriculum must bind MODEL_TRAINING_CONTRACT.md")
+        if self.required_contract_generation != 2:
+            raise ValueError("language curriculum must require contract generation 2")
         if not self.commit_sha_required:
             raise ValueError("language curriculum must require an immutable commit SHA")
-        if not self.compiler_oracle_required:
-            raise ValueError("language curriculum must require compiler-oracle labels")
+        if not self.compiler_runtime_oracle_required:
+            raise ValueError("language curriculum must require compiler/runtime oracle labels")
         if not self.mutable_branch_is_not_provenance:
             raise ValueError("mutable branch names cannot be accepted as provenance")
+        if not self.semantic_plane_required:
+            raise ValueError("language curriculum must require explicit semantic-plane labels")
         return self
 
 
 class CurriculumStage(StrictModel):
     id: str
     name: str
+    semantic_plane: SemanticPlane | None = None
     requires_compiler_labels: bool = False
+    required_concepts: list[str] = Field(default_factory=list)
     promotion_gate: str | None = None
     requires: list[str] = Field(default_factory=list)
     production_authority: bool | None = None
@@ -87,6 +109,8 @@ class LanguageHardGate(StrictModel):
             raise ValueError("language hard gate contains duplicate zero-tolerance rules")
         if len(self.required_benchmark_families) != len(set(self.required_benchmark_families)):
             raise ValueError("language hard gate contains duplicate benchmark families")
+        if not self.required_benchmark_families:
+            raise ValueError("language hard gate requires benchmark families")
         return self
 
 
@@ -99,47 +123,62 @@ class ModelAuthorityBoundary(StrictModel):
         missing = REQUIRED_MODEL_DENIES.difference(self.model_must_never)
         if missing:
             raise ValueError(f"model authority deny set incomplete: {sorted(missing)}")
+        if len(self.model_must_never) != len(set(self.model_must_never)):
+            raise ValueError("model authority deny set contains duplicates")
         if set(self.model_may).intersection(self.model_must_never):
             raise ValueError("model capability is simultaneously allowed and forbidden")
         return self
 
 
-class KOSCHBoundary(StrictModel):
-    allowed_future_roles: list[str]
-    must_never: list[str]
-
-    @model_validator(mode="after")
-    def validate_kosch_boundary(self) -> KOSCHBoundary:
-        missing = REQUIRED_KOSCH_DENIES.difference(self.must_never)
-        if missing:
-            raise ValueError(f"KOSCH authority deny set incomplete: {sorted(missing)}")
-        return self
-
-
 class CurriculumPolicy(StrictModel):
-    schema_: Literal[CURRICULUM_SCHEMA] = Field(alias="schema")
+    schema_: Literal["sentinel.curriculum.v2"] = Field(alias="schema")
     id: str
     status: Literal["offline_research_only"]
     runtime_integration: Literal[False]
     source_contract: CurriculumSourceContract
+    semantic_planes: list[SemanticPlane]
     stages: list[CurriculumStage]
     language_hard_gate: LanguageHardGate
     authority_boundary: ModelAuthorityBoundary
-    kosch_boundary: KOSCHBoundary
 
     @model_validator(mode="after")
     def validate_stage_order_and_authority(self) -> CurriculumPolicy:
+        if tuple(self.semantic_planes) != REQUIRED_SEMANTIC_PLANES:
+            raise ValueError(
+                "curriculum semantic planes must be ordered exactly as "
+                + ",".join(REQUIRED_SEMANTIC_PLANES)
+            )
+
         stage_ids = tuple(stage.id for stage in self.stages)
         if stage_ids != REQUIRED_STAGE_IDS:
             raise ValueError(
                 "curriculum stages must be ordered exactly as " + ",".join(REQUIRED_STAGE_IDS)
             )
-        for stage in self.stages[:5]:
+
+        compatibility_stages = self.stages[:3]
+        for stage in compatibility_stages:
+            if stage.semantic_plane != "compatibility":
+                raise ValueError(f"compatibility stage {stage.id} must declare compatibility")
             if not stage.requires_compiler_labels:
                 raise ValueError(f"language stage {stage.id} must require compiler labels")
-        if self.stages[4].promotion_gate != "language_hard_gate":
-            raise ValueError("L4 must end at language_hard_gate")
-        for stage in self.stages[5:]:
+            if stage.required_concepts:
+                raise ValueError(f"compatibility stage {stage.id} must not claim native concepts")
+
+        native_stages = self.stages[3:9]
+        for stage in native_stages:
+            if stage.semantic_plane != "native_reality":
+                raise ValueError(f"native stage {stage.id} must declare native_reality")
+            if not stage.required_concepts:
+                raise ValueError(f"native stage {stage.id} must declare required concepts")
+            if len(stage.required_concepts) != len(set(stage.required_concepts)):
+                raise ValueError(f"native stage {stage.id} contains duplicate required concepts")
+
+        if self.stages[8].id != "N5" or self.stages[8].promotion_gate != "language_hard_gate":
+            raise ValueError("N5 must end at language_hard_gate")
+        if any(stage.promotion_gate is not None for stage in self.stages[:8]):
+            raise ValueError("language hard gate may only be emitted by N5")
+
+        for stage in self.stages[9:]:
             if "language_hard_gate" not in stage.requires:
                 raise ValueError(f"security stage {stage.id} must require language_hard_gate")
             if stage.production_authority is True:

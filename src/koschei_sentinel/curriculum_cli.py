@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--config",
         required=True,
         type=Path,
-        help="Path to a sentinel.curriculum.v1 policy.",
+        help="Path to a sentinel.curriculum.v2 policy.",
     )
     return parser
 
@@ -30,6 +30,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"curriculum rejected: {exc}", file=sys.stderr)
         return 2
 
+    gate_stage = next(
+        stage for stage in policy.stages if stage.promotion_gate == "language_hard_gate"
+    )
     print(
         json.dumps(
             {
@@ -37,8 +40,10 @@ def main(argv: list[str] | None = None) -> int:
                 "schema": policy.schema_,
                 "id": policy.id,
                 "runtime_integration": policy.runtime_integration,
+                "semantic_planes": policy.semantic_planes,
                 "stages": [stage.id for stage in policy.stages],
-                "language_gate": policy.stages[4].promotion_gate,
+                "language_gate": gate_stage.promotion_gate,
+                "language_gate_stage": gate_stage.id,
             },
             indent=2,
             sort_keys=True,

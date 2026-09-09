@@ -56,7 +56,7 @@ class CyberRelation(StrictModel):
     rationale: str | None = None
 
     @model_validator(mode="after")
-    def evidence_rules(self) -> "CyberRelation":
+    def evidence_rules(self) -> CyberRelation:
         if self.status is EvidenceStatus.OBSERVED and not self.evidence:
             raise ValueError("OBSERVED relations require evidence")
         if self.status is EvidenceStatus.DISPROVED and self.confidence > 0.5:
@@ -71,7 +71,7 @@ class CyberStateGraph(StrictModel):
     relations: list[CyberRelation] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def graph_integrity(self) -> "CyberStateGraph":
+    def graph_integrity(self) -> CyberStateGraph:
         ids = [entity.entity_id for entity in self.entities]
         if len(ids) != len(set(ids)):
             raise ValueError("entity_id values must be unique")

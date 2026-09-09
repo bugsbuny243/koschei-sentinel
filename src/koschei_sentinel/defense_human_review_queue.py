@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from koschei_sentinel.defense_authority import DefenseAction, DefenseMode
+from koschei_sentinel.defense_authority import DefenseActionType, DefenseMode
 from koschei_sentinel.defense_reflex_corpus_v3 import DefenseReflexTrainingExampleV3
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
@@ -21,7 +21,7 @@ class HumanReviewTaskStatus(StrEnum):
 class HumanDefenseReviewStep(StrictModel):
     sequence: int = Field(gt=0)
     expected_mode: DefenseMode
-    action: DefenseAction
+    action: DefenseActionType
     target_entity_id: str = Field(min_length=1, max_length=512)
     rationale: str = Field(min_length=16, max_length=4000)
     supporting_evidence_ids: list[str] = Field(min_length=1, max_length=256)
@@ -59,7 +59,7 @@ class HumanDefenseReviewSubmission(StrictModel):
     submission_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def ordered_steps(self) -> "HumanDefenseReviewSubmission":
+    def ordered_steps(self) -> HumanDefenseReviewSubmission:
         sequence = [row.sequence for row in self.steps]
         if sequence != list(range(1, len(sequence) + 1)):
             raise ValueError("human defense review steps must be contiguous from sequence 1")

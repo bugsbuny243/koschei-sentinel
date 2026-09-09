@@ -1,7 +1,5 @@
 import pytest
 
-from tests.test_defense_resource_scheduler import _policy, _result
-
 from koschei_sentinel.assured_multi_incident_defense import (
     build_assured_multi_incident_defense_plan,
 )
@@ -22,6 +20,7 @@ from koschei_sentinel.perception_source_registry import (
     PerceptionSourceRegistry,
     admit_perception_adapter_result,
 )
+from tests.test_defense_resource_scheduler import _policy, _result
 
 
 def _results(version: str, chars: tuple[str, str, str]):

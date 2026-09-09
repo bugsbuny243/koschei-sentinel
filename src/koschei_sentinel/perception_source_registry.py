@@ -33,7 +33,7 @@ class PerceptionSourceEnrollment(StrictModel):
         return f"{self.source_type.value}:{self.source_instance}"
 
     @model_validator(mode="after")
-    def adapter_ids_are_unique(self) -> "PerceptionSourceEnrollment":
+    def adapter_ids_are_unique(self) -> PerceptionSourceEnrollment:
         if len(self.allowed_adapter_ids) != len(set(self.allowed_adapter_ids)):
             raise ValueError("source enrollment allowed_adapter_ids must be unique")
         return self
@@ -47,7 +47,7 @@ class PerceptionSourceRegistry(StrictModel):
     enrollments: list[PerceptionSourceEnrollment] = Field(min_length=1, max_length=10000)
 
     @model_validator(mode="after")
-    def principals_are_unique(self) -> "PerceptionSourceRegistry":
+    def principals_are_unique(self) -> PerceptionSourceRegistry:
         principals = [row.principal for row in self.enrollments]
         if len(principals) != len(set(principals)):
             raise ValueError("perception source registry principals must be unique")
@@ -79,7 +79,7 @@ class AdmittedPerceptionBatch(StrictModel):
     admission: PerceptionAdmissionReceipt
 
     @model_validator(mode="after")
-    def envelope_integrity(self) -> "AdmittedPerceptionBatch":
+    def envelope_integrity(self) -> AdmittedPerceptionBatch:
         if (
             self.adapter_result.perception_batch.model_dump(mode="json")
             != self.perception_batch.model_dump(mode="json")

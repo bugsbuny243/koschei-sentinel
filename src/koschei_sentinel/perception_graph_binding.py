@@ -35,7 +35,7 @@ class BoundPerceptionGraph(StrictModel):
     receipt: PerceptionGraphReceipt
 
     @model_validator(mode="after")
-    def binding_is_self_consistent(self) -> "BoundPerceptionGraph":
+    def binding_is_self_consistent(self) -> BoundPerceptionGraph:
         if self.graph.graph_id != self.receipt.graph_id:
             raise ValueError("bound perception graph_id does not match receipt")
         if cyber_state_graph_sha256(self.graph) != self.receipt.graph_sha256:

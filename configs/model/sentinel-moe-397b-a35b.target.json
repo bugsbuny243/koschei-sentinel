@@ -1,0 +1,56 @@
+{
+  "schema_version": "sentinel.model-target.v1",
+  "model_id": "koschei-sentinel-moe-397b-a35b",
+  "product_identity": "KOSCHEI_SENTINEL",
+  "status": "ARCHITECTURE_TARGET",
+  "architecture_family": "SPARSE_MOE",
+  "parameter_targets": {
+    "total_parameters_billion": 397,
+    "active_parameters_billion": 35,
+    "total_tolerance_billion": 8,
+    "active_tolerance_billion": 3
+  },
+  "required_capabilities": [
+    "security_event_structuring",
+    "attack_defense_relation_reasoning",
+    "evidence_grounding",
+    "uncertainty_calibration",
+    "security_specific_routing",
+    "checkpoint_provenance"
+  ],
+  "structured_representation": [
+    "Entity",
+    "Event",
+    "Intent",
+    "Capability",
+    "Vulnerability",
+    "Action",
+    "Consequence",
+    "Evidence"
+  ],
+  "validation_stages": [
+    "architecture",
+    "tokenizer_and_data_model",
+    "dataset_pipeline",
+    "trainer_correctness",
+    "routing",
+    "checkpointing",
+    "security_evaluation",
+    "distributed_training"
+  ],
+  "external_bootstrap_models": [
+    {
+      "model": "Qwen/Qwen3.5-397B-A17B",
+      "revision": "8472618112abcbd45acbcdc58436aff4233c23f7",
+      "role": "EXTERNAL_BOOTSTRAP_AND_TRAINER_PROOF",
+      "is_koschei_sentinel": false
+    }
+  ],
+  "policies": {
+    "external_model_must_not_define_product_identity": true,
+    "paid_large_model_training_requires_explicit_approval": true,
+    "unverified_checkpoint_use": "DENY",
+    "self_generated_training_data_default": "DENY",
+    "promotion_requires_security_regression_gates": true
+  }
+}

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from koschei_sentinel.cyber_corpus_catalog import CyberArtifact, LicenseStatus
 from koschei_sentinel.cyber_source_extractors import ExtractedArtifact, snapshot_sha256

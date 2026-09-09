@@ -16,7 +16,6 @@ from koschei_sentinel.multi_incident_cyber_range import (
     run_multi_incident_cyber_range,
 )
 
-
 SHA = "f" * 64
 
 
@@ -41,11 +40,11 @@ def _snapshot_one() -> CyberStateGraph:
             CyberEntity(entity_id="process:b", entity_type=CyberEntityType.PROCESS),
         ],
         relations=[
-            CyberRelation(relation_id="a1", source_entity_id="credential:a", target_entity_id="device:a", relation_type="uses_credential", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a1")]),
-            CyberRelation(relation_id="a2", source_entity_id="device:a", target_entity_id="pipeline:a", relation_type="modifies_pipeline", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a2")]),
-            CyberRelation(relation_id="a3", source_entity_id="pipeline:a", target_entity_id="wallet:a", relation_type="reaches_signer", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a3")]),
-            CyberRelation(relation_id="b1", source_entity_id="credential:b", target_entity_id="device:b", relation_type="uses_credential", status=EvidenceStatus.OBSERVED, confidence=0.95, evidence=[ev("b1")]),
-            CyberRelation(relation_id="b2", source_entity_id="device:b", target_entity_id="process:b", relation_type="executes", status=EvidenceStatus.OBSERVED, confidence=0.95, evidence=[ev("b2")]),
+            CyberRelation(relation_id="rel:a1", source_entity_id="credential:a", target_entity_id="device:a", relation_type="uses_credential", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a1")]),
+            CyberRelation(relation_id="rel:a2", source_entity_id="device:a", target_entity_id="pipeline:a", relation_type="modifies_pipeline", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a2")]),
+            CyberRelation(relation_id="rel:a3", source_entity_id="pipeline:a", target_entity_id="wallet:a", relation_type="reaches_signer", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a3")]),
+            CyberRelation(relation_id="rel:b1", source_entity_id="credential:b", target_entity_id="device:b", relation_type="uses_credential", status=EvidenceStatus.OBSERVED, confidence=0.95, evidence=[ev("b1")]),
+            CyberRelation(relation_id="rel:b2", source_entity_id="device:b", target_entity_id="process:b", relation_type="executes", status=EvidenceStatus.OBSERVED, confidence=0.95, evidence=[ev("b2")]),
         ],
     )
 
@@ -63,11 +62,11 @@ def _snapshot_two() -> CyberStateGraph:
             CyberEntity(entity_id="process:b", entity_type=CyberEntityType.PROCESS),
         ],
         relations=[
-            CyberRelation(relation_id="a4", source_entity_id="credential:a2", target_entity_id="device:a2", relation_type="uses_credential", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a4")]),
-            CyberRelation(relation_id="a5", source_entity_id="device:a2", target_entity_id="pipeline:a2", relation_type="modifies_pipeline", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a5")]),
-            CyberRelation(relation_id="a6", source_entity_id="pipeline:a2", target_entity_id="wallet:a", relation_type="reaches_signer", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a6")]),
-            CyberRelation(relation_id="b1", source_entity_id="credential:b", target_entity_id="device:b", relation_type="uses_credential", status=EvidenceStatus.OBSERVED, confidence=0.95, evidence=[ev("b1")]),
-            CyberRelation(relation_id="b2", source_entity_id="device:b", target_entity_id="process:b", relation_type="executes", status=EvidenceStatus.OBSERVED, confidence=0.95, evidence=[ev("b2")]),
+            CyberRelation(relation_id="rel:a4", source_entity_id="credential:a2", target_entity_id="device:a2", relation_type="uses_credential", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a4")]),
+            CyberRelation(relation_id="rel:a5", source_entity_id="device:a2", target_entity_id="pipeline:a2", relation_type="modifies_pipeline", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a5")]),
+            CyberRelation(relation_id="rel:a6", source_entity_id="pipeline:a2", target_entity_id="wallet:a", relation_type="reaches_signer", status=EvidenceStatus.OBSERVED, confidence=0.99, evidence=[ev("a6")]),
+            CyberRelation(relation_id="rel:b1", source_entity_id="credential:b", target_entity_id="device:b", relation_type="uses_credential", status=EvidenceStatus.OBSERVED, confidence=0.95, evidence=[ev("b1")]),
+            CyberRelation(relation_id="rel:b2", source_entity_id="device:b", target_entity_id="process:b", relation_type="executes", status=EvidenceStatus.OBSERVED, confidence=0.95, evidence=[ev("b2")]),
         ],
     )
 

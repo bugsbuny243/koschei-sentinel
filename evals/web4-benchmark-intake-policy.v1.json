@@ -1,0 +1,16 @@
+{
+  "schema_version": "sentinel.web4-benchmark-intake-policy.v1",
+  "split_seed": "sentinel-web4-benchmark-split-v1",
+  "development_bps": 6000,
+  "validation_bps": 2000,
+  "holdout_bps": 2000,
+  "split_before_human_review": true,
+  "manual_split_override_allowed": false,
+  "training_authorization": false,
+  "evaluation_authorization_before_human_review": false,
+  "answer_key_storage": "SEPARATE_FILE_SHA256_ONLY",
+  "require_source_snapshot_hashes": true,
+  "require_source_snapshot_receipts": true,
+  "source_registry_eval_exclusion_required": true,
+  "source_registry_training_closed_required": true
+}

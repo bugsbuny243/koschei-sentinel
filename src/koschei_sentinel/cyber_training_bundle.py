@@ -39,7 +39,7 @@ class CyberTrainingBundle(StrictModel):
     bundle_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def holdout_is_separate(self) -> "CyberTrainingBundle":
+    def holdout_is_separate(self) -> CyberTrainingBundle:
         training_hashes = {
             self.knowledge_training_corpus_sha256,
             self.knowledge_artifact_manifest_sha256,

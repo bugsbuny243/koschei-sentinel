@@ -27,7 +27,7 @@ class InterceptionExecutionStep(StrictModel):
     outcome_evidence_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def evidence_is_required_for_state(self) -> "InterceptionExecutionStep":
+    def evidence_is_required_for_state(self) -> InterceptionExecutionStep:
         if self.status in {
             InterceptionStepStatus.AUTHORIZED,
             InterceptionStepStatus.EXECUTED,
@@ -61,7 +61,7 @@ class InterceptionExecution(StrictModel):
     rationale: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def sequence_integrity(self) -> "InterceptionExecution":
+    def sequence_integrity(self) -> InterceptionExecution:
         sequences = [step.sequence for step in self.steps]
         if sequences != list(range(1, len(sequences) + 1)):
             raise ValueError("interception execution steps must be contiguous and ordered")

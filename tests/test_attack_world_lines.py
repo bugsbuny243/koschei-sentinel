@@ -11,7 +11,6 @@ from koschei_sentinel.cyber_state_graph import (
     EvidenceStatus,
 )
 
-
 SHA = "d" * 64
 
 
@@ -38,7 +37,7 @@ def _graph(graph_id: str, edges: list[tuple[str, str, str]]) -> CyberStateGraph:
     ]
     relations = [
         CyberRelation(
-            relation_id=relation_id,
+            relation_id=f"rel:{relation_id}",
             source_entity_id=source,
             target_entity_id=target,
             relation_type="executes",

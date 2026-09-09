@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koschei.invalid/schemas/sentinel.web4-security-event.v1.json",
+  "title": "Koschei Sentinel Web4 Security Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "entities",
+    "intent",
+    "capabilities",
+    "actions",
+    "consequences",
+    "evidence",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": {"const": "sentinel.web4-security-event.v1"},
+    "event_id": {"type": "string", "minLength": 1, "maxLength": 160},
+    "observed_at": {"type": ["string", "null"], "format": "date-time"},
+    "source_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 256}
+    },
+    "entities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["entity_id", "entity_type"],
+        "properties": {
+          "entity_id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "entity_type": {
+            "enum": [
+              "human",
+              "ai_agent",
+              "software_agent",
+              "avatar",
+              "iot_device",
+              "sensor",
+              "robot",
+              "digital_twin",
+              "edge_node",
+              "identity_issuer",
+              "credential_holder",
+              "credential_verifier",
+              "wallet",
+              "contract",
+              "service",
+              "tool",
+              "data_artifact"
+            ]
+          },
+          "label": {"type": ["string", "null"], "maxLength": 512},
+          "trust_state": {"enum": ["VERIFIED", "PARTIAL", "UNVERIFIED", "REVOKED", "UNKNOWN"]}
+        }
+      }
+    },
+    "relations": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_entity_id", "relation", "target_entity_id"],
+        "properties": {
+          "source_entity_id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "relation": {
+            "enum": [
+              "delegates_to",
+              "authorizes",
+              "calls",
+              "controls",
+              "represents",
+              "observes",
+              "updates",
+              "derives_from",
+              "verifies",
+              "signs_for",
+              "revokes",
+              "trusts",
+              "connects_to"
+            ]
+          },
+          "target_entity_id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "evidence_refs": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {"type": "string", "minLength": 1, "maxLength": 160}
+          }
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "confidence"],
+      "properties": {
+        "classification": {"enum": ["BENIGN", "UNKNOWN", "SUSPICIOUS", "MALICIOUS"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "basis": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 1000}}
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["actor_entity_id", "action", "resource", "scope_state"],
+        "properties": {
+          "actor_entity_id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "action": {"type": "string", "minLength": 1, "maxLength": 256},
+          "resource": {"type": "string", "minLength": 1, "maxLength": 512},
+          "scope_state": {"enum": ["EXACT", "NARROWED", "WIDENED", "AMBIGUOUS", "UNVERIFIED"]},
+          "constraints": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 1000}},
+          "evidence_refs": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 160}}
+        }
+      }
+    },
+    "delegation_chain": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["principal_entity_id", "delegate_entity_id", "scope_state"],
+        "properties": {
+          "principal_entity_id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "delegate_entity_id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "scope_state": {"enum": ["EXACT", "NARROWED", "WIDENED", "AMBIGUOUS", "UNVERIFIED"]},
+          "expires_at": {"type": ["string", "null"], "format": "date-time"},
+          "evidence_refs": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 160}}
+        }
+      }
+    },
+    "credential_context": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["credential_ref", "verification_state"],
+        "properties": {
+          "credential_ref": {"type": "string", "minLength": 1, "maxLength": 256},
+          "issuer_entity_id": {"type": ["string", "null"], "maxLength": 160},
+          "holder_entity_id": {"type": ["string", "null"], "maxLength": 160},
+          "verifier_entity_id": {"type": ["string", "null"], "maxLength": 160},
+          "verification_state": {"enum": ["VERIFIED", "REVOKED", "EXPIRED", "INVALID", "UNVERIFIED", "UNKNOWN"]},
+          "freshness_state": {"enum": ["FRESH", "STALE", "UNKNOWN"]},
+          "evidence_refs": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 160}}
+        }
+      }
+    },
+    "physical_digital_bindings": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["digital_entity_id", "binding_type", "trust_state"],
+        "properties": {
+          "digital_entity_id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "physical_ref": {"type": ["string", "null"], "maxLength": 512},
+          "binding_type": {"enum": ["DIGITAL_TWIN", "SENSOR_FEED", "ROBOTIC_ACTUATION", "SPATIAL_MAP", "IDENTITY_REPRESENTATION", "OTHER"]},
+          "trust_state": {"enum": ["VERIFIED", "PARTIAL", "DESYNCHRONIZED", "POISONED", "UNVERIFIED", "UNKNOWN"]},
+          "last_verified_at": {"type": ["string", "null"], "format": "date-time"},
+          "evidence_refs": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 160}}
+        }
+      }
+    },
+    "vulnerabilities": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "confidence"],
+        "properties": {
+          "category": {"type": "string", "minLength": 1, "maxLength": 256},
+          "description": {"type": ["string", "null"], "maxLength": 4000},
+          "confidence": {"enum": ["VERIFIED", "INFERRED", "UNVERIFIED"]},
+          "evidence_refs": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 160}}
+        }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["actor_entity_id", "action_type", "authority_state", "result_state"],
+        "properties": {
+          "actor_entity_id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "target_entity_id": {"type": ["string", "null"], "maxLength": 160},
+          "action_type": {"type": "string", "minLength": 1, "maxLength": 256},
+          "authority_state": {"enum": ["AUTHORIZED", "OUT_OF_SCOPE", "AMBIGUOUS", "UNVERIFIED", "REVOKED"]},
+          "result_state": {"enum": ["SUCCEEDED", "BLOCKED", "FAILED", "UNKNOWN"]},
+          "evidence_refs": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 160}}
+        }
+      }
+    },
+    "consequences": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["domain", "severity", "observed"],
+        "properties": {
+          "domain": {"enum": ["DIGITAL", "PHYSICAL", "ECONOMIC", "PRIVACY", "IDENTITY", "SAFETY", "AVAILABILITY", "INTEGRITY"]},
+          "severity": {"enum": ["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"]},
+          "observed": {"type": "boolean"},
+          "statement": {"type": ["string", "null"], "maxLength": 4000},
+          "evidence_refs": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 160}}
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidence_id", "source_ref", "statement", "confidence", "source_status"],
+        "properties": {
+          "evidence_id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "source_ref": {"type": "string", "minLength": 1, "maxLength": 256},
+          "statement": {"type": "string", "minLength": 1, "maxLength": 4000},
+          "confidence": {"enum": ["VERIFIED", "INFERRED", "UNVERIFIED"]},
+          "source_status": {"enum": ["STANDARD", "AUTHORITATIVE_GUIDANCE", "DRAFT", "PROPOSAL", "INCIDENT_EVIDENCE", "OTHER"]},
+          "captured_at": {"type": ["string", "null"], "format": "date-time"},
+          "revision": {"type": ["string", "null"], "maxLength": 256}
+        }
+      }
+    },
+    "uncertainty": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {"type": "string", "minLength": 1, "maxLength": 2000}
+    }
+  }
+}
