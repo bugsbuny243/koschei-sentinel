@@ -8,8 +8,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.cyber_corpus_catalog import LicenseScope, LicenseStatus
 from koschei_sentinel.pq_evidence_review import (
-    PQEvidenceReviewProof,
     PQEvidenceReviewerTrustPolicy,
+    PQEvidenceReviewProof,
     build_pq_evidence_review_proof,
     build_pq_evidence_reviewer_trust_policy,
     write_pq_evidence_review_proof,
