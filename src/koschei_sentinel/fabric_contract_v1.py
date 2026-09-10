@@ -44,7 +44,7 @@ def fabric_component_v1() -> FabricComponentV1:
         schemaVersion=FABRIC_SCHEMA_VERSION,
         component=FABRIC_COMPONENT,
         repository="bugsbuny243/koschei-sentinel",
-        role="observation-detection-response-and-model-intelligence",
+        role="independent-cybersecurity-model",
         preserveExisting=True,
         defaultMode="observe",
         breakingChangesAllowed=False,

@@ -1,0 +1,17 @@
+{
+  "schema_version": "koschei.commercial-package-policy.v1",
+  "products_sold_together": [
+    "koschei-lang",
+    "koschei-sentinel"
+  ],
+  "manifest_schema": "koschei.commercial-bundle.v1",
+  "runtime_dependency_between_products": false,
+  "integration": "versioned-contracts-only",
+  "bundle_integrity_is_release_approval": false,
+  "prices_and_tier_limits": "not_defined",
+  "independent_release_gates": [
+    "lang-release-trust-and-native-validation",
+    "sentinel-candidate-training-and-independent-evaluation",
+    "publisher-identity-and-commercial-license"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": "koschei.product-direction.v1",
+  "as_of": "2026-09-10",
+  "product": "koschei-sentinel",
+  "role": "independent-cybersecurity-model",
+  "capability_targets": [
+    "secure-code-development",
+    "vulnerability-research",
+    "attack-path-reasoning",
+    "security-testing",
+    "remediation",
+    "threat-intelligence"
+  ],
+  "model_target": {
+    "product_id": "koschei-sentinel-moe-397b-a35b",
+    "total_parameters_billions": 397,
+    "active_parameters_billions": 35,
+    "model_count": 1,
+    "status": "architecture-target"
+  },
+  "comparison_target": {
+    "user_reference": "Mythos 5.1",
+    "reference_identity": "not-verified-by-this-work",
+    "ambition": "surpass-on-matched-cybersecurity-evaluations",
+    "status": "unmeasured-development-goal"
+  },
+  "commercial_policy": "Lang-and-Sentinel-in-the-same-packages",
+  "web3_relationship": "ARVIS evidence interpretation is one use case",
+  "existing_training_evaluation_promotion_and_compute_gates": "preserve"
+}

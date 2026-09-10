@@ -1,5 +1,11 @@
 # Koschei Sentinel
 
+## Product direction and joint packages
+
+Koschei Sentinel is an independent cybersecurity model for code development, vulnerability research, attack-path reasoning and remediation. The single-model architecture target remains 397B total / 35B active parameters. ARVIS commentary is one application; trained-product readiness and competitive superiority require independent evaluation evidence.
+
+**Koschei Lang and Koschei Sentinel are offered together in the same commercial packages.** Their runtime dependencies and release gates remain independent. See [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md) and the [offline bundle contract](docs/COMMERCIAL_BUNDLE_V1.md).
+
 Evidence-grounded Web3 security model, dataset, training, evaluation, and inference platform for Koschei.
 
 Koschei Sentinel is not allowed to replace a signed deterministic verdict. Its job is to explain bounded evidence, surface limitations, and produce structured commentary that can be checked automatically.
