@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "component": "koschei-sentinel",
   "repository": "bugsbuny243/koschei-sentinel",
-  "role": "observation-detection-response-and-model-intelligence",
+  "role": "independent-cybersecurity-model",
   "preserveExisting": true,
   "defaultMode": "observe",
   "compatibility": {
