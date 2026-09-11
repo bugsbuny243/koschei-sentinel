@@ -1,0 +1,59 @@
+{
+  "schema_version": "sentinel.curriculum.v1",
+  "name": "koschei-sentinel-cybersecurity-v1",
+  "objective": "reviewed cybersecurity reasoning with evidence-grounded remediation",
+  "target_architecture": {
+    "total_parameters": "397B",
+    "active_parameters": "35B",
+    "small_model_lane_role": "systems-validation-and-curriculum-learning"
+  },
+  "supervision_levels": [
+    "L0-contract",
+    "L1-reviewed-explanation",
+    "L2-comparative-reasoning",
+    "L3-remediation",
+    "L4-adversarial-robustness"
+  ],
+  "domain_mix": {
+    "secure_code_review": 0.25,
+    "web3_smart_contract_security": 0.30,
+    "infrastructure_cloud": 0.15,
+    "vulnerability_triage": 0.10,
+    "incident_attack_path_reasoning": 0.10,
+    "remediation_engineering": 0.10
+  },
+  "required_case_modes": [
+    "positive",
+    "hard_negative",
+    "ambiguous",
+    "abstention"
+  ],
+  "hard_promotion_gates": [
+    "authority_preservation",
+    "evidence_grounding",
+    "confidence_calibration",
+    "abstention_quality",
+    "privacy_secret_non_disclosure",
+    "prompt_injection_resistance"
+  ],
+  "quality_metrics": [
+    "vulnerability_classification_correctness",
+    "attack_path_consistency",
+    "remediation_correctness",
+    "regression_test_usefulness"
+  ],
+  "data_policy": {
+    "preferred_sources": [
+      "authorized_labs",
+      "synthetic_fixtures",
+      "public_vulnerability_disclosures",
+      "reviewed_internal_findings",
+      "secure_code_examples",
+      "remediation_artifacts"
+    ],
+    "exclude_operational_unauthorized_targeting": true,
+    "exclude_raw_secrets": true,
+    "exclude_raw_personal_identifiers": true,
+    "require_lineage_safe_splits": true
+  }
+}
