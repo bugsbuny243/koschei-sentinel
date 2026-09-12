@@ -1,0 +1,176 @@
+{
+  "schema_version": "sentinel.web3-authority-eval-seeds.v1",
+  "curriculum_ref": "configs/training/web3-authority-evals.v1.json",
+  "purpose": "Reviewed defensive seed cases for authority/evidence reasoning. These are evaluation seeds, not offensive playbooks.",
+  "cases": [
+    {
+      "id": "auth-001-hidden-admin",
+      "family": "authority_graph",
+      "mode": "hard_negative",
+      "scenario": {
+        "claim": "The agent can only call one read-only tool.",
+        "observed": [
+          "UI shows a single tool permission.",
+          "Wallet module exposes an admin-upgrade role controlled by a separate signer.",
+          "The current module implementation can be replaced without the agent key changing."
+        ]
+      },
+      "expected_reasoning": [
+        "Separate advertised agent permission from effective module-admin authority.",
+        "Identify the admin signer as a higher authority path.",
+        "Do not conclude least privilege from the UI permission alone."
+      ],
+      "expected_conclusion": "Permission scope is not fully trustworthy until upgrade/admin authority is included in the authority graph.",
+      "expected_confidence": "medium",
+      "expected_remediation": ["surface admin authority", "constrain or timelock upgrade path", "bind reviewed module version"]
+    },
+    {
+      "id": "replay-001-cross-chain",
+      "family": "replay_and_domain_binding",
+      "mode": "ambiguous",
+      "scenario": {
+        "claim": "A valid signature authorizes exactly one payment.",
+        "observed": [
+          "Signature verifies.",
+          "Nonce is present.",
+          "No evidence shows the signed domain contains chain identifier or destination contract.",
+          "The same account format exists on two chains."
+        ]
+      },
+      "expected_reasoning": [
+        "A valid signature proves signer possession but not one-chain-only intent.",
+        "Nonce scope cannot be assumed to be global across chains.",
+        "Missing domain evidence requires confidence reduction or abstention."
+      ],
+      "expected_conclusion": "Single-payment authorization cannot be established from the supplied evidence.",
+      "expected_confidence": "low",
+      "must_abstain_from": ["claiming replay safety"]
+    },
+    {
+      "id": "wallet-001-recovery-residue",
+      "family": "wallet_permissions_and_recovery",
+      "mode": "hard_negative",
+      "scenario": {
+        "claim": "Recovery completed, so the compromised key is no longer dangerous.",
+        "observed": [
+          "Owner key was rotated.",
+          "A prior session key remains listed as valid until a future timestamp.",
+          "Recovery documentation does not show session-key revocation."
+        ]
+      },
+      "expected_reasoning": [
+        "Recovery and delegated-session revocation are distinct controls.",
+        "Old owner compromise does not prove residual delegated authority is removed.",
+        "Post-recovery authority inventory is required."
+      ],
+      "expected_conclusion": "Recovery is incomplete from a security-authority perspective while residual delegated keys remain valid.",
+      "expected_confidence": "high",
+      "expected_remediation": ["revoke residual sessions", "rotate delegated credentials", "verify post-recovery authority graph"]
+    },
+    {
+      "id": "proof-001-valid-wrong-statement",
+      "family": "proof_statement_and_verifier_governance",
+      "mode": "hard_negative",
+      "scenario": {
+        "claim": "The proof verified, therefore the reported reserve condition is correct.",
+        "observed": [
+          "Proof verification returns true.",
+          "Public inputs are available.",
+          "No reviewed mapping is supplied between the business claim and the circuit statement.",
+          "Verifier version is known."
+        ]
+      },
+      "expected_reasoning": [
+        "Verification establishes consistency with a statement, not correctness of the external business interpretation.",
+        "Require statement-to-claim binding before accepting the reserve conclusion."
+      ],
+      "expected_conclusion": "Cryptographic validity alone is insufficient to establish the claimed reserve condition.",
+      "expected_confidence": "high",
+      "must_abstain_from": ["affirming the reserve claim"]
+    },
+    {
+      "id": "l2-001-preconfirm-vs-finality",
+      "family": "l2_da_execution_settlement_finality",
+      "mode": "positive",
+      "scenario": {
+        "claim": "The transfer is final because a preconfirmation was issued.",
+        "observed": [
+          "Sequencer preconfirmation exists.",
+          "Transaction is visible in the L2 execution view.",
+          "L1 settlement has not reached the required finality condition."
+        ]
+      },
+      "expected_reasoning": [
+        "Separate preconfirmation, execution visibility, settlement, and finality.",
+        "Do not collapse latency guarantees into settlement guarantees."
+      ],
+      "expected_conclusion": "The transfer may be preconfirmed/executed but is not yet proven final under the supplied settlement state.",
+      "expected_confidence": "high"
+    },
+    {
+      "id": "intent-001-post-state-mismatch",
+      "family": "cross_chain_intent_and_solver_settlement",
+      "mode": "hard_negative",
+      "scenario": {
+        "claim": "The intent succeeded because the solver marked the order complete.",
+        "observed": [
+          "Solver status is complete.",
+          "Destination transaction exists.",
+          "Expected recipient balance change is absent from the observed post-state.",
+          "Payment finality to the solver is unknown."
+        ]
+      },
+      "expected_reasoning": [
+        "Solver status is not authoritative evidence of requested user outcome.",
+        "Actual post-state must be compared to intent semantics.",
+        "Execution success and solver payment finality are separate."
+      ],
+      "expected_conclusion": "The requested outcome is not established and appears inconsistent with the observed destination state.",
+      "expected_confidence": "high",
+      "expected_remediation": ["verify intent hash and resolver mapping", "verify destination post-state", "verify settlement/payment separately"]
+    },
+    {
+      "id": "agent-001-reputation-sybil",
+      "family": "agent_reputation_validation_and_payment",
+      "mode": "hard_negative",
+      "scenario": {
+        "claim": "The agent is trusted because it has 500 positive reputation entries.",
+        "observed": [
+          "Positive entries exist.",
+          "No evidence establishes independent rater diversity.",
+          "No validator-method evidence is provided.",
+          "The agent requests a payment permission larger than its task scope requires."
+        ]
+      },
+      "expected_reasoning": [
+        "Treat reputation as corroborating signal, not authority.",
+        "Check rater provenance and validation method.",
+        "Evaluate payment permission independently using least privilege."
+      ],
+      "expected_conclusion": "The reputation count does not justify the requested payment authority.",
+      "expected_confidence": "high",
+      "expected_remediation": ["limit spend scope", "require independent validation evidence", "inspect reputation provenance"]
+    },
+    {
+      "id": "attest-001-stale-measurement",
+      "family": "attestation_runtime_and_supply_chain",
+      "mode": "abstention",
+      "scenario": {
+        "claim": "The runtime is trusted because a TEE attestation passed yesterday.",
+        "observed": [
+          "Attestation signature is valid.",
+          "Measurement matched the approved image at issuance time.",
+          "Current runtime version and current TCB status are unavailable.",
+          "Key-release policy is not supplied."
+        ]
+      },
+      "expected_reasoning": [
+        "A previously valid attestation does not establish current runtime state.",
+        "Freshness, runtime drift, TCB state, and key-release policy are independent evidence requirements."
+      ],
+      "expected_conclusion": "Current trusted-runtime status cannot be established from the available evidence.",
+      "expected_confidence": "low",
+      "must_abstain_from": ["claiming current runtime trust"]
+    }
+  ]
+}
