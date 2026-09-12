@@ -1,0 +1,118 @@
+name: gpu-cyber-sft
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_path:
+        description: Cyber SFT config committed in the repository
+        required: true
+        default: configs/training/cyber-sft.qwen3.5-9b.smoke.lowmem.json
+        type: string
+      execute:
+        description: Execute training after all readiness gates pass
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-gpu-cyber-sft
+  cancel-in-progress: false
+
+jobs:
+  cyber-sft:
+    runs-on: [self-hosted, linux, x64, gpu, cuda]
+    timeout-minutes: 720
+    env:
+      TOKENIZERS_PARALLELISM: "false"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Fail closed without CUDA
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v nvidia-smi >/dev/null
+          nvidia-smi
+          python --version
+
+      - name: Install Sentinel Cyber SFT stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,training]'
+
+      - name: Validate config path
+        shell: bash
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: |
+          set -euo pipefail
+          case "$CONFIG_PATH" in
+            configs/training/cyber-sft.*.json) ;;
+            *) echo "config_path must be a committed cyber-sft config under configs/training" >&2; exit 2 ;;
+          esac
+          test -f "$CONFIG_PATH"
+
+      - name: Cyber SFT runtime and tokenization readiness
+        shell: bash
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/cyber-training/workflow
+          sentinel-cyber-training-readiness \
+            --config "$CONFIG_PATH" \
+            --check-runtime \
+            --check-tokenization \
+            | tee build/cyber-training/workflow/readiness.json
+
+      - name: Build immutable Cyber SFT plan
+        shell: bash
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: |
+          set -euo pipefail
+          sentinel-cyber-sft \
+            --config "$CONFIG_PATH" \
+            --plan-output build/cyber-training/workflow/cyber-sft.plan.json \
+            | tee build/cyber-training/workflow/plan.stdout.json
+
+      - name: Execute Cyber SFT
+        if: ${{ inputs.execute }}
+        shell: bash
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: |
+          set -euo pipefail
+          sentinel-cyber-sft \
+            --config "$CONFIG_PATH" \
+            --plan-output build/cyber-training/workflow/cyber-sft.execute.plan.json \
+            --execute \
+            | tee build/cyber-training/workflow/execution.json
+
+      - name: Collect non-weight evidence
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/cyber-training/workflow/evidence
+          find build/cyber-training -maxdepth 5 -type f \
+            \( -name '*.json' -o -name '*.txt' \) \
+            ! -path '*/adapter/*' \
+            ! -path '*/checkpoints/*' \
+            ! -name '*.safetensors' \
+            -print -exec cp --parents '{}' build/cyber-training/workflow/evidence/ \; || true
+
+      - name: Upload readiness, plans and manifests only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: sentinel-cyber-sft-evidence-${{ github.run_id }}
+          path: build/cyber-training/workflow/evidence
+          if-no-files-found: warn
+          retention-days: 14
