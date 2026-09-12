@@ -1,0 +1,121 @@
+name: gpu-training
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_path:
+        description: Training config committed in the repository
+        required: true
+        default: configs/training/qlora.t4.qwen2.5-1.5b.json
+        type: string
+      execute:
+        description: Run the CUDA training step after preflight and plan validation
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-gpu-training
+  cancel-in-progress: false
+
+jobs:
+  train:
+    # Deliberately requires an operator-controlled CUDA runner. GitHub-hosted
+    # ubuntu runners are not treated as proof that Sentinel training occurred.
+    runs-on: [self-hosted, linux, x64, gpu, cuda]
+    timeout-minutes: 720
+    env:
+      TOKENIZERS_PARALLELISM: "false"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Fail closed without NVIDIA CUDA runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v nvidia-smi >/dev/null
+          nvidia-smi
+          python --version
+
+      - name: Install Sentinel training stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,training]'
+
+      - name: Validate config path
+        id: cfg
+        shell: bash
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: |
+          set -euo pipefail
+          case "$CONFIG_PATH" in
+            configs/training/*.json) ;;
+            *) echo "config_path must stay under configs/training and be JSON" >&2; exit 2 ;;
+          esac
+          test -f "$CONFIG_PATH"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path(os.environ["CONFIG_PATH"])
+          data = json.loads(p.read_text())
+          release = Path(data["dataset_release"])
+          readiness = Path(data["readiness_report"])
+          if not release.exists():
+              raise SystemExit(f"private dataset release is not mounted: {release}")
+          if not readiness.exists():
+              raise SystemExit(f"readiness report is missing: {readiness}")
+          print(f"config={p}")
+          print(f"dataset_release={release}")
+          print(f"readiness_report={readiness}")
+          PY
+
+      - name: Build and validate immutable training plan
+        shell: bash
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/training/workflow
+          sentinel-train \
+            --config "$CONFIG_PATH" \
+            --plan-output build/training/workflow/training.plan.json
+
+      - name: Execute CUDA training
+        if: ${{ inputs.execute }}
+        shell: bash
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: |
+          set -euo pipefail
+          sentinel-train \
+            --config "$CONFIG_PATH" \
+            --plan-output build/training/workflow/training.execute.plan.json \
+            --execute
+
+      - name: Collect non-weight evidence
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/training/workflow/evidence
+          find build/training -maxdepth 3 -type f \
+            \( -name '*.json' -o -name '*.txt' \) \
+            ! -path '*/adapter/*' \
+            ! -path '*/checkpoints/*' \
+            -print -exec cp --parents '{}' build/training/workflow/evidence/ \; || true
+
+      - name: Upload plan and manifests only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: sentinel-training-evidence-${{ github.run_id }}
+          path: build/training/workflow/evidence
+          if-no-files-found: warn
+          retention-days: 14
