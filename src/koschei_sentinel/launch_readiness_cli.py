@@ -18,6 +18,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Independent holdout evidence JSON; repeat for multiple artifacts",
     )
     parser.add_argument("--production-authority")
+    parser.add_argument("--production-authority-proposal")
+    parser.add_argument("--owner-public-key")
     return parser
 
 
@@ -27,6 +29,8 @@ def main(argv: list[str] | None = None) -> int:
         finalization_path=args.finalization,
         holdout_evidence_paths=args.holdout_evidence,
         production_authority_path=args.production_authority,
+        production_authority_proposal_path=args.production_authority_proposal,
+        owner_public_key_path=args.owner_public_key,
     )
     print(json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True))
     return 0 if report.market_release_ready else 3
