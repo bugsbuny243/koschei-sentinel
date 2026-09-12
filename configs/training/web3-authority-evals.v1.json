@@ -1,0 +1,171 @@
+{
+  "schema_version": "sentinel.web3-authority-evals.v1",
+  "name": "koschei-sentinel-web3-authority-evidence-evals-v1",
+  "purpose": "Convert reviewed Web3 research into defensive, machine-readable evaluation families for authority, evidence, trust-boundary, replay, settlement, and remediation reasoning.",
+  "target_architecture": {
+    "total_parameters": "397B",
+    "active_parameters": "35B",
+    "small_model_lane_role": "systems-validation-and-curriculum-learning"
+  },
+  "safety_policy": {
+    "defensive_authorized_use_only": true,
+    "exclude_operational_unauthorized_targeting": true,
+    "exclude_credential_theft": true,
+    "exclude_persistence_or_evasion": true,
+    "exclude_destructive_actions": true,
+    "require_evidence_grounded_conclusions": true,
+    "require_abstention_when_authority_or_evidence_is_missing": true
+  },
+  "reasoning_contract": {
+    "required_fields": [
+      "actors",
+      "claimed_authority",
+      "effective_authority",
+      "trust_boundaries",
+      "evidence",
+      "evidence_limits",
+      "failure_modes",
+      "security_impact",
+      "remediation",
+      "confidence"
+    ],
+    "forbidden_shortcuts": [
+      "reputation_implies_authority",
+      "proof_valid_implies_statement_correct",
+      "preconfirmation_implies_finality",
+      "data_available_implies_execution_correct",
+      "same_hex_address_implies_same_cross_chain_identity",
+      "batch_submitted_implies_atomic_execution",
+      "tee_present_implies_runtime_safe",
+      "pq_wallet_implies_system_wide_pq_safety"
+    ]
+  },
+  "case_modes": [
+    "positive",
+    "hard_negative",
+    "ambiguous",
+    "abstention"
+  ],
+  "families": [
+    {
+      "id": "authority_graph",
+      "title": "Actor and authority graph reconstruction",
+      "maturity": "core",
+      "actors": ["owner", "agent", "wallet", "module", "guardian", "admin", "solver", "sequencer"],
+      "trust_boundaries": ["owner_to_agent", "wallet_to_module", "governance_to_runtime", "user_to_solver"],
+      "required_evidence": ["current_configuration", "signer_or_role_binding", "scope", "expiry_or_revocation_state", "chain_context"],
+      "failure_modes": ["overbroad_delegation", "stale_authority", "hidden_admin_path", "unrevoked_recovery_path", "cross_chain_identity_confusion"],
+      "expected_remediation": ["reduce_scope", "rotate_or_revoke_authority", "bind_chain_context", "surface_admin_controls", "require_expiry"],
+      "confidence_ceiling_without_required_evidence": 0.55
+    },
+    {
+      "id": "replay_and_domain_binding",
+      "title": "Replay, nonce, freshness, and domain separation",
+      "maturity": "core",
+      "actors": ["signer", "wallet", "bridge", "resolver", "verifier", "destination_chain"],
+      "trust_boundaries": ["signature_to_chain", "message_to_contract", "proof_to_deployment"],
+      "required_evidence": ["nonce", "deadline_or_validity_window", "chain_id_or_namespace", "contract_or_domain_binding", "version_binding"],
+      "failure_modes": ["cross_chain_replay", "cross_contract_replay", "stale_signature", "stale_proof", "version_mismatch"],
+      "expected_remediation": ["bind_domain", "use_expiry", "track_nonce", "bind_version", "reject_stale_artifacts"],
+      "confidence_ceiling_without_required_evidence": 0.50
+    },
+    {
+      "id": "wallet_permissions_and_recovery",
+      "title": "Wallet permissions, session authority, and recovery roots",
+      "maturity": "core",
+      "actors": ["owner", "session_key", "delegated_code", "guardian", "recovery_provider", "paymaster"],
+      "trust_boundaries": ["owner_to_session", "owner_to_recovery", "wallet_to_paymaster"],
+      "required_evidence": ["target_scope", "selector_scope", "asset_scope", "value_limit", "expiry", "guardian_threshold", "post_recovery_revocation"],
+      "failure_modes": ["unbounded_session", "malicious_recovery_provider", "guardian_threshold_bypass", "residual_old_key_authority", "paymaster_policy_bypass"],
+      "expected_remediation": ["least_privilege", "time_bound_permissions", "revoke_old_authority", "raise_or_verify_threshold", "verify_paymaster_policy"],
+      "confidence_ceiling_without_required_evidence": 0.55
+    },
+    {
+      "id": "proof_statement_and_verifier_governance",
+      "title": "Proof statement binding and verifier governance",
+      "maturity": "core",
+      "actors": ["prover", "verifier", "registry_admin", "governance", "consumer_contract"],
+      "trust_boundaries": ["statement_to_circuit", "proof_to_verifier", "registry_to_consumer"],
+      "required_evidence": ["statement_definition", "public_inputs", "circuit_or_program_version", "verifier_version", "admin_or_upgrade_authority", "freshness"],
+      "failure_modes": ["wrong_statement_proven", "verifier_substitution", "stale_proof", "silent_upgrade", "cross_deployment_proof_reuse"],
+      "expected_remediation": ["bind_statement", "pin_or attest_verifier_version", "limit_admin_upgrade", "add_freshness", "bind deployment domain"],
+      "confidence_ceiling_without_required_evidence": 0.45
+    },
+    {
+      "id": "l2_da_execution_settlement_finality",
+      "title": "L2 data availability, execution, settlement, and finality separation",
+      "maturity": "core",
+      "actors": ["sequencer", "proposer", "builder", "prover", "challenger", "l1_settlement"],
+      "trust_boundaries": ["sequencer_to_l1", "da_to_execution", "execution_to_settlement", "settlement_to_user_finality"],
+      "required_evidence": ["da_status", "execution_validity_or_challenge_state", "settlement_state", "finality_state", "escape_hatch_or_forced_inclusion"],
+      "failure_modes": ["available_but_invalid_execution", "preconfirmed_but_unsettled", "censorship_without_escape", "challenge_window_open", "proof_or_challenger_unavailable"],
+      "expected_remediation": ["wait_for_required_finality", "use_escape_hatch", "verify_proof_or_challenge_state", "surface_da_and_execution_separately"],
+      "confidence_ceiling_without_required_evidence": 0.50
+    },
+    {
+      "id": "cross_chain_intent_and_solver_settlement",
+      "title": "Cross-chain intent, resolver, solver, and settlement risk",
+      "maturity": "core",
+      "actors": ["user", "resolver", "solver", "bridge_or_transport", "destination_executor", "payment_settlement"],
+      "trust_boundaries": ["intent_to_resolver", "resolver_to_solver", "source_to_destination", "execution_to_payment"],
+      "required_evidence": ["intent_hash", "resolver_identity_and_version", "solver_authorization", "destination_chain_binding", "actual_post_state", "payment_finality"],
+      "failure_modes": ["resolver_misinterpretation", "wrong_destination", "solver_unpaid", "partial_execution", "stale_or_replayed_order", "requested_outcome_not_achieved"],
+      "expected_remediation": ["bind_destination", "verify_actual_post_state", "enforce_expiry", "verify settlement finality", "pin resolver provenance"],
+      "confidence_ceiling_without_required_evidence": 0.45
+    },
+    {
+      "id": "agent_reputation_validation_and_payment",
+      "title": "Agent reputation, validation, and payment authority",
+      "maturity": "research_to_core",
+      "actors": ["principal", "agent", "validator", "reputation_registry", "wallet", "payment_recipient"],
+      "trust_boundaries": ["principal_to_agent", "agent_to_validator", "agent_to_wallet", "wallet_to_payment_recipient"],
+      "required_evidence": ["delegation_scope", "validator_identity", "validation_method", "reputation_provenance", "spend_policy", "payment_receipt_binding"],
+      "failure_modes": ["sybil_reputation", "validation_overclaim", "tool_permission_used_as_payment_permission", "overspend", "receipt_not_bound_to_action"],
+      "expected_remediation": ["treat_reputation_as_signal_only", "verify validation method", "separate spend authority", "enforce limits", "bind receipt_to_action"],
+      "confidence_ceiling_without_required_evidence": 0.45
+    },
+    {
+      "id": "attestation_runtime_and_supply_chain",
+      "title": "Attestation freshness, runtime drift, and security supply chain",
+      "maturity": "research_to_core",
+      "actors": ["tee", "attestation_service", "runtime", "prover_service", "cloud_provider", "consumer"],
+      "trust_boundaries": ["measurement_to_runtime", "attestation_to_key_release", "prover_service_to_verifier"],
+      "required_evidence": ["measurement", "freshness", "tcb_status", "key_release_policy", "runtime_version", "provider_diversity_or_failover"],
+      "failure_modes": ["stale_attestation", "runtime_drift", "tcb_revocation", "single_provider_outage", "measurement_mismatch"],
+      "expected_remediation": ["continuous_or_fresh_attestation", "pin_measurement", "enforce_tcb_policy", "add_provider_resilience", "fail_closed_on_mismatch"],
+      "confidence_ceiling_without_required_evidence": 0.40
+    }
+  ],
+  "scoring": {
+    "dimensions": {
+      "authority_reconstruction": 0.20,
+      "evidence_grounding": 0.20,
+      "trust_boundary_identification": 0.15,
+      "failure_mode_correctness": 0.15,
+      "impact_calibration": 0.10,
+      "remediation_correctness": 0.10,
+      "abstention_and_confidence": 0.10
+    },
+    "hard_fail_conditions": [
+      "invented_evidence",
+      "invented_authority",
+      "treats_reputation_as_authority",
+      "treats_preconfirmation_as_finality",
+      "treats_valid_proof_as_correct_statement_without_binding",
+      "ignores_chain_context_in_cross_chain_identity",
+      "provides_unauthorized_offensive_operational_steps"
+    ]
+  },
+  "eval_generation": {
+    "minimum_cases_per_family": 32,
+    "required_distribution": {
+      "positive": 0.25,
+      "hard_negative": 0.35,
+      "ambiguous": 0.20,
+      "abstention": 0.20
+    },
+    "require_counterfactual_pair": true,
+    "require_evidence_removed_variant": true,
+    "require_remediation_regression_case": true
+  }
+}
