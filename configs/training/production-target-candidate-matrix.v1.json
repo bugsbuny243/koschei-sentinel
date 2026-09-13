@@ -1,0 +1,140 @@
+{
+  "schema_version": "sentinel.production-target-candidate-matrix.v1",
+  "as_of": "2026-09-13",
+  "target": {
+    "total_parameters_billion": 397.0,
+    "active_parameters_billion": 35.0,
+    "architecture_class": "sparse-moe"
+  },
+  "decision": {
+    "exact_public_base_found": false,
+    "production_binding_allowed": false,
+    "systems_validation_primary": "Qwen/Qwen3.5-397B-A17B",
+    "active_width_reference": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+    "balanced_moe_reference": "zai-org/GLM-4.5",
+    "notes": [
+      "No reviewed public candidate matches both 397B total and 35B active parameters.",
+      "Qwen3.5-397B-A17B matches the target total scale but activates 17B, not 35B.",
+      "Qwen3-Coder-480B-A35B matches the target active width but totals 480B, not 397B.",
+      "GLM-4.5 is a useful balanced MoE reference at 355B total and 32B active.",
+      "Reference architectures must not be treated as interchangeable weights or silently relabeled as the production target."
+    ]
+  },
+  "candidates": [
+    {
+      "model_ref": "Qwen/Qwen3.5-397B-A17B",
+      "total_parameters_billion": 397.0,
+      "active_parameters_billion": 17.0,
+      "architecture": "qwen3_5_moe",
+      "license": "apache-2.0",
+      "framework": {
+        "transformers": "supported",
+        "ms_swift": "supported",
+        "megatron_swift": "supported"
+      },
+      "fit": {
+        "total_target_match": true,
+        "active_target_match": false,
+        "exact_target_match": false
+      },
+      "role": "systems-validation-and-total-scale-reference",
+      "production_binding_allowed": false,
+      "evidence": [
+        "Qwen official Hugging Face model metadata",
+        "ModelScope ms-swift supported-models documentation"
+      ]
+    },
+    {
+      "model_ref": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+      "total_parameters_billion": 480.0,
+      "active_parameters_billion": 35.0,
+      "architecture": "qwen3_moe",
+      "license": "apache-2.0",
+      "framework": {
+        "transformers": "supported",
+        "ms_swift": "supported",
+        "megatron_swift": "supported"
+      },
+      "fit": {
+        "total_target_match": false,
+        "active_target_match": true,
+        "exact_target_match": false
+      },
+      "role": "active-width-and-router-reference",
+      "production_binding_allowed": false,
+      "evidence": [
+        "Qwen official Qwen3-Coder announcement and model card",
+        "ModelScope ms-swift supported-models documentation",
+        "Public Megatron-SWIFT Qwen3-Coder training issue showing real multi-node use"
+      ]
+    },
+    {
+      "model_ref": "zai-org/GLM-4.5",
+      "total_parameters_billion": 355.0,
+      "active_parameters_billion": 32.0,
+      "architecture": "glm4_moe",
+      "license": "mit",
+      "framework": {
+        "transformers": "supported",
+        "ms_swift": "supported",
+        "megatron_swift": "supported"
+      },
+      "fit": {
+        "total_target_match": false,
+        "active_target_match": false,
+        "exact_target_match": false
+      },
+      "role": "balanced-moe-topology-reference",
+      "production_binding_allowed": false,
+      "evidence": [
+        "Z.ai official Hugging Face model card",
+        "Hugging Face Transformers GLM4MoE documentation",
+        "ModelScope Megatron-SWIFT GLM-4.5 example"
+      ]
+    },
+    {
+      "model_ref": "deepseek-ai/DeepSeek-V3",
+      "total_parameters_billion": 671.0,
+      "active_parameters_billion": 37.0,
+      "architecture": "deepseek_v3",
+      "license": "model-specific",
+      "framework": {
+        "transformers": "supported",
+        "ms_swift": "supported-family",
+        "megatron_swift": "not-used-as-production-reference"
+      },
+      "fit": {
+        "total_target_match": false,
+        "active_target_match": false,
+        "exact_target_match": false
+      },
+      "role": "high-scale-active-width-reference",
+      "production_binding_allowed": false,
+      "evidence": [
+        "DeepSeek official repository and Hugging Face model card"
+      ]
+    },
+    {
+      "model_ref": "moonshotai/Kimi-K2-Base",
+      "total_parameters_billion": 1000.0,
+      "active_parameters_billion": 32.0,
+      "architecture": "kimi_k2",
+      "license": "model-specific",
+      "framework": {
+        "transformers": "supported",
+        "ms_swift": "not-relied-on",
+        "megatron_swift": "not-relied-on"
+      },
+      "fit": {
+        "total_target_match": false,
+        "active_target_match": false,
+        "exact_target_match": false
+      },
+      "role": "large-moe-topology-reference",
+      "production_binding_allowed": false,
+      "evidence": [
+        "Moonshot AI official Kimi K2 repository and model card"
+      ]
+    }
+  ]
+}
