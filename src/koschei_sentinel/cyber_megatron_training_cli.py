@@ -11,12 +11,13 @@ from koschei_sentinel.cyber_megatron_training import (
     materialize_cyber_megatron_dataset,
     plan_cyber_megatron_sft,
 )
+from koschei_sentinel.production_target_training_gate import verify_production_training_gate
 from koschei_sentinel.training import atomic_write
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Plan or execute the single-model Qwen3.5-397B-A17B Megatron SFT path"
+        description="Plan or execute the Megatron SFT validation lane; production 397B/35B requires a verified binding"
     )
     parser.add_argument("--config", required=True)
     parser.add_argument("--plan-output")
@@ -36,6 +37,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Launch Megatron-SWIFT after dataset, runtime and paid-run approval checks",
     )
+    parser.add_argument("--production-target-binding")
+    parser.add_argument("--production-architecture-manifest")
+    parser.add_argument("--production-router-manifest")
+    parser.add_argument("--production-expert-topology-manifest")
     return parser
 
 
@@ -59,10 +64,36 @@ def _resume(args: argparse.Namespace) -> CyberMegatronResume | None:
     )
 
 
+def _verify_production_lane(args: argparse.Namespace, config) -> None:
+    values = (
+        args.production_target_binding,
+        args.production_architecture_manifest,
+        args.production_router_manifest,
+        args.production_expert_topology_manifest,
+    )
+    if any(values) and not all(values):
+        raise ValueError(
+            "production lane requires binding, architecture, router and expert-topology manifests"
+        )
+    if not any(values):
+        return
+    verify_production_training_gate(
+        binding_path=args.production_target_binding,
+        architecture_manifest_path=args.production_architecture_manifest,
+        router_manifest_path=args.production_router_manifest,
+        expert_topology_manifest_path=args.production_expert_topology_manifest,
+        trainer_model_ref=config.model,
+        trainer_model_revision=config.model_revision,
+        trainer_adapter=config.backend,
+        trainer_adapter_version=config.ms_swift_version,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         config = load_cyber_megatron_config(args.config)
+        _verify_production_lane(args, config)
         resume = _resume(args)
         if args.materialize_dataset:
             materialize_cyber_megatron_dataset(config)
