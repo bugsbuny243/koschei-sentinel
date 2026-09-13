@@ -12,7 +12,7 @@ from koschei_sentinel.full_release import (
     load_canary_evidence,
     verify_full_release,
 )
-from koschei_sentinel.production_authority import ProductionAuthority
+from koschei_sentinel.production_authority import ProductionAuthority, ProductionAuthorityProposal
 from koschei_sentinel.promotion import load_owner_private_key, load_owner_public_key
 
 
@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     propose = commands.add_parser("propose")
+    propose.add_argument("--canary-proposal", required=True)
     propose.add_argument("--canary-authority", required=True)
     propose.add_argument("--canary-evidence", required=True)
     propose.add_argument("--owner-public-key", required=True)
@@ -59,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "propose":
             artifact = build_full_release_proposal(
+                _load_model(args.canary_proposal, ProductionAuthorityProposal),
                 _load_model(args.canary_authority, ProductionAuthority),
                 load_canary_evidence(args.canary_evidence),
                 load_owner_public_key(args.owner_public_key),
