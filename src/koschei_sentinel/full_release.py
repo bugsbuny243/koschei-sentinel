@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
-import json
 from pathlib import Path
 from typing import Literal
 
@@ -11,7 +9,13 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.production_authority import ProductionAuthority, canonical_json_digest
+from koschei_sentinel.production_authority import (
+    ProductionAuthority,
+    ProductionAuthorityBlocked,
+    ProductionAuthorityProposal,
+    canonical_json_digest,
+    verify_production_authority,
+)
 from koschei_sentinel.promotion import public_key_fingerprint
 
 _DIGEST = r"^[a-f0-9]{64}$"
@@ -88,11 +92,16 @@ def _validate_canary(evidence: CanaryEvidence) -> None:
 
 
 def build_full_release_proposal(
+    canary_proposal: ProductionAuthorityProposal,
     canary_authority: ProductionAuthority,
     canary_evidence: CanaryEvidence,
     owner_public_key: Ed25519PublicKey,
 ) -> FullReleaseProposal:
     _validate_canary(canary_evidence)
+    try:
+        verify_production_authority(canary_proposal, canary_authority, owner_public_key)
+    except ProductionAuthorityBlocked as exc:
+        raise FullReleaseBlocked("canary production authority verification failed") from exc
     if canary_evidence.candidate_id != canary_authority.candidate_id:
         raise FullReleaseBlocked("canary evidence candidate does not match production authority")
     if canary_evidence.production_authority_digest != canary_authority.authority_digest:
