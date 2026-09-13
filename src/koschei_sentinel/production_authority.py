@@ -10,7 +10,12 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from pydantic import Field
 
-from koschei_sentinel.candidate_finalization import CandidateFinalization
+from koschei_sentinel.candidate_finalization import (
+    CandidateFinalization,
+    CandidateFinalizationBlocked,
+    verify_candidate_finalization,
+)
+from koschei_sentinel.gold_holdout_evaluation_evidence import GoldHoldoutEvaluationEvidence
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.promotion import public_key_fingerprint
 
@@ -30,7 +35,7 @@ class ProductionAuthorityProposal(StrictModel):
     )
     candidate_id: str = Field(pattern=_CANDIDATE_ID)
     finalization_digest: str = Field(pattern=_DIGEST)
-    holdout_evidence_digests: list[str]
+    holdout_evidence_digests: list[str] = Field(min_length=1)
     deployment_scope: Literal["canary_only"] = "canary_only"
     max_initial_traffic_percent: int = Field(ge=1, le=10)
     rollback_required: Literal[True] = True
@@ -72,6 +77,49 @@ def json_file_digest(path: str | Path) -> str:
     return canonical_json_digest(payload)
 
 
+def _load_verified_production_holdout(path: str | Path) -> GoldHoldoutEvaluationEvidence:
+    try:
+        evidence = GoldHoldoutEvaluationEvidence.model_validate_json(
+            Path(path).read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError) as exc:
+        raise ProductionAuthorityBlocked(
+            f"invalid Gold HOLDOUT evaluation evidence: {path}"
+        ) from exc
+
+    if not evidence.passed:
+        raise ProductionAuthorityBlocked(f"Gold HOLDOUT evidence did not pass: {path}")
+    if not evidence.inference_verification_valid or not evidence.complete_case_accounting:
+        raise ProductionAuthorityBlocked(
+            f"Gold HOLDOUT evidence is not complete and verified: {path}"
+        )
+    if evidence.failure_count != 0:
+        raise ProductionAuthorityBlocked(f"Gold HOLDOUT evidence has inference failures: {path}")
+
+    required_production_bindings = {
+        "review_signature_audit_sha256": evidence.review_signature_audit_sha256,
+        "candidate_training_binding_verification_sha256": (
+            evidence.candidate_training_binding_verification_sha256
+        ),
+        "inference_pack_signature_proof_sha256": evidence.inference_pack_signature_proof_sha256,
+        "reviewer_trust_policy_sha256": evidence.reviewer_trust_policy_sha256,
+        "owner_key_fingerprint": evidence.owner_key_fingerprint,
+    }
+    missing = sorted(
+        name for name, value in required_production_bindings.items() if value is None
+    )
+    if missing:
+        raise ProductionAuthorityBlocked(
+            f"Gold HOLDOUT evidence is missing production trust bindings {missing}: {path}"
+        )
+
+    payload = evidence.model_dump(mode="json")
+    claimed = payload.pop("evidence_sha256")
+    if canonical_json_digest(payload) != claimed:
+        raise ProductionAuthorityBlocked(f"Gold HOLDOUT evidence self-hash mismatch: {path}")
+    return evidence
+
+
 def build_production_authority_proposal(
     finalization: CandidateFinalization,
     holdout_evidence_paths: list[str | Path],
@@ -81,19 +129,26 @@ def build_production_authority_proposal(
 ) -> ProductionAuthorityProposal:
     if not holdout_evidence_paths:
         raise ProductionAuthorityBlocked("at least one holdout evidence artifact is required")
+    try:
+        verify_candidate_finalization(finalization)
+    except CandidateFinalizationBlocked as exc:
+        raise ProductionAuthorityBlocked("candidate finalization verification failed") from exc
     if finalization.state != "finalized_incubation":
         raise ProductionAuthorityBlocked("candidate is not finalized for incubation")
 
+    owner_fingerprint = public_key_fingerprint(owner_public_key)
     holdout_digests: list[str] = []
     for path in holdout_evidence_paths:
-        try:
-            payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ProductionAuthorityBlocked(f"invalid holdout evidence: {path}") from exc
-        schema = payload.get("schema_version") if isinstance(payload, dict) else None
-        if not isinstance(schema, str) or "holdout" not in schema.lower():
-            raise ProductionAuthorityBlocked(f"unrecognized holdout evidence schema: {path}")
-        holdout_digests.append(canonical_json_digest(payload))
+        evidence = _load_verified_production_holdout(path)
+        if evidence.owner_key_fingerprint != owner_fingerprint:
+            raise ProductionAuthorityBlocked(
+                f"Gold HOLDOUT evidence owner trust root does not match proposal owner: {path}"
+            )
+        if evidence.adapter_digest != finalization.adapter_digest:
+            raise ProductionAuthorityBlocked(
+                f"Gold HOLDOUT evidence adapter does not match finalized candidate: {path}"
+            )
+        holdout_digests.append(evidence.evidence_sha256)
 
     payload = {
         "schema_version": "sentinel.production-authority-proposal.v1",
@@ -105,7 +160,7 @@ def build_production_authority_proposal(
         "rollback_required": True,
         "emergency_disable_required": True,
         "automatic_expansion_allowed": False,
-        "owner_key_fingerprint": public_key_fingerprint(owner_public_key),
+        "owner_key_fingerprint": owner_fingerprint,
     }
     return ProductionAuthorityProposal.model_validate(
         {**payload, "proposal_digest": canonical_json_digest(payload)}
