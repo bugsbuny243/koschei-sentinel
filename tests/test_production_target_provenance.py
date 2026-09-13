@@ -13,6 +13,7 @@ from koschei_sentinel.production_target_provenance import (
     ProductionTargetProvenance,
     owner_key_fingerprint,
     production_target_binding_digest,
+    provenance_signature_message,
     verify_production_target_provenance,
 )
 
@@ -67,7 +68,7 @@ def _signed_provenance(binding: ProductionTargetBinding, private_key: Ed25519Pri
         "owner_key_fingerprint": owner_key_fingerprint(public_key),
     }
     provenance_sha256 = _digest(unsigned)
-    signature = private_key.sign(provenance_sha256.encode("ascii"))
+    signature = private_key.sign(provenance_signature_message(provenance_sha256))
     return ProductionTargetProvenance.model_validate(
         {
             **unsigned,
@@ -112,5 +113,21 @@ def test_provenance_for_different_manifest_is_rejected() -> None:
         verify_production_target_provenance(
             provenance,
             changed_binding,
+            private_key.public_key(),
+        )
+
+
+def test_legacy_undomained_signature_is_rejected() -> None:
+    binding = _binding()
+    private_key = Ed25519PrivateKey.generate()
+    provenance = _signed_provenance(binding, private_key)
+    legacy_signature = private_key.sign(provenance.provenance_sha256.encode("ascii"))
+    tampered = provenance.model_copy(
+        update={"owner_signature_b64": base64.b64encode(legacy_signature).decode("ascii")}
+    )
+    with pytest.raises(ValueError, match="signature verification failed"):
+        verify_production_target_provenance(
+            tampered,
+            binding,
             private_key.public_key(),
         )
