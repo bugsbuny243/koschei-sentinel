@@ -55,6 +55,26 @@ class CandidateFinalization(StrictModel):
     finalization_digest: str = Field(pattern=_DIGEST)
 
 
+def verify_candidate_finalization(finalization: CandidateFinalization) -> CandidateFinalization:
+    payload = finalization.model_dump(mode="json")
+    claimed = payload.pop("finalization_digest")
+    if claimed != _digest(payload):
+        raise CandidateFinalizationBlocked(
+            "candidate finalization digest does not match its contents"
+        )
+    return finalization
+
+
+def load_candidate_finalization(path: str | Path) -> CandidateFinalization:
+    try:
+        finalization = CandidateFinalization.model_validate_json(
+            Path(path).read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError) as exc:
+        raise CandidateFinalizationBlocked("invalid candidate finalization") from exc
+    return verify_candidate_finalization(finalization)
+
+
 def load_offline_training_receipt(path: str | Path) -> OfflineTrainingReceipt:
     try:
         receipt = OfflineTrainingReceipt.model_validate_json(
@@ -137,6 +157,7 @@ def write_finalization_bundle(
     registry: IncubationRegistry,
     output_dir: str | Path,
 ) -> None:
+    verify_candidate_finalization(finalization)
     destination = Path(output_dir)
     if destination.exists():
         raise FileExistsError(f"candidate finalization already exists: {destination}")
