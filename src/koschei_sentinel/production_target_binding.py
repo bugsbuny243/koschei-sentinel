@@ -9,6 +9,7 @@ from pydantic import Field, model_validator
 from koschei_sentinel.models import StrictModel
 
 _DIGEST = r"^[a-f0-9]{64}$"
+_ZERO_DIGEST = "0" * 64
 
 
 class ProductionTargetBinding(StrictModel):
@@ -58,4 +59,14 @@ def require_verified_production_target_binding(
         raise ValueError("397B/35B production training is not authorized by the binding")
     if binding.blockers:
         raise ValueError("397B/35B production target binding still has blockers")
+    if binding.model_ref.upper().startswith("UNWIRED"):
+        raise ValueError("verified production target cannot use an UNWIRED placeholder model_ref")
+    for field_name, value in (
+        ("model_revision", binding.model_revision),
+        ("architecture_manifest_sha256", binding.architecture_manifest_sha256),
+        ("router_manifest_sha256", binding.router_manifest_sha256),
+        ("expert_topology_manifest_sha256", binding.expert_topology_manifest_sha256),
+    ):
+        if value == _ZERO_DIGEST:
+            raise ValueError(f"verified production target cannot use a zero placeholder for {field_name}")
     return binding
