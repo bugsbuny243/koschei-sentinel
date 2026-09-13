@@ -12,11 +12,17 @@ from koschei_sentinel.production_target_binding import (
     ProductionTargetBinding,
     load_production_target_binding,
 )
+from koschei_sentinel.production_target_provenance import (
+    ProductionTargetProvenance,
+    load_production_target_provenance,
+    verify_production_target_provenance,
+)
 from koschei_sentinel.production_target_training_gate import (
     ProductionTargetTrainingBlocked,
     verify_production_training_gate,
 )
 from koschei_sentinel.production_target_topology import ProductionTopologyVerification
+from koschei_sentinel.promotion import load_owner_public_key
 
 
 def _canonical_digest(payload: object) -> str:
@@ -40,7 +46,14 @@ def verify_production_megatron_gate(
     architecture_manifest_path: str | Path,
     router_manifest_path: str | Path,
     expert_topology_manifest_path: str | Path,
-) -> tuple[ProductionMegatronConfig, ProductionTargetBinding, ProductionTopologyVerification]:
+    provenance_path: str | Path,
+    owner_public_key_path: str | Path,
+) -> tuple[
+    ProductionMegatronConfig,
+    ProductionTargetBinding,
+    ProductionTopologyVerification,
+    ProductionTargetProvenance,
+]:
     config = load_production_megatron_config(config_path)
     binding = load_production_target_binding(binding_path)
 
@@ -69,4 +82,16 @@ def verify_production_megatron_gate(
         raise ProductionTargetTrainingBlocked("production config active-parameter target mismatch")
     if config.architecture_class != verified_binding.architecture_class:
         raise ProductionTargetTrainingBlocked("production config architecture class mismatch")
-    return config, verified_binding, verification
+
+    try:
+        provenance = verify_production_target_provenance(
+            load_production_target_provenance(provenance_path),
+            verified_binding,
+            load_owner_public_key(owner_public_key_path),
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        raise ProductionTargetTrainingBlocked(
+            f"production target provenance verification failed: {exc}"
+        ) from exc
+
+    return config, verified_binding, verification, provenance
