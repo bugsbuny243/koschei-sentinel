@@ -148,6 +148,7 @@ sentinel-full-release = "koschei_sentinel.full_release_cli:main"
 sentinel-production-target-binding = "koschei_sentinel.production_target_binding_cli:main"
 sentinel-production-megatron-gate = "koschei_sentinel.production_megatron_gate_cli:main"
 sentinel-production-provenance-author = "koschei_sentinel.production_target_provenance_authoring_cli:main"
+sentinel-production-candidate-matrix = "koschei_sentinel.production_target_candidate_matrix_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
