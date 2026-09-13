@@ -1,0 +1,21 @@
+{
+  "schema_version": "sentinel.production-target-binding.v1",
+  "total_parameters": "397B",
+  "active_parameters": "35B",
+  "architecture_class": "sparse-moe",
+  "model_ref": "UNWIRED-397B-35B-TARGET",
+  "model_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+  "architecture_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "router_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "expert_topology_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "trainer_adapter": "megatron-swift",
+  "trainer_adapter_version": "4.5.2",
+  "production_training_allowed": false,
+  "verification_status": "unverified",
+  "blockers": [
+    "no verified 397B/35B-active base architecture is wired into the trainer",
+    "router manifest is not available",
+    "expert topology manifest is not available",
+    "current executable Megatron lane remains Qwen3.5-397B-A17B validation-only"
+  ]
+}
