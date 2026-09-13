@@ -12,12 +12,13 @@ _ZERO = "0" * 64
 _ONE = "1" * 64
 _TWO = "2" * 64
 _THREE = "3" * 64
+_FOUR = "4" * 64
 
 
 def _binding(**overrides):
     payload = {
         "model_ref": "sentinel-397b-35b",
-        "model_revision": _ZERO,
+        "model_revision": _FOUR,
         "architecture_manifest_sha256": _ONE,
         "router_manifest_sha256": _TWO,
         "expert_topology_manifest_sha256": _THREE,
@@ -59,3 +60,25 @@ def test_verified_binding_can_authorize_production_training() -> None:
     assert require_verified_production_target_binding(binding) is binding
     assert binding.total_parameters == "397B"
     assert binding.active_parameters == "35B"
+
+
+def test_verified_binding_rejects_zero_revision_placeholder() -> None:
+    binding = _binding(
+        model_revision=_ZERO,
+        verification_status="verified",
+        production_training_allowed=True,
+        blockers=[],
+    )
+    with pytest.raises(ValueError, match="zero placeholder"):
+        require_verified_production_target_binding(binding)
+
+
+def test_verified_binding_rejects_unwired_model_ref() -> None:
+    binding = _binding(
+        model_ref="UNWIRED-397B-35B-TARGET",
+        verification_status="verified",
+        production_training_allowed=True,
+        blockers=[],
+    )
+    with pytest.raises(ValueError, match="UNWIRED placeholder"):
+        require_verified_production_target_binding(binding)
