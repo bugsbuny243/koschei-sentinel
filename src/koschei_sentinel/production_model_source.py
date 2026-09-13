@@ -68,13 +68,20 @@ def _unsigned_payload(intake: ProductionModelSourceIntake) -> dict[str, object]:
     return payload
 
 
+def verify_production_model_source_intake(
+    intake: ProductionModelSourceIntake,
+) -> ProductionModelSourceIntake:
+    if intake.intake_sha256 != _canonical_digest(_unsigned_payload(intake)):
+        raise ValueError("production model source intake self-hash does not verify")
+    return intake
+
+
 def load_production_model_source_intake(path: str | Path) -> ProductionModelSourceIntake:
     source = Path(path)
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"invalid production model source intake: {source}") from exc
-    intake = ProductionModelSourceIntake.model_validate(payload)
-    if intake.intake_sha256 != _canonical_digest(_unsigned_payload(intake)):
-        raise ValueError("production model source intake self-hash does not verify")
-    return intake
+    return verify_production_model_source_intake(
+        ProductionModelSourceIntake.model_validate(payload)
+    )
