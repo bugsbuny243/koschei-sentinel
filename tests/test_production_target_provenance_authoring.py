@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from koschei_sentinel.production_model_source import ProductionModelSourceIntake
+from koschei_sentinel.production_model_source import (
+    ProductionModelSourceIntake,
+    _canonical_digest,
+)
 from koschei_sentinel.production_target_binding import ProductionTargetBinding
 from koschei_sentinel.production_target_provenance import verify_production_target_provenance
 from koschei_sentinel.production_target_provenance_authoring import (
@@ -41,8 +44,8 @@ def _intake(model_ref: str = "koschei/sentinel-397b-35b") -> ProductionModelSour
         "framework_compatibility_evidence_sha256": "8" * 64,
         "independently_reviewed": True,
         "review_ref": "review://production-model-source/001",
-        "intake_sha256": "9" * 64,
     }
+    payload["intake_sha256"] = _canonical_digest(payload)
     return ProductionModelSourceIntake.model_validate(payload)
 
 
@@ -66,5 +69,15 @@ def test_authoring_rejects_mismatched_model_identity() -> None:
         build_signed_production_target_provenance(
             binding=_binding(),
             intake=_intake("other/model"),
+            owner_private_key=Ed25519PrivateKey.generate(),
+        )
+
+
+def test_authoring_rejects_tampered_intake_object() -> None:
+    intake = _intake().model_copy(update={"source_ref": "pinned://tampered"})
+    with pytest.raises(ValueError, match="self-hash"):
+        build_signed_production_target_provenance(
+            binding=_binding(),
+            intake=intake,
             owner_private_key=Ed25519PrivateKey.generate(),
         )
