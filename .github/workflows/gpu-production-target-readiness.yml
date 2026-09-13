@@ -1,0 +1,111 @@
+name: gpu-production-target-readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_path:
+        description: Production Megatron config committed in the repository
+        required: true
+        type: string
+      binding_path:
+        description: Verified 397B/35B production target binding
+        required: true
+        type: string
+      architecture_manifest_path:
+        description: Production architecture manifest
+        required: true
+        type: string
+      router_manifest_path:
+        description: Production router manifest
+        required: true
+        type: string
+      expert_topology_manifest_path:
+        description: Production expert topology manifest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-gpu-production-target-readiness
+  cancel-in-progress: false
+
+jobs:
+  production-target-readiness:
+    runs-on: [self-hosted, linux, x64, gpu, cuda]
+    timeout-minutes: 60
+    env:
+      TOKENIZERS_PARALLELISM: "false"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b72f698fdd19549f0f0fb45cf08 # v4.2.2
+
+      - name: Fail closed without CUDA
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v nvidia-smi >/dev/null
+          nvidia-smi
+          python --version
+
+      - name: Install Sentinel production gate stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,megatron]'
+
+      - name: Validate committed input paths
+        shell: bash
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+          BINDING_PATH: ${{ inputs.binding_path }}
+          ARCH_PATH: ${{ inputs.architecture_manifest_path }}
+          ROUTER_PATH: ${{ inputs.router_manifest_path }}
+          TOPOLOGY_PATH: ${{ inputs.expert_topology_manifest_path }}
+        run: |
+          set -euo pipefail
+          for path in "$CONFIG_PATH" "$BINDING_PATH" "$ARCH_PATH" "$ROUTER_PATH" "$TOPOLOGY_PATH"; do
+            case "$path" in
+              configs/training/*.json) ;;
+              *) echo "production gate inputs must be committed JSON under configs/training" >&2; exit 2 ;;
+            esac
+            test -f "$path"
+          done
+
+      - name: Verify 397B/35B production Megatron gate
+        shell: bash
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+          BINDING_PATH: ${{ inputs.binding_path }}
+          ARCH_PATH: ${{ inputs.architecture_manifest_path }}
+          ROUTER_PATH: ${{ inputs.router_manifest_path }}
+          TOPOLOGY_PATH: ${{ inputs.expert_topology_manifest_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/production-target/readiness
+          sentinel-production-megatron-gate \
+            --config "$CONFIG_PATH" \
+            --binding "$BINDING_PATH" \
+            --architecture-manifest "$ARCH_PATH" \
+            --router-manifest "$ROUTER_PATH" \
+            --expert-topology-manifest "$TOPOLOGY_PATH" \
+            | tee build/production-target/readiness/gate.json
+
+      - name: Record GPU inventory evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/production-target/readiness
+          nvidia-smi --query-gpu=name,uuid,memory.total,driver_version --format=csv,noheader \
+            > build/production-target/readiness/gpu-inventory.txt
+
+      - name: Upload readiness evidence only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: sentinel-production-target-readiness-${{ github.run_id }}
+          path: build/production-target/readiness
+          if-no-files-found: warn
+          retention-days: 14
