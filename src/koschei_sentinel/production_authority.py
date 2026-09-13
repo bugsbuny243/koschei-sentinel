@@ -77,7 +77,7 @@ def json_file_digest(path: str | Path) -> str:
     return canonical_json_digest(payload)
 
 
-def _load_verified_production_holdout(path: str | Path) -> GoldHoldoutEvaluationEvidence:
+def load_verified_production_holdout(path: str | Path) -> GoldHoldoutEvaluationEvidence:
     try:
         evidence = GoldHoldoutEvaluationEvidence.model_validate_json(
             Path(path).read_text(encoding="utf-8")
@@ -139,7 +139,7 @@ def build_production_authority_proposal(
     owner_fingerprint = public_key_fingerprint(owner_public_key)
     holdout_digests: list[str] = []
     for path in holdout_evidence_paths:
-        evidence = _load_verified_production_holdout(path)
+        evidence = load_verified_production_holdout(path)
         if evidence.owner_key_fingerprint != owner_fingerprint:
             raise ProductionAuthorityBlocked(
                 f"Gold HOLDOUT evidence owner trust root does not match proposal owner: {path}"
