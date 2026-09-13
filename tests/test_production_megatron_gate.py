@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -77,7 +78,72 @@ def _write_config(tmp_path, binding_digest: str, topology_digest: str):
     return path
 
 
+def _patch_verified_dependencies(monkeypatch, binding, verification) -> None:
+    provenance = SimpleNamespace(provenance_sha256="5" * 64)
+    monkeypatch.setattr(
+        "koschei_sentinel.production_megatron_gate.load_production_target_binding",
+        lambda _: binding,
+    )
+    monkeypatch.setattr(
+        "koschei_sentinel.production_megatron_gate.verify_production_training_gate",
+        lambda **_: (binding, verification),
+    )
+    monkeypatch.setattr(
+        "koschei_sentinel.production_megatron_gate.load_production_target_provenance",
+        lambda _: provenance,
+    )
+    monkeypatch.setattr(
+        "koschei_sentinel.production_megatron_gate.load_owner_public_key",
+        lambda _: object(),
+    )
+    monkeypatch.setattr(
+        "koschei_sentinel.production_megatron_gate.verify_production_target_provenance",
+        lambda candidate, *_: candidate,
+    )
+
+
 def test_gate_accepts_config_bound_to_verified_artifacts(tmp_path, monkeypatch) -> None:
+    binding = _binding()
+    verification = _verification()
+    config_path = _write_config(
+        tmp_path,
+        production_target_binding_digest(binding),
+        verification.verification_sha256,
+    )
+    _patch_verified_dependencies(monkeypatch, binding, verification)
+    config, returned_binding, returned_verification, provenance = verify_production_megatron_gate(
+        config_path=config_path,
+        binding_path="binding.json",
+        architecture_manifest_path="architecture.json",
+        router_manifest_path="router.json",
+        expert_topology_manifest_path="topology.json",
+        provenance_path="provenance.json",
+        owner_public_key_path="owner.pem",
+    )
+    assert config.active_parameters == "35B"
+    assert returned_binding is binding
+    assert returned_verification is verification
+    assert provenance.provenance_sha256 == "5" * 64
+
+
+def test_gate_rejects_config_not_bound_to_binding(tmp_path, monkeypatch) -> None:
+    binding = _binding()
+    verification = _verification()
+    config_path = _write_config(tmp_path, "f" * 64, verification.verification_sha256)
+    _patch_verified_dependencies(monkeypatch, binding, verification)
+    with pytest.raises(ValueError, match="does not bind the verified target binding"):
+        verify_production_megatron_gate(
+            config_path=config_path,
+            binding_path="binding.json",
+            architecture_manifest_path="architecture.json",
+            router_manifest_path="router.json",
+            expert_topology_manifest_path="topology.json",
+            provenance_path="provenance.json",
+            owner_public_key_path="owner.pem",
+        )
+
+
+def test_gate_rejects_failed_provenance_verification(tmp_path, monkeypatch) -> None:
     binding = _binding()
     verification = _verification()
     config_path = _write_config(
@@ -93,35 +159,25 @@ def test_gate_accepts_config_bound_to_verified_artifacts(tmp_path, monkeypatch) 
         "koschei_sentinel.production_megatron_gate.verify_production_training_gate",
         lambda **_: (binding, verification),
     )
-    config, returned_binding, returned_verification = verify_production_megatron_gate(
-        config_path=config_path,
-        binding_path="binding.json",
-        architecture_manifest_path="architecture.json",
-        router_manifest_path="router.json",
-        expert_topology_manifest_path="topology.json",
-    )
-    assert config.active_parameters == "35B"
-    assert returned_binding is binding
-    assert returned_verification is verification
-
-
-def test_gate_rejects_config_not_bound_to_binding(tmp_path, monkeypatch) -> None:
-    binding = _binding()
-    verification = _verification()
-    config_path = _write_config(tmp_path, "f" * 64, verification.verification_sha256)
     monkeypatch.setattr(
-        "koschei_sentinel.production_megatron_gate.load_production_target_binding",
-        lambda _: binding,
+        "koschei_sentinel.production_megatron_gate.load_production_target_provenance",
+        lambda _: SimpleNamespace(),
     )
     monkeypatch.setattr(
-        "koschei_sentinel.production_megatron_gate.verify_production_training_gate",
-        lambda **_: (binding, verification),
+        "koschei_sentinel.production_megatron_gate.load_owner_public_key",
+        lambda _: object(),
     )
-    with pytest.raises(ValueError, match="does not bind the verified target binding"):
+    monkeypatch.setattr(
+        "koschei_sentinel.production_megatron_gate.verify_production_target_provenance",
+        lambda *_: (_ for _ in ()).throw(ValueError("owner signature verification failed")),
+    )
+    with pytest.raises(ValueError, match="provenance verification failed"):
         verify_production_megatron_gate(
             config_path=config_path,
             binding_path="binding.json",
             architecture_manifest_path="architecture.json",
             router_manifest_path="router.json",
             expert_topology_manifest_path="topology.json",
+            provenance_path="provenance.json",
+            owner_public_key_path="owner.pem",
         )
