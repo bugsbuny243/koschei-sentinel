@@ -7,7 +7,10 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from koschei_sentinel.production_model_source import ProductionModelSourceIntake
+from koschei_sentinel.production_model_source import (
+    ProductionModelSourceIntake,
+    verify_production_model_source_intake,
+)
 from koschei_sentinel.production_target_binding import ProductionTargetBinding
 from koschei_sentinel.production_target_provenance import (
     ProductionSourceEvidence,
@@ -38,6 +41,7 @@ def build_signed_production_target_provenance(
     intake: ProductionModelSourceIntake,
     owner_private_key: Ed25519PrivateKey,
 ) -> ProductionTargetProvenance:
+    verify_production_model_source_intake(intake)
     if intake.model_ref != binding.model_ref or intake.model_revision != binding.model_revision:
         raise ValueError("model source intake identity does not match production target binding")
 
