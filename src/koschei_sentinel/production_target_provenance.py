@@ -15,6 +15,7 @@ from koschei_sentinel.models import StrictModel
 from koschei_sentinel.production_target_binding import ProductionTargetBinding
 
 _DIGEST = r"^[a-f0-9]{64}$"
+_SIGNATURE_CONTEXT = b"koschei-sentinel-production-target-provenance-v1\0"
 
 
 def _canonical_json(payload: object) -> str:
@@ -28,6 +29,12 @@ def _canonical_json(payload: object) -> str:
 
 def _canonical_digest(payload: object) -> str:
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def provenance_signature_message(provenance_sha256: str) -> bytes:
+    if len(provenance_sha256) != 64 or any(ch not in "0123456789abcdef" for ch in provenance_sha256):
+        raise ValueError("production provenance digest must be lowercase sha256 hex")
+    return _SIGNATURE_CONTEXT + provenance_sha256.encode("ascii")
 
 
 def owner_key_fingerprint(public_key: Ed25519PublicKey) -> str:
@@ -124,7 +131,7 @@ def verify_production_target_provenance(
     except ValueError as exc:
         raise ValueError("production provenance owner signature is not valid base64") from exc
     try:
-        owner_public_key.verify(signature, expected_digest.encode("ascii"))
+        owner_public_key.verify(signature, provenance_signature_message(expected_digest))
     except InvalidSignature as exc:
         raise ValueError("production provenance owner signature verification failed") from exc
     return provenance
