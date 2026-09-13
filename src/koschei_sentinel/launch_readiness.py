@@ -6,12 +6,15 @@ from typing import Literal
 
 from pydantic import Field
 
-from koschei_sentinel.candidate_finalization import CandidateFinalization
+from koschei_sentinel.candidate_finalization import (
+    CandidateFinalization,
+    load_candidate_finalization,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.production_authority import (
     ProductionAuthority,
     ProductionAuthorityProposal,
-    canonical_json_digest,
+    load_verified_production_holdout,
     verify_production_authority,
 )
 from koschei_sentinel.promotion import load_owner_public_key
@@ -57,9 +60,7 @@ def audit_launch_readiness(
     finalization: CandidateFinalization | None = None
 
     try:
-        finalization = CandidateFinalization.model_validate(
-            _load_json(finalization_path, "candidate finalization")
-        )
+        finalization = load_candidate_finalization(finalization_path)
         candidate_id = finalization.candidate_id
         finalized_candidate_valid = True
     except ValueError as exc:
@@ -67,21 +68,26 @@ def audit_launch_readiness(
 
     valid_holdouts = 0
     holdout_digests: list[str] = []
+    holdout_owner_fingerprints: set[str] = set()
+    holdout_adapter_digests: set[str] = set()
     if not holdout_evidence_paths:
         blockers.append("no independent holdout evidence was supplied")
     else:
         for path in holdout_evidence_paths:
             try:
-                payload = _load_json(path, "holdout evidence")
+                evidence = load_verified_production_holdout(path)
             except ValueError as exc:
                 blockers.append(str(exc))
                 continue
-            schema = payload.get("schema_version")
-            if not isinstance(schema, str) or "holdout" not in schema.lower():
-                blockers.append(f"unrecognized holdout evidence schema: {path}")
-                continue
             valid_holdouts += 1
-            holdout_digests.append(canonical_json_digest(payload))
+            holdout_digests.append(evidence.evidence_sha256)
+            if evidence.owner_key_fingerprint is not None:
+                holdout_owner_fingerprints.add(evidence.owner_key_fingerprint)
+            holdout_adapter_digests.add(evidence.adapter_digest)
+
+    if finalization is not None and holdout_adapter_digests:
+        if holdout_adapter_digests != {finalization.adapter_digest}:
+            blockers.append("Gold HOLDOUT evidence does not bind the finalized adapter")
 
     authority_present = production_authority_path is not None
     authority_verified = False
@@ -95,6 +101,7 @@ def audit_launch_readiness(
     elif owner_public_key_path is None:
         blockers.append("owner public key is required for production authority verification")
     else:
+        authority_blockers: list[str] = []
         try:
             proposal = ProductionAuthorityProposal.model_validate(
                 _load_json(production_authority_proposal_path, "production authority proposal")
@@ -102,34 +109,39 @@ def audit_launch_readiness(
             authority = ProductionAuthority.model_validate(
                 _load_json(production_authority_path, "production authority")
             )
-            verify_production_authority(
-                proposal,
-                authority,
-                load_owner_public_key(owner_public_key_path),
-            )
+            owner_public_key = load_owner_public_key(owner_public_key_path)
+            verify_production_authority(proposal, authority, owner_public_key)
+
             if finalization is None:
-                blockers.append("production authority cannot be bound without valid finalization")
+                authority_blockers.append(
+                    "production authority cannot be bound without valid finalization"
+                )
             else:
                 if proposal.candidate_id != finalization.candidate_id:
-                    blockers.append("production authority candidate does not match finalization")
+                    authority_blockers.append(
+                        "production authority candidate does not match finalization"
+                    )
                 if proposal.finalization_digest != finalization.finalization_digest:
-                    blockers.append("production authority does not bind candidate finalization")
+                    authority_blockers.append(
+                        "production authority does not bind candidate finalization"
+                    )
             if sorted(proposal.holdout_evidence_digests) != sorted(holdout_digests):
-                blockers.append("production authority does not bind supplied holdout evidence")
-            if not authority.rollback_required:
-                blockers.append("production authority requires rollback capability")
-            if not authority.emergency_disable_required:
-                blockers.append("production authority requires emergency disable capability")
-            if authority.automatic_expansion_allowed:
-                blockers.append("automatic production traffic expansion is forbidden")
-            authority_verified = not any(
-                "production authority" in item or "rollback" in item or "emergency" in item
-                for item in blockers
-            )
+                authority_blockers.append(
+                    "production authority does not bind supplied holdout evidence"
+                )
+            if holdout_owner_fingerprints and holdout_owner_fingerprints != {
+                proposal.owner_key_fingerprint
+            }:
+                authority_blockers.append(
+                    "Gold HOLDOUT owner trust root does not match production authority"
+                )
+
+            authority_verified = not authority_blockers
             deployment_scope = authority.deployment_scope
             max_initial_traffic_percent = authority.max_initial_traffic_percent
         except (OSError, TypeError, ValueError) as exc:
-            blockers.append(str(exc))
+            authority_blockers.append(str(exc))
+        blockers.extend(authority_blockers)
 
     ready = (
         finalized_candidate_valid
