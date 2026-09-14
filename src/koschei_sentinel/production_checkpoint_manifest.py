@@ -102,7 +102,11 @@ def _initialization_for(
     ep: int,
     hidden_size: int,
 ) -> TensorInitializationRecord:
-    seed = _seed64(global_seed, entry.name, pp, tp, ep)
+    # Replicated tensors must initialize identically on every replica. Sharded tensors
+    # include their shard coordinate so distinct TP/EP shards receive distinct streams.
+    seed_tp = 0 if entry.replicated_across_tensor_parallel else tp
+    seed_ep = 0 if entry.replicated_across_expert_parallel else ep
+    seed = _seed64(global_seed, entry.name, pp, seed_tp, seed_ep)
     local_elements = prod(entry.shard_shape)
     if entry.category == "normalization":
         base = {
