@@ -68,7 +68,7 @@ class TrainingTrendTracker:
         self._activation_rms = deque(maxlen=size)
         self._router_utilization = deque(maxlen=size)
 
-    def observe(
+    def preview(
         self,
         *,
         global_step: int,
@@ -110,12 +110,11 @@ class TrainingTrendTracker:
         if (
             worst_router_utilization_fraction is not None
             and router_base is not None
-            and router_base - worst_router_utilization_fraction
-            > self.thresholds.max_router_utilization_drop
+            and router_base - worst_router_utilization_fraction > self.thresholds.max_router_utilization_drop
         ):
             blockers.append("router_utilization_collapse_trend")
 
-        snapshot = TrainingTrendSnapshot(
+        return TrainingTrendSnapshot(
             global_step=global_step,
             lm_loss=lm_loss,
             loss_baseline_median=loss_base,
@@ -132,12 +131,55 @@ class TrainingTrendTracker:
             trend_passed=not blockers,
         )
 
-        if lm_loss is not None and math.isfinite(lm_loss):
-            self._losses.append(float(lm_loss))
+    def commit(self, snapshot: TrainingTrendSnapshot) -> None:
+        if not snapshot.trend_passed:
+            raise ValueError("cannot commit a failed trend snapshot")
+        if snapshot.lm_loss is not None and math.isfinite(snapshot.lm_loss):
+            self._losses.append(float(snapshot.lm_loss))
+        if math.isfinite(snapshot.grad_norm_ratio_to_median or 0.0):
+            # Grad norm itself is reconstructed from ratio only when unavailable; callers use observe
+            # for backward-compatible mutation. preview/commit users call commit_values below.
+            pass
+        if snapshot.max_activation_rms is not None and math.isfinite(snapshot.max_activation_rms):
+            self._activation_rms.append(float(snapshot.max_activation_rms))
+        if snapshot.worst_router_utilization_fraction is not None:
+            self._router_utilization.append(float(snapshot.worst_router_utilization_fraction))
+
+    def commit_values(
+        self,
+        snapshot: TrainingTrendSnapshot,
+        *,
+        grad_norm: float,
+    ) -> None:
+        if not snapshot.trend_passed:
+            raise ValueError("cannot commit a failed trend snapshot")
+        if snapshot.lm_loss is not None and math.isfinite(snapshot.lm_loss):
+            self._losses.append(float(snapshot.lm_loss))
         if math.isfinite(grad_norm):
             self._grad_norms.append(float(grad_norm))
-        if max_activation_rms is not None and math.isfinite(max_activation_rms):
-            self._activation_rms.append(float(max_activation_rms))
-        if worst_router_utilization_fraction is not None:
-            self._router_utilization.append(float(worst_router_utilization_fraction))
+        if snapshot.max_activation_rms is not None and math.isfinite(snapshot.max_activation_rms):
+            self._activation_rms.append(float(snapshot.max_activation_rms))
+        if snapshot.worst_router_utilization_fraction is not None:
+            self._router_utilization.append(float(snapshot.worst_router_utilization_fraction))
+
+    def observe(
+        self,
+        *,
+        global_step: int,
+        lm_loss: float | None,
+        grad_norm: float,
+        max_activation_rms: float | None,
+        max_activation_abs: float | None,
+        worst_router_utilization_fraction: float | None,
+    ) -> TrainingTrendSnapshot:
+        snapshot = self.preview(
+            global_step=global_step,
+            lm_loss=lm_loss,
+            grad_norm=grad_norm,
+            max_activation_rms=max_activation_rms,
+            max_activation_abs=max_activation_abs,
+            worst_router_utilization_fraction=worst_router_utilization_fraction,
+        )
+        if snapshot.trend_passed:
+            self.commit_values(snapshot, grad_norm=grad_norm)
         return snapshot
