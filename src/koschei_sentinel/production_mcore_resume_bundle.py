@@ -42,14 +42,17 @@ def build_catalog_recovery_resume_state(
     catalog_sha256: str,
     current_learning_rate: float,
     ledger: RecoveryLedger,
-    total_retries: int = 0,
+    total_retries: int | None = None,
     quarantine_events: list[dict[str, Any]] | None = None,
 ) -> CatalogRecoveryResumeState:
+    retries = ledger.total_retries if total_retries is None else total_retries
+    if retries != ledger.total_retries:
+        raise ValueError("recovery retry count must match ledger total_retries")
     return CatalogRecoveryResumeState(
         catalog_sha256=catalog_sha256,
         current_learning_rate=current_learning_rate,
         ledger=ledger.to_state(),
-        total_retries=total_retries,
+        total_retries=retries,
         quarantine_events=list(quarantine_events or []),
     )
 
@@ -61,7 +64,7 @@ def attach_catalog_resume_state(
     current_learning_rate: float,
     ledger: RecoveryLedger,
     trend_tracker: TrainingTrendTracker,
-    total_retries: int = 0,
+    total_retries: int | None = None,
     quarantine_events: list[dict[str, Any]] | None = None,
 ) -> MCoreTrainingState:
     return training_state.model_copy(
@@ -93,17 +96,18 @@ def restore_catalog_resume_bundle(
         if cursor.catalog_sha256 != expected_catalog_sha256:
             raise ValueError("training checkpoint catalog cursor digest mismatch")
 
-    total_retries = 0
     quarantine_events: list[dict[str, Any]] = []
     if training_state.recovery_state is None:
         ledger = RecoveryLedger.empty()
         current_learning_rate = training_state.learning_rate
+        total_retries = 0
     else:
         raw_recovery = dict(training_state.recovery_state)
         schema_version = raw_recovery.get("schema_version")
         if schema_version == "sentinel.catalog-recovery-resume-state.v1":
             raw_recovery["schema_version"] = "sentinel.catalog-recovery-resume-state.v2"
-            raw_recovery.setdefault("total_retries", 0)
+            ledger_raw = raw_recovery.get("ledger") or {}
+            raw_recovery.setdefault("total_retries", int(ledger_raw.get("total_retries", 0)))
             raw_recovery.setdefault("quarantine_events", [])
         recovery = CatalogRecoveryResumeState.model_validate(raw_recovery)
         if recovery.catalog_sha256 != expected_catalog_sha256:
@@ -111,6 +115,8 @@ def restore_catalog_resume_bundle(
         ledger = RecoveryLedger.from_state(recovery.ledger)
         current_learning_rate = recovery.current_learning_rate
         total_retries = recovery.total_retries
+        if total_retries != ledger.total_retries:
+            raise ValueError("training checkpoint retry count disagrees with recovery ledger")
         quarantine_events = [dict(item) for item in recovery.quarantine_events]
         if abs(current_learning_rate - training_state.learning_rate) > max(
             1.0e-15, training_state.learning_rate * 1.0e-12
