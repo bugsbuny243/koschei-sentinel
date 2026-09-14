@@ -35,9 +35,12 @@ class ProductionMegatronLaunchPlan(StrictModel):
     plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def no_accidental_execution_claim(self) -> "ProductionMegatronLaunchPlan":
+    def verify_integrity_and_authority(self) -> "ProductionMegatronLaunchPlan":
         if self.status != "dry_run_only" or self.launchable is not False:
             raise ValueError("research launch plan cannot authorize execution")
+        payload = self.model_dump(mode="json", exclude={"plan_sha256"})
+        if self.plan_sha256 != _digest(payload):
+            raise ValueError("production Megatron launch-plan self-hash mismatch")
         return self
 
 
