@@ -9,16 +9,21 @@ from koschei_sentinel.models import StrictModel
 
 
 class MCoreTrainingState(StrictModel):
-    schema_version: Literal["sentinel.mcore-training-state.v1"] = "sentinel.mcore-training-state.v1"
+    schema_version: Literal[
+        "sentinel.mcore-training-state.v1",
+        "sentinel.mcore-training-state.v2",
+    ] = "sentinel.mcore-training-state.v2"
     global_step: int = Field(ge=0)
     consumed_microbatches: int = Field(ge=0)
     learning_rate: float = Field(gt=0.0)
     global_seed: int = Field(ge=0, lt=2**63)
     data_state: dict[str, Any] | None = None
+    recovery_state: dict[str, Any] | None = None
+    trend_state: dict[str, Any] | None = None
 
 
 class MCoreTrainingCheckpointResult(StrictModel):
-    schema_version: Literal["sentinel.mcore-training-checkpoint.v1"] = "sentinel.mcore-training-checkpoint.v1"
+    schema_version: Literal["sentinel.mcore-training-checkpoint.v2"] = "sentinel.mcore-training-checkpoint.v2"
     status: Literal["training_checkpoint_saved", "training_checkpoint_loaded"]
     checkpoint_dir: str = Field(min_length=1)
     global_step: int = Field(ge=0)
@@ -58,9 +63,12 @@ def save_mcore_training_checkpoint(model: Any, optimizer: Any, training_state: M
         validate_access_integrity=True,
         async_sharded_save=False,
         content_metadata={
-            "schema_version": "sentinel.mcore-training-checkpoint.v1",
+            "schema_version": "sentinel.mcore-training-checkpoint.v2",
+            "training_state_schema_version": training_state.schema_version,
             "global_step": training_state.global_step,
             "has_data_state": training_state.data_state is not None,
+            "has_recovery_state": training_state.recovery_state is not None,
+            "has_trend_state": training_state.trend_state is not None,
             "target_total_parameters_billion": 397.0,
             "target_active_parameters_billion": 35.0,
         },
@@ -77,7 +85,15 @@ def load_mcore_training_checkpoint(model: Any, optimizer: Any, *, checkpoint_dir
     source = Path(checkpoint_dir)
     if not source.is_dir():
         raise ValueError(f"training checkpoint directory does not exist: {source}")
-    template_training_state = MCoreTrainingState(global_step=0, consumed_microbatches=0, learning_rate=1.0, global_seed=expected_global_seed, data_state=None)
+    template_training_state = MCoreTrainingState(
+        global_step=0,
+        consumed_microbatches=0,
+        learning_rate=1.0,
+        global_seed=expected_global_seed,
+        data_state=None,
+        recovery_state=None,
+        trend_state=None,
+    )
     template = _combined_sharded_state(model, optimizer, template_training_state, is_loading=True)
     loaded = load(template, source.as_posix(), validate_access_integrity=True, strict="return_all", verify_integrity=True)
     missing: list[str] = []
@@ -89,6 +105,12 @@ def load_mcore_training_checkpoint(model: Any, optimizer: Any, *, checkpoint_dir
         state, missing_raw, unexpected_raw = loaded
         missing = sorted(str(item) for item in missing_raw)
         unexpected = sorted(str(item) for item in unexpected_raw)
+    # Old v1 checkpoints legitimately lack v2-only training-state keys.
+    allowed_missing = {
+        "training_state.recovery_state",
+        "training_state.trend_state",
+    }
+    missing = [item for item in missing if item not in allowed_missing]
     if missing or unexpected:
         raise ValueError(f"training checkpoint mismatch; missing={missing[:5]} unexpected={unexpected[:5]}")
     if not isinstance(state, dict):
@@ -102,6 +124,9 @@ def load_mcore_training_checkpoint(model: Any, optimizer: Any, *, checkpoint_dir
     optimizer.load_state_dict(optimizer_state)
     if hasattr(optimizer, "reload_model_params"):
         optimizer.reload_model_params()
+    if isinstance(training_state_raw, dict):
+        training_state_raw.setdefault("recovery_state", None)
+        training_state_raw.setdefault("trend_state", None)
     training_state = MCoreTrainingState.model_validate(training_state_raw)
     if training_state.global_seed != expected_global_seed:
         raise ValueError("training checkpoint global seed mismatch")
