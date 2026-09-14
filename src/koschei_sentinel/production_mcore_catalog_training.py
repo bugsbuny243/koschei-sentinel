@@ -15,6 +15,12 @@ from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
 from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
 from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
 from koschei_sentinel.production_mcore_optimizer_smoke import build_mcore_distributed_optimizer
+from koschei_sentinel.production_mcore_router_probe import MCoreRouterProbe
+from koschei_sentinel.production_mcore_stability_telemetry import (
+    MCoreStabilityStepTelemetry,
+    StabilityThresholds,
+    collect_mcore_stability_telemetry,
+)
 from koschei_sentinel.production_mcore_training_checkpoint import (
     MCoreTrainingState,
     load_mcore_training_checkpoint,
@@ -34,6 +40,14 @@ class CatalogTrainingConfig(StrictModel):
     checkpoint_every_steps: int = Field(gt=0)
     prefetch_workers: int = Field(gt=0)
     prefetch_depth: int = Field(ge=2)
+    stability_thresholds: StabilityThresholds = Field(
+        default_factory=lambda: StabilityThresholds(
+            max_grad_norm=100.0,
+            max_cuda_allocated_fraction=0.95,
+            min_expert_utilization_fraction=0.50,
+            max_expert_load_cv=2.0,
+        )
+    )
 
 
 class CatalogTrainingStepMetrics(StrictModel):
@@ -43,6 +57,7 @@ class CatalogTrainingStepMetrics(StrictModel):
     elapsed_seconds: float = Field(gt=0.0)
     local_tokens_per_second: float = Field(gt=0.0)
     global_tokens_per_second: float = Field(gt=0.0)
+    stability: MCoreStabilityStepTelemetry
     worker_prefetch: Literal[True] = True
     pinned_memory: Literal[True] = True
     async_h2d: Literal[True] = True
@@ -58,6 +73,7 @@ class CatalogTrainingResult(StrictModel):
     catalog_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     step_metrics: list[CatalogTrainingStepMetrics] = Field(min_length=1)
     final_checkpoint_dir: str | None = None
+    all_steps_stable: Literal[True] = True
     execution_authorized: Literal[False] = False
 
 
@@ -126,6 +142,20 @@ def _run_prefetched_batches(runtime, spec, batches) -> None:
     )
 
 
+def _optimizer_step_result(value) -> tuple[bool, float]:
+    if isinstance(value, tuple):
+        successful = bool(value[0])
+        raw_grad_norm = value[1] if len(value) > 1 else 0.0
+    else:
+        successful = bool(value) if value is not None else True
+        raw_grad_norm = 0.0
+    try:
+        grad_norm = float(raw_grad_norm.item())
+    except AttributeError:
+        grad_norm = float(raw_grad_norm or 0.0)
+    return successful, grad_norm
+
+
 def run_catalog_training(
     runtime: MCoreDistributedRuntime,
     spec: ProductionMegatronModelSpec,
@@ -158,6 +188,8 @@ def run_catalog_training(
         weight_decay=config.weight_decay,
         clip_grad=config.clip_grad,
     )
+    router_probe = MCoreRouterProbe()
+    router_probe.attach(model)
 
     resumed = resume_checkpoint is not None
     cursor: FoundationCatalogCursor | None = None
@@ -200,73 +232,96 @@ def run_catalog_training(
     device = torch.device("cuda", runtime.local_rank)
     global_offset = cursor.global_sequence_offset if cursor is not None else 0
 
-    for zero_based_step in range(start_step, config.max_steps):
-        window = config.microbatches_per_step * dp_size
-        indices = [
-            ordinal
-            for ordinal in range(global_offset, global_offset + window)
-            if (ordinal - global_offset) % dp_size == dp_rank
-        ]
-        worker_prefetch = FoundationWorkerPrefetch(
-            catalog_path,
-            indices,
-            workers=config.prefetch_workers,
-            prefetch_depth=config.prefetch_depth,
-        )
-        sequences = [item.sequence for item in worker_prefetch]
-        if len(sequences) != config.microbatches_per_step:
-            raise RuntimeError("catalog worker prefetch returned wrong local batch count")
+    try:
+        for zero_based_step in range(start_step, config.max_steps):
+            window = config.microbatches_per_step * dp_size
+            indices = [
+                ordinal
+                for ordinal in range(global_offset, global_offset + window)
+                if (ordinal - global_offset) % dp_size == dp_rank
+            ]
+            worker_prefetch = FoundationWorkerPrefetch(
+                catalog_path,
+                indices,
+                workers=config.prefetch_workers,
+                prefetch_depth=config.prefetch_depth,
+            )
+            sequences = [item.sequence for item in worker_prefetch]
+            if len(sequences) != config.microbatches_per_step:
+                raise RuntimeError("catalog worker prefetch returned wrong local batch count")
 
-        optimizer.zero_grad(set_to_none=True)
-        model.zero_grad_buffer()
-        double_buffer = FoundationDoubleBuffer(sequences, device=device, depth=2)
+            optimizer.zero_grad(set_to_none=True)
+            model.zero_grad_buffer()
+            router_probe.reset()
+            torch.cuda.reset_peak_memory_stats(runtime.local_rank)
+            double_buffer = FoundationDoubleBuffer(sequences, device=device, depth=2)
 
-        dist.barrier()
-        torch.cuda.synchronize(runtime.local_rank)
-        started = time.perf_counter()
-        _run_prefetched_batches(ddp_runtime, spec, double_buffer)
-        model.finish_grad_sync()
-        step_result = optimizer.step()
-        successful = bool(step_result[0]) if isinstance(step_result, tuple) else bool(
-            step_result if step_result is not None else True
-        )
-        if not successful:
-            raise RuntimeError(f"catalog optimizer failed at step {zero_based_step + 1}")
-        torch.cuda.synchronize(runtime.local_rank)
-        dist.barrier()
-        elapsed = time.perf_counter() - started
-        if elapsed <= 0:
-            raise RuntimeError("catalog training step duration must be positive")
+            dist.barrier()
+            torch.cuda.synchronize(runtime.local_rank)
+            started = time.perf_counter()
+            _run_prefetched_batches(ddp_runtime, spec, double_buffer)
+            model.finish_grad_sync()
+            step_result = optimizer.step()
+            successful, grad_norm = _optimizer_step_result(step_result)
+            if not successful:
+                raise RuntimeError(f"catalog optimizer failed at step {zero_based_step + 1}")
+            torch.cuda.synchronize(runtime.local_rank)
+            dist.barrier()
+            elapsed = time.perf_counter() - started
+            if elapsed <= 0:
+                raise RuntimeError("catalog training step duration must be positive")
 
-        global_offset += window
-        cursor = FoundationCatalogCursor(
-            global_sequence_offset=global_offset,
-            catalog_sha256=catalog.catalog_sha256,
-            data_parallel_size=dp_size,
-        )
-        local_tokens = catalog.sequence_length * config.microbatches_per_step
-        global_tokens = local_tokens * dp_size
-        metrics.append(
-            CatalogTrainingStepMetrics(
+            global_offset += window
+            cursor = FoundationCatalogCursor(
+                global_sequence_offset=global_offset,
+                catalog_sha256=catalog.catalog_sha256,
+                data_parallel_size=dp_size,
+            )
+            local_tokens = catalog.sequence_length * config.microbatches_per_step
+            global_tokens = local_tokens * dp_size
+            router_snapshot = router_probe.snapshot()
+            stability = collect_mcore_stability_telemetry(
+                model=model,
                 global_step=zero_based_step + 1,
                 local_tokens=local_tokens,
                 global_tokens=global_tokens,
                 elapsed_seconds=elapsed,
-                local_tokens_per_second=local_tokens / elapsed,
-                global_tokens_per_second=global_tokens / elapsed,
+                grad_norm=grad_norm,
+                thresholds=config.stability_thresholds,
+                local_rank=runtime.local_rank,
+                aux_loss=router_snapshot.aux_loss,
+                z_loss=router_snapshot.z_loss,
+                tokens_per_expert=router_snapshot.tokens_per_expert,
             )
-        )
-        state = MCoreTrainingState(
-            global_step=zero_based_step + 1,
-            consumed_microbatches=state.consumed_microbatches + config.microbatches_per_step,
-            learning_rate=config.learning_rate,
-            global_seed=config.global_seed,
-            data_state=cursor.model_dump(mode="json"),
-        )
-        if state.global_step % config.checkpoint_every_steps == 0 or state.global_step == config.max_steps:
-            step_dir = root / f"step-{state.global_step:08d}"
-            save_mcore_training_checkpoint(model, optimizer, state, checkpoint_dir=step_dir)
-            final_checkpoint = step_dir.as_posix()
+            if not stability.stability_passed:
+                raise RuntimeError(
+                    f"training stability gate failed at step {zero_based_step + 1}: {stability.blockers}"
+                )
+
+            metrics.append(
+                CatalogTrainingStepMetrics(
+                    global_step=zero_based_step + 1,
+                    local_tokens=local_tokens,
+                    global_tokens=global_tokens,
+                    elapsed_seconds=elapsed,
+                    local_tokens_per_second=local_tokens / elapsed,
+                    global_tokens_per_second=global_tokens / elapsed,
+                    stability=stability,
+                )
+            )
+            state = MCoreTrainingState(
+                global_step=zero_based_step + 1,
+                consumed_microbatches=state.consumed_microbatches + config.microbatches_per_step,
+                learning_rate=config.learning_rate,
+                global_seed=config.global_seed,
+                data_state=cursor.model_dump(mode="json"),
+            )
+            if state.global_step % config.checkpoint_every_steps == 0 or state.global_step == config.max_steps:
+                step_dir = root / f"step-{state.global_step:08d}"
+                save_mcore_training_checkpoint(model, optimizer, state, checkpoint_dir=step_dir)
+                final_checkpoint = step_dir.as_posix()
+    finally:
+        router_probe.detach()
 
     return CatalogTrainingResult(
         start_step=start_step,
