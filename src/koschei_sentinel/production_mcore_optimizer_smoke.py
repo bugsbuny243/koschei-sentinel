@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
+from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
 from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
 from koschei_sentinel.production_mcore_smoke import run_mcore_forward_backward_smoke
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
@@ -33,7 +34,6 @@ class MCoreOptimizerSmokeResult(StrictModel):
 
 
 def _tensor_digest(tensor: Any) -> str:
-    # Smoke-only digest of a deterministic sample, avoiding host copies of full 397B shards.
     detached = tensor.detach().reshape(-1)
     if detached.numel() == 0:
         raise RuntimeError("cannot digest an empty parameter")
@@ -41,10 +41,25 @@ def _tensor_digest(tensor: Any) -> str:
     return hashlib.sha256(sample.numpy().tobytes()).hexdigest()
 
 
-def _first_trainable_parameter(model: Any) -> tuple[str, Any]:
+def _gradient_for(parameter: Any) -> Any | None:
+    main_grad = getattr(parameter, "main_grad", None)
+    return main_grad if main_grad is not None else parameter.grad
+
+
+def _first_parameter_with_gradient(model: Any) -> tuple[str, Any]:
+    fallback: tuple[str, Any] | None = None
     for name, parameter in model.named_parameters():
-        if parameter.requires_grad and parameter.numel() > 0:
-            return name, parameter
+        if not parameter.requires_grad or parameter.numel() == 0:
+            continue
+        if fallback is None:
+            fallback = (name, parameter)
+        gradient = _gradient_for(parameter)
+        if gradient is not None:
+            sample = gradient.detach().reshape(-1)[: min(4096, gradient.numel())]
+            if sample.numel() and bool(sample.abs().max().item() > 0):
+                return name, parameter
+    if fallback is not None:
+        raise RuntimeError("no trainable parameter with a nonzero gradient was found on this rank")
     raise RuntimeError("model has no trainable parameters on this rank")
 
 
@@ -88,6 +103,7 @@ def build_mcore_distributed_optimizer(
     return get_megatron_optimizer(
         config=config,
         model_chunks=[runtime.model],
+        config_overrides={},
         use_gloo_process_groups=True,
     )
 
@@ -102,23 +118,24 @@ def run_mcore_optimizer_smoke(
     weight_decay: float = 0.1,
     clip_grad: float = 1.0,
 ) -> MCoreOptimizerSmokeResult:
-    """Run one real MCore BF16 distributed-AdamW update after the FWD/BWD smoke.
+    """Run one MCore BF16 distributed-AdamW update after FWD/BWD.
 
-    The function requires the full torchrun/MCore process topology. It verifies that a
-    trainable parameter changes after optimizer.step(). It does not authorize a training
-    campaign or claim convergence.
+    The raw GPT graph is wrapped in Megatron DDP so contiguous main-grad/parameter buffers
+    exist for reduce-scatter and distributed AdamW. This is a one-step systems smoke only.
     """
-    model = runtime.model
+    ddp_runtime = wrap_runtime_with_megatron_ddp(runtime)
+    model = ddp_runtime.model
     optimizer = build_mcore_distributed_optimizer(
-        runtime,
+        ddp_runtime,
         learning_rate=learning_rate,
         weight_decay=weight_decay,
         clip_grad=clip_grad,
     )
     optimizer.zero_grad(set_to_none=True)
+    model.zero_grad_buffer()
 
     smoke = run_mcore_forward_backward_smoke(
-        runtime,
+        ddp_runtime,
         spec,
         seq_length=seq_length,
         global_seed=global_seed,
@@ -126,7 +143,9 @@ def run_mcore_optimizer_smoke(
     if not smoke.forward_verified or not smoke.backward_verified:
         raise RuntimeError("forward/backward smoke did not verify before optimizer step")
 
-    parameter_name, parameter = _first_trainable_parameter(model)
+    # With synchronous reduction this performs the required DP reduce-scatter before step.
+    model.finish_grad_sync()
+    parameter_name, parameter = _first_parameter_with_gradient(model)
     before_digest = _tensor_digest(parameter)
 
     step_result = optimizer.step()
@@ -139,6 +158,7 @@ def run_mcore_optimizer_smoke(
     if not update_successful:
         raise RuntimeError("Megatron optimizer reported an unsuccessful step")
 
+    # Distributed optimizer synchronizes updated BF16 model parameters after the FP32 step.
     after_digest = _tensor_digest(parameter)
     if before_digest == after_digest:
         raise RuntimeError(
