@@ -25,6 +25,11 @@ class MCoreSmokeResult(StrictModel):
     execution_authorized: Literal[False] = False
 
 
+def _parameter_grad(parameter):
+    main_grad = getattr(parameter, "main_grad", None)
+    return main_grad if main_grad is not None else parameter.grad
+
+
 def run_mcore_forward_backward_smoke(
     runtime: MCoreDistributedRuntime,
     spec: ProductionMegatronModelSpec,
@@ -36,6 +41,7 @@ def run_mcore_forward_backward_smoke(
 
     This verifies graph construction plus autograd only. It does not create an optimizer,
     update weights, consume cybersecurity training data, or authorize a paid training run.
+    Megatron DDP stores reduced gradients in ``main_grad``; raw modules use ``grad``.
     """
     try:
         import torch
@@ -55,6 +61,8 @@ def run_mcore_forward_backward_smoke(
     initialize_mcore_native_parameters(model, global_seed=global_seed)
     model.train()
     model.zero_grad(set_to_none=True)
+    if hasattr(model, "zero_grad_buffer"):
+        model.zero_grad_buffer()
 
     device = torch.device("cuda", runtime.local_rank)
     generator = torch.Generator(device=device)
@@ -121,7 +129,11 @@ def run_mcore_forward_backward_smoke(
         collect_non_loss_data=False,
     )
 
-    has_grad = any(parameter.grad is not None for parameter in model.parameters() if parameter.requires_grad)
+    has_grad = any(
+        _parameter_grad(parameter) is not None
+        for parameter in model.parameters()
+        if parameter.requires_grad
+    )
     if not has_grad:
         raise RuntimeError("MCore smoke backward completed without any parameter gradient on this rank")
 
