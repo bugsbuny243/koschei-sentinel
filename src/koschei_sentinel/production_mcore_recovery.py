@@ -146,6 +146,8 @@ def build_recovery_decision(
     if quarantine:
         ledger.quarantine(batch_fingerprint)
     retry_allowed = failures <= policy.max_retries_per_batch and not quarantine
+    if retry_allowed:
+        ledger.record_retry()
     skip_batch = quarantine and policy.skip_quarantined_batch
     next_lr = max(policy.min_learning_rate, current_learning_rate * policy.learning_rate_backoff)
     return RecoveryDecision(
