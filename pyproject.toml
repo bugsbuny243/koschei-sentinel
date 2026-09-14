@@ -151,6 +151,8 @@ sentinel-production-provenance-author = "koschei_sentinel.production_target_prov
 sentinel-production-candidate-matrix = "koschei_sentinel.production_target_candidate_matrix_cli:main"
 sentinel-foundation-pretokenize = "koschei_sentinel.production_foundation_pretokenize_cli:main"
 sentinel-production-mcore-pretokenized-train = "koschei_sentinel.production_mcore_pretokenized_training_cli:main"
+sentinel-foundation-catalog = "koschei_sentinel.production_foundation_catalog_cli:main"
+sentinel-production-mcore-catalog-train = "koschei_sentinel.production_mcore_catalog_training_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/koschei_sentinel"]
