@@ -16,6 +16,7 @@ class StabilityThresholds(StrictModel):
     max_cuda_allocated_fraction: float = Field(gt=0.0, le=1.0)
     min_expert_utilization_fraction: float = Field(ge=0.0, le=1.0)
     max_expert_load_cv: float = Field(ge=0.0)
+    finite_sample_elements_per_tensor: int = Field(gt=0, le=65536, default=4096)
     require_finite_parameters: bool = True
     require_finite_gradients: bool = True
     require_router_telemetry: bool = True
@@ -51,8 +52,9 @@ class MCoreStabilityStepTelemetry(StrictModel):
     local_tokens_per_second: float = Field(gt=0.0)
     global_tokens_per_second: float = Field(gt=0.0)
     grad_norm: float = Field(ge=0.0)
-    parameters_finite: bool
-    gradients_finite: bool
+    sampled_parameters_finite: bool
+    sampled_gradients_finite: bool
+    finite_sample_elements_per_tensor: int = Field(gt=0)
     cuda_allocated_bytes: int = Field(ge=0)
     cuda_reserved_bytes: int = Field(ge=0)
     cuda_total_bytes: int = Field(gt=0)
@@ -104,22 +106,24 @@ def summarize_router_layer(module_name: str, tokens_per_expert: list[int]) -> Mo
     )
 
 
-def _finite_parameters_and_gradients(model: Any) -> tuple[bool, bool]:
+def _sampled_finite_parameters_and_gradients(model: Any, sample_elements: int) -> tuple[bool, bool]:
     try:
         import torch
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("PyTorch is required for stability telemetry") from exc
-    parameters_finite = True
-    gradients_finite = True
+    parameter_checks = []
+    gradient_checks = []
     with torch.no_grad():
         for parameter in model.parameters():
-            if parameter.numel() and not bool(torch.isfinite(parameter).all().item()):
-                parameters_finite = False
+            if parameter.numel():
+                parameter_checks.append(torch.isfinite(parameter.detach().reshape(-1)[:sample_elements]).all())
             gradient = getattr(parameter, "main_grad", None)
             if gradient is None:
                 gradient = parameter.grad
-            if gradient is not None and gradient.numel() and not bool(torch.isfinite(gradient).all().item()):
-                gradients_finite = False
+            if gradient is not None and gradient.numel():
+                gradient_checks.append(torch.isfinite(gradient.detach().reshape(-1)[:sample_elements]).all())
+    parameters_finite = True if not parameter_checks else bool(torch.stack(parameter_checks).all().item())
+    gradients_finite = True if not gradient_checks else bool(torch.stack(gradient_checks).all().item())
     return parameters_finite, gradients_finite
 
 
@@ -146,7 +150,9 @@ def collect_mcore_stability_telemetry(
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for production stability telemetry")
 
-    parameters_finite, gradients_finite = _finite_parameters_and_gradients(model)
+    parameters_finite, gradients_finite = _sampled_finite_parameters_and_gradients(
+        model, thresholds.finite_sample_elements_per_tensor
+    )
     allocated = int(torch.cuda.memory_allocated(local_rank))
     reserved = int(torch.cuda.memory_reserved(local_rank))
     total = int(torch.cuda.get_device_properties(local_rank).total_memory)
@@ -158,9 +164,9 @@ def collect_mcore_stability_telemetry(
 
     blockers: list[str] = []
     if thresholds.require_finite_parameters and not parameters_finite:
-        blockers.append("non_finite_parameter")
+        blockers.append("non_finite_parameter_sample")
     if thresholds.require_finite_gradients and not gradients_finite:
-        blockers.append("non_finite_gradient")
+        blockers.append("non_finite_gradient_sample")
     if not math.isfinite(grad_norm) or grad_norm > thresholds.max_grad_norm:
         blockers.append("grad_norm_threshold_exceeded")
     if fraction > thresholds.max_cuda_allocated_fraction:
@@ -186,8 +192,9 @@ def collect_mcore_stability_telemetry(
         local_tokens_per_second=local_tokens / elapsed_seconds,
         global_tokens_per_second=global_tokens / elapsed_seconds,
         grad_norm=max(0.0, grad_norm) if math.isfinite(grad_norm) else float("inf"),
-        parameters_finite=parameters_finite,
-        gradients_finite=gradients_finite,
+        sampled_parameters_finite=parameters_finite,
+        sampled_gradients_finite=gradients_finite,
+        finite_sample_elements_per_tensor=thresholds.finite_sample_elements_per_tensor,
         cuda_allocated_bytes=allocated,
         cuda_reserved_bytes=reserved,
         cuda_total_bytes=total,
