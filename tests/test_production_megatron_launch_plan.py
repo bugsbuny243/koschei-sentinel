@@ -55,9 +55,17 @@ def test_dry_run_plan_cannot_claim_launch_authority() -> None:
         ProductionMegatronLaunchPlan.model_validate(payload)
 
 
-def test_plan_hash_detects_mutation_semantically() -> None:
+def test_plan_hash_rejects_argument_mutation() -> None:
     spec = load_production_megatron_model_spec(CANDIDATE)
     plan = compile_production_megatron_launch_plan(spec)
-    original = plan.plan_sha256
+    payload = plan.model_dump(mode="json")
+    payload["argv"] = [*payload["argv"], "--unexpected-mutation"]
+    with pytest.raises(ValueError, match="self-hash mismatch"):
+        ProductionMegatronLaunchPlan.model_validate(payload)
+
+
+def test_plan_hash_is_deterministic() -> None:
+    spec = load_production_megatron_model_spec(CANDIDATE)
+    first = compile_production_megatron_launch_plan(spec)
     second = compile_production_megatron_launch_plan(spec)
-    assert second.plan_sha256 == original
+    assert second.plan_sha256 == first.plan_sha256
