@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
+from koschei_sentinel.production_mcore_checkpoint_roundtrip import verify_mcore_checkpoint_roundtrip
 from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
 from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
 from koschei_sentinel.production_mcore_smoke import run_mcore_forward_backward_smoke
@@ -27,6 +29,9 @@ class MCoreOptimizerSmokeResult(StrictModel):
     before_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     after_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     parameter_changed: Literal[True] = True
+    checkpoint_roundtrip_verified: bool = False
+    checkpoint_dir: str | None = None
+    restored_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     forward_verified: Literal[True] = True
     backward_verified: Literal[True] = True
     optimizer_step_verified: Literal[True] = True
@@ -117,11 +122,13 @@ def run_mcore_optimizer_smoke(
     learning_rate: float = 1.0e-5,
     weight_decay: float = 0.1,
     clip_grad: float = 1.0,
+    checkpoint_dir: str | Path | None = None,
 ) -> MCoreOptimizerSmokeResult:
-    """Run one MCore BF16 distributed-AdamW update after FWD/BWD.
+    """Run one BF16 distributed-AdamW update and optional checkpoint roundtrip.
 
-    The raw GPT graph is wrapped in Megatron DDP so contiguous main-grad/parameter buffers
-    exist for reduce-scatter and distributed AdamW. This is a one-step systems smoke only.
+    The raw GPT graph is wrapped in Megatron DDP so contiguous FP32 main-grad/parameter
+    buffers exist for reduce-scatter and distributed AdamW. This is a one-step systems
+    smoke only and never authorizes a training campaign.
     """
     ddp_runtime = wrap_runtime_with_megatron_ddp(runtime)
     model = ddp_runtime.model
@@ -143,7 +150,6 @@ def run_mcore_optimizer_smoke(
     if not smoke.forward_verified or not smoke.backward_verified:
         raise RuntimeError("forward/backward smoke did not verify before optimizer step")
 
-    # With synchronous reduction this performs the required DP reduce-scatter before step.
     model.finish_grad_sync()
     parameter_name, parameter = _first_parameter_with_gradient(model)
     before_digest = _tensor_digest(parameter)
@@ -158,12 +164,26 @@ def run_mcore_optimizer_smoke(
     if not update_successful:
         raise RuntimeError("Megatron optimizer reported an unsuccessful step")
 
-    # Distributed optimizer synchronizes updated BF16 model parameters after the FP32 step.
     after_digest = _tensor_digest(parameter)
     if before_digest == after_digest:
         raise RuntimeError(
             f"optimizer step completed but sampled parameter did not change: {parameter_name}"
         )
+
+    roundtrip_verified = False
+    restored_digest: str | None = None
+    checkpoint_path: str | None = None
+    if checkpoint_dir is not None:
+        roundtrip = verify_mcore_checkpoint_roundtrip(
+            model,
+            checkpoint_dir=checkpoint_dir,
+            parameter_name=parameter_name,
+        )
+        roundtrip_verified = roundtrip.digest_restored
+        restored_digest = roundtrip.restored_digest
+        checkpoint_path = roundtrip.checkpoint_dir
+        if restored_digest != after_digest:
+            raise RuntimeError("checkpoint roundtrip restored digest differs from post-step parameter")
 
     try:
         grad_norm = float(grad_norm_value.item())
@@ -180,4 +200,7 @@ def run_mcore_optimizer_smoke(
         parameter_name=parameter_name,
         before_digest=before_digest,
         after_digest=after_digest,
+        checkpoint_roundtrip_verified=roundtrip_verified,
+        checkpoint_dir=checkpoint_path,
+        restored_digest=restored_digest,
     )
