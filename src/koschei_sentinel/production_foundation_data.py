@@ -92,12 +92,7 @@ def load_foundation_tokenizer(config: FoundationDataConfig) -> Any:
         from transformers import AutoTokenizer
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("transformers is required for foundation tokenization") from exc
-    return AutoTokenizer.from_pretrained(
-        config.tokenizer_ref,
-        revision=config.tokenizer_revision,
-        trust_remote_code=False,
-        use_fast=True,
-    )
+    return AutoTokenizer.from_pretrained(config.tokenizer_ref, revision=config.tokenizer_revision, trust_remote_code=False, use_fast=True)
 
 
 def _epoch_order(count: int, seed: int, epoch: int) -> list[int]:
@@ -107,11 +102,7 @@ def _epoch_order(count: int, seed: int, epoch: int) -> list[int]:
     return order
 
 
-def iter_packed_foundation_sequences(
-    config: FoundationDataConfig,
-    *,
-    cursor: FoundationCursor | None = None,
-) -> Iterator[tuple[PackedFoundationSequence, FoundationCursor]]:
+def iter_packed_foundation_sequences(config: FoundationDataConfig, *, cursor: FoundationCursor | None = None) -> Iterator[tuple[PackedFoundationSequence, FoundationCursor]]:
     documents, corpus_sha256 = load_foundation_documents(config)
     tokenizer = load_foundation_tokenizer(config)
     if cursor is not None:
@@ -126,7 +117,7 @@ def iter_packed_foundation_sequences(
     while True:
         order = _epoch_order(len(documents), config.shuffle_seed, epoch)
         tokens: list[int] = []
-        loss_mask: list[float] = []
+        label_mask: list[float] = []
         doc_ids: list[str] = []
         produced = 0
         for index in order:
@@ -137,50 +128,37 @@ def iter_packed_foundation_sequences(
             start = len(tokens)
             tokens.extend(int(x) for x in encoded)
             tokens.append(config.eos_token_id)
-            loss_mask.extend([1.0] * (len(encoded) + 1))
+            label_mask.extend([1.0] * (len(encoded) + 1))
+            # label_mask is aligned to token positions. The label at token index `start`
+            # is the first token of the new document, so mask that cross-document target.
             if config.mask_cross_document_loss and start > 0:
-                loss_mask[start - 1] = 0.0
+                label_mask[start] = 0.0
             doc_ids.append(doc_id)
             while len(tokens) >= config.seq_length + 1:
                 window = tokens[: config.seq_length + 1]
                 packed = PackedFoundationSequence(
                     input_ids=window[:-1],
                     labels=window[1:],
-                    loss_mask=loss_mask[1 : config.seq_length + 1],
+                    loss_mask=label_mask[1 : config.seq_length + 1],
                     position_ids=list(range(config.seq_length)),
                     document_ids=list(doc_ids),
                 )
                 tokens = tokens[config.seq_length:]
-                loss_mask = loss_mask[config.seq_length:]
+                label_mask = label_mask[config.seq_length:]
                 if produced >= skip_sequences:
                     consumed += 1
-                    yield packed, FoundationCursor(
-                        epoch=epoch,
-                        packed_sequence_index=produced + 1,
-                        consumed_sequences=consumed,
-                        corpus_sha256=corpus_sha256,
-                        tokenizer_ref=config.tokenizer_ref,
-                        tokenizer_revision=config.tokenizer_revision,
-                    )
+                    yield packed, FoundationCursor(epoch=epoch, packed_sequence_index=produced + 1, consumed_sequences=consumed, corpus_sha256=corpus_sha256, tokenizer_ref=config.tokenizer_ref, tokenizer_revision=config.tokenizer_revision)
                 produced += 1
         epoch += 1
         skip_sequences = 0
 
 
-def take_distributed_foundation_sequences(
-    config: FoundationDataConfig,
-    *,
-    state: FoundationSamplerState | None,
-    data_parallel_rank: int,
-    data_parallel_size: int,
-    count: int,
-) -> tuple[list[PackedFoundationSequence], FoundationSamplerState]:
+def take_distributed_foundation_sequences(config: FoundationDataConfig, *, state: FoundationSamplerState | None, data_parallel_rank: int, data_parallel_size: int, count: int) -> tuple[list[PackedFoundationSequence], FoundationSamplerState]:
     if not 0 <= data_parallel_rank < data_parallel_size:
         raise ValueError("data_parallel_rank outside data_parallel_size")
     if count <= 0:
         raise ValueError("count must be positive")
-    documents, corpus_sha256 = load_foundation_documents(config)
-    del documents
+    _, corpus_sha256 = load_foundation_documents(config)
     if state is not None:
         if state.corpus_sha256 != corpus_sha256:
             raise ValueError("sampler state corpus digest mismatch")
@@ -191,7 +169,6 @@ def take_distributed_foundation_sequences(
         start = state.global_sequence_offset
     else:
         start = 0
-
     stream = iter_packed_foundation_sequences(config)
     selected: list[PackedFoundationSequence] = []
     stop = start + count * data_parallel_size
@@ -204,10 +181,4 @@ def take_distributed_foundation_sequences(
             selected.append(packed)
     if len(selected) != count:
         raise RuntimeError("foundation sampler could not produce requested distributed batch")
-    return selected, FoundationSamplerState(
-        global_sequence_offset=stop,
-        corpus_sha256=corpus_sha256,
-        tokenizer_ref=config.tokenizer_ref,
-        tokenizer_revision=config.tokenizer_revision,
-        data_parallel_size=data_parallel_size,
-    )
+    return selected, FoundationSamplerState(global_sequence_offset=stop, corpus_sha256=corpus_sha256, tokenizer_ref=config.tokenizer_ref, tokenizer_revision=config.tokenizer_revision, data_parallel_size=data_parallel_size)
