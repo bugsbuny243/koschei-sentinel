@@ -13,6 +13,10 @@ from koschei_sentinel.production_foundation_prefetch import FoundationDoubleBuff
 from koschei_sentinel.production_foundation_worker_prefetch import FoundationWorkerPrefetch
 from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
 from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
+from koschei_sentinel.production_mcore_moe_metrics_probe import (
+    clear_native_moe_metrics,
+    read_native_moe_losses,
+)
 from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
 from koschei_sentinel.production_mcore_optimizer_smoke import build_mcore_distributed_optimizer
 from koschei_sentinel.production_mcore_router_probe import MCoreRouterProbe
@@ -253,6 +257,7 @@ def run_catalog_training(
             optimizer.zero_grad(set_to_none=True)
             model.zero_grad_buffer()
             router_probe.reset()
+            clear_native_moe_metrics()
             torch.cuda.reset_peak_memory_stats(runtime.local_rank)
             double_buffer = FoundationDoubleBuffer(sequences, device=device, depth=2)
 
@@ -261,6 +266,7 @@ def run_catalog_training(
             started = time.perf_counter()
             _run_prefetched_batches(ddp_runtime, spec, double_buffer)
             model.finish_grad_sync()
+            native_moe_losses = read_native_moe_losses()
             step_result = optimizer.step()
             successful, grad_norm = _optimizer_step_result(step_result)
             if not successful:
@@ -289,8 +295,8 @@ def run_catalog_training(
                 grad_norm=grad_norm,
                 thresholds=config.stability_thresholds,
                 local_rank=runtime.local_rank,
-                aux_loss=router_snapshot.aux_loss,
-                z_loss=router_snapshot.z_loss,
+                aux_loss=native_moe_losses.aux_loss,
+                z_loss=native_moe_losses.z_loss,
                 router_layers=[
                     (layer.module_name, layer.tokens_per_expert) for layer in router_snapshot.layers
                 ],
