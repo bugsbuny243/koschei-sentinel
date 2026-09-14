@@ -134,10 +134,11 @@ def instantiate_megatron_core_model(
 ) -> MegatronRuntimeObjects:
     """Instantiate the actual Megatron-Core GPT graph for the production spec.
 
-    The caller must initialize torch.distributed/Megatron model-parallel process groups first.
-    This function deliberately does not initialize distributed state or launch training.
+    The caller must initialize torch.distributed and Megatron model-parallel groups first.
+    Pipeline-stage ownership is derived from Megatron parallel_state at runtime.
     """
     try:
+        from megatron.core import parallel_state
         from megatron.core.models.gpt.gpt_layer_specs import (
             get_gpt_layer_local_spec,
             get_gpt_layer_with_transformer_engine_spec,
@@ -146,6 +147,9 @@ def instantiate_megatron_core_model(
         from megatron.core.transformer.transformer_config import TransformerConfig
     except ImportError as exc:  # pragma: no cover - runtime dependency
         raise RuntimeError("Megatron-Core is required for production model construction") from exc
+
+    if not parallel_state.model_parallel_is_initialized():
+        raise RuntimeError("Megatron model-parallel groups must be initialized before GPT construction")
 
     plan = build_megatron_core_factory_plan(spec, transformer_impl=transformer_impl)
     config_kwargs = _supported_kwargs(
@@ -168,7 +172,10 @@ def instantiate_megatron_core_model(
         layer_kwargs["moe_grouped_gemm"] = spec.moe_grouped_gemm
     layer_spec = layer_factory(**layer_kwargs)
 
-    model_kwargs = _supported_kwargs(GPTModel, plan.gpt_model_kwargs, plan.required_gpt_fields)
+    stage_kwargs = dict(plan.gpt_model_kwargs)
+    stage_kwargs["pre_process"] = parallel_state.is_pipeline_first_stage()
+    stage_kwargs["post_process"] = parallel_state.is_pipeline_last_stage()
+    model_kwargs = _supported_kwargs(GPTModel, stage_kwargs, plan.required_gpt_fields)
     model = GPTModel(
         config=config,
         transformer_layer_spec=layer_spec,
