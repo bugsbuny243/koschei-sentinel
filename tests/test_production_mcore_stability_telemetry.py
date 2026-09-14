@@ -33,8 +33,9 @@ def test_step_telemetry_rejects_status_without_blocker_coherence():
             local_tokens_per_second=16.0,
             global_tokens_per_second=32.0,
             grad_norm=1.0,
-            parameters_finite=True,
-            gradients_finite=True,
+            sampled_parameters_finite=True,
+            sampled_gradients_finite=True,
+            finite_sample_elements_per_tensor=4096,
             cuda_allocated_bytes=1,
             cuda_reserved_bytes=1,
             cuda_total_bytes=2,
@@ -56,8 +57,9 @@ def test_step_telemetry_requires_worst_router_summaries_when_layers_exist():
             local_tokens_per_second=16.0,
             global_tokens_per_second=32.0,
             grad_norm=1.0,
-            parameters_finite=True,
-            gradients_finite=True,
+            sampled_parameters_finite=True,
+            sampled_gradients_finite=True,
+            finite_sample_elements_per_tensor=4096,
             cuda_allocated_bytes=1,
             cuda_reserved_bytes=1,
             cuda_total_bytes=2,
@@ -79,3 +81,4 @@ def test_threshold_contract_requires_router_by_default():
     assert thresholds.require_finite_parameters is True
     assert thresholds.require_finite_gradients is True
     assert thresholds.require_router_telemetry is True
+    assert thresholds.finite_sample_elements_per_tensor == 4096
