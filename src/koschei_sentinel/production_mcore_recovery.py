@@ -37,19 +37,61 @@ class RecoveryDecision(StrictModel):
     reason_codes: list[str] = Field(default_factory=list)
 
 
+class RecoveryLedgerState(StrictModel):
+    schema_version: Literal["sentinel.mcore-recovery-ledger-state.v1"] = (
+        "sentinel.mcore-recovery-ledger-state.v1"
+    )
+    failures_by_fingerprint: dict[str, int] = Field(default_factory=dict)
+    quarantined: list[str] = Field(default_factory=list)
+    total_retries: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def coherent(self) -> "RecoveryLedgerState":
+        for fingerprint, count in self.failures_by_fingerprint.items():
+            if len(fingerprint) != 64 or any(ch not in "0123456789abcdef" for ch in fingerprint):
+                raise ValueError("recovery ledger contains invalid fingerprint")
+            if count <= 0:
+                raise ValueError("recovery failure counts must be positive")
+        if len(set(self.quarantined)) != len(self.quarantined):
+            raise ValueError("quarantined fingerprints must be unique")
+        unknown = set(self.quarantined) - set(self.failures_by_fingerprint)
+        if unknown:
+            raise ValueError("quarantined fingerprint must have recorded failures")
+        return self
+
+
 @dataclass
 class RecoveryLedger:
     failures_by_fingerprint: dict[str, int]
     quarantined: set[str]
+    total_retries: int = 0
 
     @classmethod
     def empty(cls) -> "RecoveryLedger":
-        return cls(failures_by_fingerprint={}, quarantined=set())
+        return cls(failures_by_fingerprint={}, quarantined=set(), total_retries=0)
+
+    @classmethod
+    def from_state(cls, state: RecoveryLedgerState) -> "RecoveryLedger":
+        return cls(
+            failures_by_fingerprint=dict(state.failures_by_fingerprint),
+            quarantined=set(state.quarantined),
+            total_retries=state.total_retries,
+        )
+
+    def to_state(self) -> RecoveryLedgerState:
+        return RecoveryLedgerState(
+            failures_by_fingerprint=dict(sorted(self.failures_by_fingerprint.items())),
+            quarantined=sorted(self.quarantined),
+            total_retries=self.total_retries,
+        )
 
     def record_failure(self, fingerprint: str) -> int:
         count = self.failures_by_fingerprint.get(fingerprint, 0) + 1
         self.failures_by_fingerprint[fingerprint] = count
         return count
+
+    def record_retry(self) -> None:
+        self.total_retries += 1
 
     def quarantine(self, fingerprint: str) -> None:
         self.quarantined.add(fingerprint)
