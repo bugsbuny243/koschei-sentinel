@@ -11,12 +11,10 @@ from koschei_sentinel.models import StrictModel
 from koschei_sentinel.production_foundation_catalog import FoundationCatalogCursor, load_foundation_catalog
 from koschei_sentinel.production_foundation_prefetch import FoundationDoubleBuffer
 from koschei_sentinel.production_foundation_worker_prefetch import FoundationWorkerPrefetch
+from koschei_sentinel.production_mcore_activation_probe import MCoreActivationProbe
 from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
 from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
-from koschei_sentinel.production_mcore_moe_metrics_probe import (
-    clear_native_moe_metrics,
-    read_native_moe_losses,
-)
+from koschei_sentinel.production_mcore_moe_metrics_probe import clear_native_moe_metrics, read_native_moe_losses
 from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
 from koschei_sentinel.production_mcore_optimizer_smoke import build_mcore_distributed_optimizer
 from koschei_sentinel.production_mcore_router_probe import MCoreRouterProbe
@@ -29,6 +27,11 @@ from koschei_sentinel.production_mcore_training_checkpoint import (
     MCoreTrainingState,
     load_mcore_training_checkpoint,
     save_mcore_training_checkpoint,
+)
+from koschei_sentinel.production_mcore_training_trends import (
+    TrainingTrendSnapshot,
+    TrainingTrendThresholds,
+    TrainingTrendTracker,
 )
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
 
@@ -52,6 +55,17 @@ class CatalogTrainingConfig(StrictModel):
             max_expert_load_cv=2.0,
         )
     )
+    trend_thresholds: TrainingTrendThresholds = Field(
+        default_factory=lambda: TrainingTrendThresholds(
+            history_window=32,
+            min_history_for_spike=3,
+            max_loss_ratio_to_median=2.5,
+            max_grad_norm_ratio_to_median=4.0,
+            max_activation_rms_ratio_to_median=4.0,
+            max_activation_abs=1.0e4,
+            max_router_utilization_drop=0.35,
+        )
+    )
 
 
 class CatalogTrainingStepMetrics(StrictModel):
@@ -61,7 +75,9 @@ class CatalogTrainingStepMetrics(StrictModel):
     elapsed_seconds: float = Field(gt=0.0)
     local_tokens_per_second: float = Field(gt=0.0)
     global_tokens_per_second: float = Field(gt=0.0)
+    lm_loss: float | None = Field(default=None, ge=0.0)
     stability: MCoreStabilityStepTelemetry
+    trend: TrainingTrendSnapshot
     worker_prefetch: Literal[True] = True
     pinned_memory: Literal[True] = True
     async_h2d: Literal[True] = True
@@ -81,8 +97,9 @@ class CatalogTrainingResult(StrictModel):
     execution_authorized: Literal[False] = False
 
 
-def _run_prefetched_batches(runtime, spec, batches) -> None:
+def _run_prefetched_batches(runtime, spec, batches) -> float | None:
     try:
+        import torch
         from megatron.core import parallel_state
         from megatron.core.pipeline_parallel.schedules import get_forward_backward_func
         from megatron.core.utils import get_batch_on_this_cp_rank
@@ -111,6 +128,8 @@ def _run_prefetched_batches(runtime, spec, batches) -> None:
     if not prepared:
         raise RuntimeError("catalog prefetch produced no batches")
 
+    local_losses: list[float] = []
+
     def loss_func(mask, output_tensor):
         losses = output_tensor.float().view(-1)
         local_mask = mask.float().view(-1)
@@ -120,6 +139,7 @@ def _run_prefetched_batches(runtime, spec, batches) -> None:
         if denom.item() <= 0:
             raise RuntimeError("catalog loss mask is empty")
         loss = (losses * local_mask).sum() / denom
+        local_losses.append(float(loss.detach().item()))
         return loss, {"catalog_lm_loss": loss.detach()}
 
     def forward_step(data_iterator, stage_model, checkpoint_activations_microbatch=None):
@@ -145,6 +165,13 @@ def _run_prefetched_batches(runtime, spec, batches) -> None:
         collect_non_loss_data=False,
     )
 
+    local_sum = float(sum(local_losses))
+    local_count = float(len(local_losses))
+    payload = torch.tensor([local_sum, local_count], device=prepared[0]["tokens"].device, dtype=torch.float64)
+    torch.distributed.all_reduce(payload, op=torch.distributed.ReduceOp.SUM)
+    total_sum, total_count = float(payload[0].item()), float(payload[1].item())
+    return total_sum / total_count if total_count > 0 else None
+
 
 def _optimizer_step_result(value) -> tuple[bool, float]:
     if isinstance(value, tuple):
@@ -158,6 +185,24 @@ def _optimizer_step_result(value) -> tuple[bool, float]:
     except AttributeError:
         grad_norm = float(raw_grad_norm or 0.0)
     return successful, grad_norm
+
+
+def _restore_last_good(
+    model,
+    optimizer,
+    *,
+    checkpoint_dir: str | None,
+    global_seed: int,
+) -> MCoreTrainingState | None:
+    if checkpoint_dir is None:
+        return None
+    restored_state, _ = load_mcore_training_checkpoint(
+        model,
+        optimizer,
+        checkpoint_dir=checkpoint_dir,
+        expected_global_seed=global_seed,
+    )
+    return restored_state
 
 
 def run_catalog_training(
@@ -193,7 +238,10 @@ def run_catalog_training(
         clip_grad=config.clip_grad,
     )
     router_probe = MCoreRouterProbe()
+    activation_probe = MCoreActivationProbe()
     router_probe.attach(model)
+    activation_probe.attach(model)
+    trend_tracker = TrainingTrendTracker(config.trend_thresholds)
 
     resumed = resume_checkpoint is not None
     cursor: FoundationCatalogCursor | None = None
@@ -232,7 +280,9 @@ def run_catalog_training(
     root = Path(checkpoint_root)
     root.mkdir(parents=True, exist_ok=True)
     metrics: list[CatalogTrainingStepMetrics] = []
-    final_checkpoint: str | None = None
+    final_checkpoint: str | None = resume_checkpoint.as_posix() if isinstance(resume_checkpoint, Path) else (
+        str(resume_checkpoint) if resume_checkpoint is not None else None
+    )
     device = torch.device("cuda", runtime.local_rank)
     global_offset = cursor.global_sequence_offset if cursor is not None else 0
 
@@ -257,6 +307,7 @@ def run_catalog_training(
             optimizer.zero_grad(set_to_none=True)
             model.zero_grad_buffer()
             router_probe.reset()
+            activation_probe.reset()
             clear_native_moe_metrics()
             torch.cuda.reset_peak_memory_stats(runtime.local_rank)
             double_buffer = FoundationDoubleBuffer(sequences, device=device, depth=2)
@@ -264,28 +315,30 @@ def run_catalog_training(
             dist.barrier()
             torch.cuda.synchronize(runtime.local_rank)
             started = time.perf_counter()
-            _run_prefetched_batches(ddp_runtime, spec, double_buffer)
+            lm_loss = _run_prefetched_batches(ddp_runtime, spec, double_buffer)
             model.finish_grad_sync()
             native_moe_losses = read_native_moe_losses()
             step_result = optimizer.step()
             successful, grad_norm = _optimizer_step_result(step_result)
             if not successful:
-                raise RuntimeError(f"catalog optimizer failed at step {zero_based_step + 1}")
+                restored = _restore_last_good(
+                    model,
+                    optimizer,
+                    checkpoint_dir=final_checkpoint,
+                    global_seed=config.global_seed,
+                )
+                suffix = "; restored last good checkpoint" if restored is not None else ""
+                raise RuntimeError(f"catalog optimizer failed at step {zero_based_step + 1}{suffix}")
             torch.cuda.synchronize(runtime.local_rank)
             dist.barrier()
             elapsed = time.perf_counter() - started
             if elapsed <= 0:
                 raise RuntimeError("catalog training step duration must be positive")
 
-            global_offset += window
-            cursor = FoundationCatalogCursor(
-                global_sequence_offset=global_offset,
-                catalog_sha256=catalog.catalog_sha256,
-                data_parallel_size=dp_size,
-            )
             local_tokens = catalog.sequence_length * config.microbatches_per_step
             global_tokens = local_tokens * dp_size
             router_snapshot = router_probe.snapshot()
+            activation_snapshot = activation_probe.snapshot()
             stability = collect_mcore_stability_telemetry(
                 model=model,
                 global_step=zero_based_step + 1,
@@ -301,11 +354,33 @@ def run_catalog_training(
                     (layer.module_name, layer.tokens_per_expert) for layer in router_snapshot.layers
                 ],
             )
-            if not stability.stability_passed:
+            trend = trend_tracker.observe(
+                global_step=zero_based_step + 1,
+                lm_loss=lm_loss,
+                grad_norm=grad_norm,
+                max_activation_rms=activation_snapshot.max_rms,
+                max_activation_abs=activation_snapshot.max_abs,
+                worst_router_utilization_fraction=stability.worst_router_utilization_fraction,
+            )
+            blockers = [*stability.blockers, *trend.blockers]
+            if blockers:
+                restored = _restore_last_good(
+                    model,
+                    optimizer,
+                    checkpoint_dir=final_checkpoint,
+                    global_seed=config.global_seed,
+                )
+                suffix = "; restored last good checkpoint" if restored is not None else "; no prior checkpoint available"
                 raise RuntimeError(
-                    f"training stability gate failed at step {zero_based_step + 1}: {stability.blockers}"
+                    f"training stability gate failed at step {zero_based_step + 1}: {blockers}{suffix}"
                 )
 
+            global_offset += window
+            cursor = FoundationCatalogCursor(
+                global_sequence_offset=global_offset,
+                catalog_sha256=catalog.catalog_sha256,
+                data_parallel_size=dp_size,
+            )
             metrics.append(
                 CatalogTrainingStepMetrics(
                     global_step=zero_based_step + 1,
@@ -314,7 +389,9 @@ def run_catalog_training(
                     elapsed_seconds=elapsed,
                     local_tokens_per_second=local_tokens / elapsed,
                     global_tokens_per_second=global_tokens / elapsed,
+                    lm_loss=lm_loss,
                     stability=stability,
+                    trend=trend,
                 )
             )
             state = MCoreTrainingState(
@@ -329,6 +406,7 @@ def run_catalog_training(
                 save_mcore_training_checkpoint(model, optimizer, state, checkpoint_dir=step_dir)
                 final_checkpoint = step_dir.as_posix()
     finally:
+        activation_probe.detach()
         router_probe.detach()
 
     return CatalogTrainingResult(
