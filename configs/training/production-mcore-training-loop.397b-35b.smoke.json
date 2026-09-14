@@ -1,0 +1,13 @@
+{
+  "schema_version": "sentinel.mcore-training-loop-config.v1",
+  "max_steps": 2,
+  "microbatches_per_step": 2,
+  "seq_length": 64,
+  "learning_rate": 1e-5,
+  "min_learning_rate": 1e-6,
+  "warmup_steps": 0,
+  "weight_decay": 0.1,
+  "clip_grad": 1.0,
+  "global_seed": 39735,
+  "checkpoint_every_steps": 1
+}
