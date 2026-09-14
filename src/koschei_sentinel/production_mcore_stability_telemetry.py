@@ -21,7 +21,8 @@ class StabilityThresholds(StrictModel):
     require_router_telemetry: bool = True
 
 
-class MoERouterTelemetry(StrictModel):
+class MoERouterLayerTelemetry(StrictModel):
+    module_name: str = Field(min_length=1)
     expert_count: int = Field(gt=0)
     tokens_per_expert: list[int] = Field(min_length=1)
     active_experts: int = Field(ge=0)
@@ -33,7 +34,7 @@ class MoERouterTelemetry(StrictModel):
     max_tokens: int = Field(ge=0)
 
     @model_validator(mode="after")
-    def coherent(self) -> "MoERouterTelemetry":
+    def coherent(self) -> "MoERouterLayerTelemetry":
         if len(self.tokens_per_expert) != self.expert_count:
             raise ValueError("tokens_per_expert length must equal expert_count")
         if self.active_experts != sum(1 for value in self.tokens_per_expert if value > 0):
@@ -59,7 +60,9 @@ class MCoreStabilityStepTelemetry(StrictModel):
     cuda_peak_allocated_bytes: int = Field(ge=0)
     aux_loss: float | None = None
     z_loss: float | None = None
-    router: MoERouterTelemetry | None = None
+    router_layers: list[MoERouterLayerTelemetry] = Field(default_factory=list)
+    worst_router_utilization_fraction: float | None = Field(default=None, ge=0.0, le=1.0)
+    worst_router_load_cv: float | None = Field(default=None, ge=0.0)
     stability_passed: bool
     blockers: list[str] = Field(default_factory=list)
     execution_authorized: Literal[False] = False
@@ -68,10 +71,15 @@ class MCoreStabilityStepTelemetry(StrictModel):
     def blockers_match_status(self) -> "MCoreStabilityStepTelemetry":
         if self.stability_passed != (len(self.blockers) == 0):
             raise ValueError("stability_passed must match blocker presence")
+        if self.router_layers:
+            if self.worst_router_utilization_fraction is None or self.worst_router_load_cv is None:
+                raise ValueError("router layers require worst-case router summaries")
+        elif self.worst_router_utilization_fraction is not None or self.worst_router_load_cv is not None:
+            raise ValueError("router worst-case summaries require router layer telemetry")
         return self
 
 
-def summarize_router_tokens(tokens_per_expert: list[int]) -> MoERouterTelemetry:
+def summarize_router_layer(module_name: str, tokens_per_expert: list[int]) -> MoERouterLayerTelemetry:
     if not tokens_per_expert:
         raise ValueError("tokens_per_expert cannot be empty")
     if any(value < 0 for value in tokens_per_expert):
@@ -82,7 +90,8 @@ def summarize_router_tokens(tokens_per_expert: list[int]) -> MoERouterTelemetry:
     variance = sum((value - mean) ** 2 for value in tokens_per_expert) / count
     std = math.sqrt(variance)
     cv = std / mean if mean > 0 else 0.0
-    return MoERouterTelemetry(
+    return MoERouterLayerTelemetry(
+        module_name=module_name,
         expert_count=count,
         tokens_per_expert=tokens_per_expert,
         active_experts=active,
@@ -126,7 +135,7 @@ def collect_mcore_stability_telemetry(
     local_rank: int,
     aux_loss: float | None = None,
     z_loss: float | None = None,
-    tokens_per_expert: list[int] | None = None,
+    router_layers: list[tuple[str, list[int]]] | None = None,
 ) -> MCoreStabilityStepTelemetry:
     try:
         import torch
@@ -143,7 +152,9 @@ def collect_mcore_stability_telemetry(
     total = int(torch.cuda.get_device_properties(local_rank).total_memory)
     peak = int(torch.cuda.max_memory_allocated(local_rank))
     fraction = allocated / total
-    router = summarize_router_tokens(tokens_per_expert) if tokens_per_expert is not None else None
+    layers = [summarize_router_layer(name, counts) for name, counts in (router_layers or [])]
+    worst_util = min((layer.utilization_fraction for layer in layers), default=None)
+    worst_cv = max((layer.load_cv for layer in layers), default=None)
 
     blockers: list[str] = []
     if thresholds.require_finite_parameters and not parameters_finite:
@@ -158,13 +169,13 @@ def collect_mcore_stability_telemetry(
         blockers.append("non_finite_moe_aux_loss")
     if z_loss is not None and not math.isfinite(z_loss):
         blockers.append("non_finite_moe_z_loss")
-    if router is None:
+    if not layers:
         if thresholds.require_router_telemetry:
             blockers.append("router_telemetry_missing")
     else:
-        if router.utilization_fraction < thresholds.min_expert_utilization_fraction:
+        if worst_util is not None and worst_util < thresholds.min_expert_utilization_fraction:
             blockers.append("expert_utilization_below_threshold")
-        if router.load_cv > thresholds.max_expert_load_cv:
+        if worst_cv is not None and worst_cv > thresholds.max_expert_load_cv:
             blockers.append("expert_load_imbalance")
 
     return MCoreStabilityStepTelemetry(
@@ -184,7 +195,9 @@ def collect_mcore_stability_telemetry(
         cuda_peak_allocated_bytes=peak,
         aux_loss=aux_loss,
         z_loss=z_loss,
-        router=router,
+        router_layers=layers,
+        worst_router_utilization_fraction=worst_util,
+        worst_router_load_cv=worst_cv,
         stability_passed=not blockers,
         blockers=blockers,
     )
