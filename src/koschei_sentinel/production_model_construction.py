@@ -24,6 +24,7 @@ class ProductionConstructionPlan(StrictModel):
     distributed_optimizer: Literal[True] = True
     checkpoint_format: Literal["torch_dist"] = "torch_dist"
     checkpoint_shards: int = Field(gt=0)
+    process_world_size: int = Field(gt=0)
     dense_parameter_shards: int = Field(gt=0)
     expert_parameter_shards: int = Field(gt=0)
     estimated_dense_weight_gib_per_rank: float = Field(gt=0)
@@ -77,7 +78,8 @@ def build_construction_plan(spec: ProductionMegatronModelSpec) -> ProductionCons
     ]
 
     return ProductionConstructionPlan(
-        checkpoint_shards=topo.world_size,
+        checkpoint_shards=expert_shards,
+        process_world_size=topo.world_size,
         dense_parameter_shards=dense_shards,
         expert_parameter_shards=expert_shards,
         estimated_dense_weight_gib_per_rank=round(dense_weight_bytes_per_rank / _GIB, 4),
