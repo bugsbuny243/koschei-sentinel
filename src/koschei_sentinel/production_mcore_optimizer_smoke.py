@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.production_mcore_checkpoint_roundtrip import verify_mcore_checkpoint_roundtrip
@@ -36,6 +36,19 @@ class MCoreOptimizerSmokeResult(StrictModel):
     backward_verified: Literal[True] = True
     optimizer_step_verified: Literal[True] = True
     execution_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def roundtrip_fields_are_coherent(self) -> "MCoreOptimizerSmokeResult":
+        if self.before_digest == self.after_digest:
+            raise ValueError("optimizer smoke requires a changed parameter digest")
+        if self.checkpoint_roundtrip_verified:
+            if not self.checkpoint_dir or not self.restored_digest:
+                raise ValueError("verified checkpoint roundtrip requires path and restored digest")
+            if self.restored_digest != self.after_digest:
+                raise ValueError("restored digest must equal post-step digest")
+        elif self.checkpoint_dir is not None or self.restored_digest is not None:
+            raise ValueError("unverified checkpoint roundtrip cannot carry checkpoint evidence")
+        return self
 
 
 def _tensor_digest(tensor: Any) -> str:
