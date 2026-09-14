@@ -25,6 +25,10 @@ from koschei_sentinel.production_mcore_recovery import (
     distributed_any_unstable,
     fingerprint_batch,
 )
+from koschei_sentinel.production_mcore_resume_bundle import (
+    attach_catalog_resume_state,
+    restore_catalog_resume_bundle,
+)
 from koschei_sentinel.production_mcore_router_probe import MCoreRouterProbe
 from koschei_sentinel.production_mcore_stability_telemetry import (
     MCoreStabilityStepTelemetry,
@@ -119,7 +123,7 @@ class CatalogTrainingResult(StrictModel):
     final_step: int = Field(gt=0)
     resumed_from_checkpoint: bool
     catalog_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    step_metrics: list[CatalogTrainingStepMetrics] = Field(min_length=1)
+    step_metrics: list[CatalogTrainingStepMetrics] = Field(default_factory=list)
     quarantine_events: list[CatalogQuarantineEvent] = Field(default_factory=list)
     total_retries: int = Field(ge=0)
     final_learning_rate: float = Field(gt=0.0)
@@ -197,7 +201,11 @@ def _run_prefetched_batches(runtime, spec, batches) -> float | None:
     )
     local_sum = float(sum(local_losses))
     local_count = float(len(local_losses))
-    payload = torch.tensor([local_sum, local_count], device=prepared[0]["tokens"].device, dtype=torch.float64)
+    payload = torch.tensor(
+        [local_sum, local_count],
+        device=prepared[0]["tokens"].device,
+        dtype=torch.float64,
+    )
     torch.distributed.all_reduce(payload, op=torch.distributed.ReduceOp.SUM)
     total_sum, total_count = float(payload[0].item()), float(payload[1].item())
     return total_sum / total_count if total_count > 0 else None
@@ -242,10 +250,51 @@ def _set_optimizer_lr(optimizer, learning_rate: float) -> None:
         raise RuntimeError("Megatron optimizer exposed no mutable parameter groups")
 
 
-def _save_initial_recovery_checkpoint(model, optimizer, state: MCoreTrainingState, root: Path) -> str:
-    target = root / "recovery-base-step-00000000"
-    save_mcore_training_checkpoint(model, optimizer, state, checkpoint_dir=target)
-    return target.as_posix()
+def _attach_runtime_state(
+    state: MCoreTrainingState,
+    *,
+    catalog_sha256: str,
+    current_learning_rate: float,
+    ledger: RecoveryLedger,
+    trend_tracker: TrainingTrendTracker,
+    total_retries: int,
+    quarantine_events: list[CatalogQuarantineEvent],
+) -> MCoreTrainingState:
+    return attach_catalog_resume_state(
+        state.model_copy(update={"learning_rate": current_learning_rate}),
+        catalog_sha256=catalog_sha256,
+        current_learning_rate=current_learning_rate,
+        ledger=ledger,
+        trend_tracker=trend_tracker,
+        total_retries=total_retries,
+        quarantine_events=[item.model_dump(mode="json") for item in quarantine_events],
+    )
+
+
+def _save_runtime_checkpoint(
+    model,
+    optimizer,
+    state: MCoreTrainingState,
+    *,
+    checkpoint_dir: Path,
+    catalog_sha256: str,
+    current_learning_rate: float,
+    ledger: RecoveryLedger,
+    trend_tracker: TrainingTrendTracker,
+    total_retries: int,
+    quarantine_events: list[CatalogQuarantineEvent],
+) -> tuple[MCoreTrainingState, str]:
+    attached = _attach_runtime_state(
+        state,
+        catalog_sha256=catalog_sha256,
+        current_learning_rate=current_learning_rate,
+        ledger=ledger,
+        trend_tracker=trend_tracker,
+        total_retries=total_retries,
+        quarantine_events=quarantine_events,
+    )
+    save_mcore_training_checkpoint(model, optimizer, attached, checkpoint_dir=checkpoint_dir)
+    return attached, checkpoint_dir.as_posix()
 
 
 def run_catalog_training(
@@ -272,7 +321,6 @@ def run_catalog_training(
     if config.prefetch_depth < config.prefetch_workers:
         raise ValueError("prefetch_depth must be >= prefetch_workers")
 
-    # Fresh runs initialize the raw MCore model before DDP broadcasts parameters.
     if resume_checkpoint is None:
         initialize_mcore_native_parameters(runtime.model, global_seed=config.global_seed)
     ddp_runtime = wrap_runtime_with_megatron_ddp(runtime)
@@ -288,11 +336,14 @@ def run_catalog_training(
     activation_probe = MCoreActivationProbe()
     router_probe.attach(model)
     activation_probe.attach(model)
-    trend_tracker = TrainingTrendTracker(config.trend_thresholds)
-    recovery_ledger = RecoveryLedger.empty()
 
     resumed = resume_checkpoint is not None
     cursor: FoundationCatalogCursor | None = None
+    recovery_ledger = RecoveryLedger.empty()
+    trend_tracker = TrainingTrendTracker(config.trend_thresholds)
+    quarantines: list[CatalogQuarantineEvent] = []
+    total_retries = 0
+
     if resumed:
         state, _ = load_mcore_training_checkpoint(
             model,
@@ -300,17 +351,24 @@ def run_catalog_training(
             checkpoint_dir=resume_checkpoint,
             expected_global_seed=config.global_seed,
         )
-        raw = state.data_state
-        if not isinstance(raw, dict) or raw.get("schema_version") != "sentinel.foundation-catalog-cursor.v1":
-            raise ValueError("resume checkpoint lacks compatible catalog cursor")
-        cursor = FoundationCatalogCursor.model_validate(raw)
-        if cursor.catalog_sha256 != catalog.catalog_sha256:
-            raise ValueError("resume checkpoint catalog digest mismatch")
+        bundle = restore_catalog_resume_bundle(
+            state,
+            expected_catalog_sha256=catalog.catalog_sha256,
+            trend_thresholds=config.trend_thresholds,
+        )
+        cursor = bundle.cursor
+        recovery_ledger = bundle.ledger
+        trend_tracker = bundle.trend_tracker
+        current_lr = bundle.current_learning_rate
+        total_retries = bundle.total_retries
+        quarantines = [CatalogQuarantineEvent.model_validate(item) for item in bundle.quarantine_events]
+        _set_optimizer_lr(optimizer, current_lr)
     else:
+        current_lr = config.learning_rate
         state = MCoreTrainingState(
             global_step=0,
             consumed_microbatches=0,
-            learning_rate=config.learning_rate,
+            learning_rate=current_lr,
             global_seed=config.global_seed,
             data_state=None,
         )
@@ -327,12 +385,21 @@ def run_catalog_training(
     root = Path(checkpoint_root)
     root.mkdir(parents=True, exist_ok=True)
     metrics: list[CatalogTrainingStepMetrics] = []
-    quarantines: list[CatalogQuarantineEvent] = []
-    total_retries = 0
-    current_lr = state.learning_rate
     final_checkpoint: str | None = str(resume_checkpoint) if resume_checkpoint is not None else None
+
     if final_checkpoint is None:
-        final_checkpoint = _save_initial_recovery_checkpoint(model, optimizer, state, root)
+        state, final_checkpoint = _save_runtime_checkpoint(
+            model,
+            optimizer,
+            state,
+            checkpoint_dir=root / "recovery-base-step-00000000",
+            catalog_sha256=catalog.catalog_sha256,
+            current_learning_rate=current_lr,
+            ledger=recovery_ledger,
+            trend_tracker=trend_tracker,
+            total_retries=total_retries,
+            quarantine_events=quarantines,
+        )
 
     device = torch.device("cuda", runtime.local_rank)
     global_offset = cursor.global_sequence_offset if cursor is not None else 0
@@ -348,6 +415,24 @@ def run_catalog_training(
             )
             if batch_fingerprint in recovery_ledger.quarantined:
                 global_offset += window
+                cursor = FoundationCatalogCursor(
+                    global_sequence_offset=global_offset,
+                    catalog_sha256=catalog.catalog_sha256,
+                    data_parallel_size=dp_size,
+                )
+                state = state.model_copy(update={"data_state": cursor.model_dump(mode="json")})
+                state, final_checkpoint = _save_runtime_checkpoint(
+                    model,
+                    optimizer,
+                    state,
+                    checkpoint_dir=root / f"recovery-skip-{global_offset:016d}",
+                    catalog_sha256=catalog.catalog_sha256,
+                    current_learning_rate=current_lr,
+                    ledger=recovery_ledger,
+                    trend_tracker=trend_tracker,
+                    total_retries=total_retries,
+                    quarantine_events=quarantines,
+                )
                 continue
 
             retry_attempts = 0
@@ -382,7 +467,6 @@ def run_catalog_training(
                 local_exception: Exception | None = None
                 lm_loss: float | None = None
                 grad_norm = 0.0
-                successful = False
                 stability = None
                 trend = None
                 local_blockers: list[str] = []
@@ -415,9 +499,12 @@ def run_catalog_training(
                         local_rank=runtime.local_rank,
                         aux_loss=native_moe_losses.aux_loss,
                         z_loss=native_moe_losses.z_loss,
-                        router_layers=[(layer.module_name, layer.tokens_per_expert) for layer in router_snapshot.layers],
+                        router_layers=[
+                            (layer.module_name, layer.tokens_per_expert)
+                            for layer in router_snapshot.layers
+                        ],
                     )
-                    trend = trend_tracker.observe(
+                    trend = trend_tracker.preview(
                         global_step=completed_step + 1,
                         lm_loss=lm_loss,
                         grad_norm=grad_norm,
@@ -427,12 +514,11 @@ def run_catalog_training(
                     )
                     local_blockers.extend(stability.blockers)
                     local_blockers.extend(trend.blockers)
-                except Exception as exc:  # synchronize recovery instead of letting one rank exit alone
+                except Exception as exc:
                     local_exception = exc
                     local_blockers.append(f"rank_exception:{type(exc).__name__}")
 
-                local_unstable = bool(local_blockers)
-                globally_unstable = distributed_any_unstable(local_unstable, device=device)
+                globally_unstable = distributed_any_unstable(bool(local_blockers), device=device)
                 if globally_unstable:
                     reason_codes = local_blockers or ["remote_rank_instability"]
                     decision: RecoveryDecision = build_recovery_decision(
@@ -450,7 +536,9 @@ def run_catalog_training(
                         global_seed=config.global_seed,
                     )
                     if restored is None:
-                        raise RuntimeError("distributed recovery required but no last-good checkpoint exists") from local_exception
+                        raise RuntimeError(
+                            "distributed recovery required but no last-good checkpoint exists"
+                        ) from local_exception
                     state = restored
                     current_lr = decision.next_learning_rate
                     _set_optimizer_lr(optimizer, current_lr)
@@ -459,18 +547,40 @@ def run_catalog_training(
                         total_retries += 1
                         continue
                     if decision.quarantine_batch:
-                        quarantines.append(
-                            CatalogQuarantineEvent(
-                                batch_fingerprint=batch_fingerprint,
-                                global_sequence_offset=global_offset,
-                                global_window=window,
-                                failure_count=decision.failure_count,
-                                skipped=decision.skip_batch,
-                                reason_codes=decision.reason_codes,
-                            )
+                        event = CatalogQuarantineEvent(
+                            batch_fingerprint=batch_fingerprint,
+                            global_sequence_offset=global_offset,
+                            global_window=window,
+                            failure_count=decision.failure_count,
+                            skipped=decision.skip_batch,
+                            reason_codes=decision.reason_codes,
                         )
+                        quarantines.append(event)
                         if decision.skip_batch:
                             global_offset += window
+                            cursor = FoundationCatalogCursor(
+                                global_sequence_offset=global_offset,
+                                catalog_sha256=catalog.catalog_sha256,
+                                data_parallel_size=dp_size,
+                            )
+                            state = state.model_copy(
+                                update={
+                                    "data_state": cursor.model_dump(mode="json"),
+                                    "learning_rate": current_lr,
+                                }
+                            )
+                            state, final_checkpoint = _save_runtime_checkpoint(
+                                model,
+                                optimizer,
+                                state,
+                                checkpoint_dir=root / f"recovery-quarantine-{global_offset:016d}",
+                                catalog_sha256=catalog.catalog_sha256,
+                                current_learning_rate=current_lr,
+                                ledger=recovery_ledger,
+                                trend_tracker=trend_tracker,
+                                total_retries=total_retries,
+                                quarantine_events=quarantines,
+                            )
                             step_committed = True
                             break
                     raise RuntimeError(
@@ -479,6 +589,8 @@ def run_catalog_training(
 
                 if stability is None or trend is None:
                     raise RuntimeError("stable consensus reached without local telemetry")
+
+                trend_tracker.commit_values(trend, grad_norm=grad_norm)
                 elapsed = max(1.0e-9, time.perf_counter() - started)
                 local_tokens = catalog.sequence_length * config.microbatches_per_step
                 global_tokens = local_tokens * dp_size
@@ -511,10 +623,23 @@ def run_catalog_training(
                     global_seed=config.global_seed,
                     data_state=cursor.model_dump(mode="json"),
                 )
-                if state.global_step % config.checkpoint_every_steps == 0 or state.global_step == config.max_steps:
+                if (
+                    state.global_step % config.checkpoint_every_steps == 0
+                    or state.global_step == config.max_steps
+                ):
                     step_dir = root / f"step-{state.global_step:08d}"
-                    save_mcore_training_checkpoint(model, optimizer, state, checkpoint_dir=step_dir)
-                    final_checkpoint = step_dir.as_posix()
+                    state, final_checkpoint = _save_runtime_checkpoint(
+                        model,
+                        optimizer,
+                        state,
+                        checkpoint_dir=step_dir,
+                        catalog_sha256=catalog.catalog_sha256,
+                        current_learning_rate=current_lr,
+                        ledger=recovery_ledger,
+                        trend_tracker=trend_tracker,
+                        total_retries=total_retries,
+                        quarantine_events=quarantines,
+                    )
                 step_committed = True
     finally:
         activation_probe.detach()
