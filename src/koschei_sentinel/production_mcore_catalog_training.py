@@ -291,7 +291,9 @@ def run_catalog_training(
                 local_rank=runtime.local_rank,
                 aux_loss=router_snapshot.aux_loss,
                 z_loss=router_snapshot.z_loss,
-                tokens_per_expert=router_snapshot.tokens_per_expert,
+                router_layers=[
+                    (layer.module_name, layer.tokens_per_expert) for layer in router_snapshot.layers
+                ],
             )
             if not stability.stability_passed:
                 raise RuntimeError(
