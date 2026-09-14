@@ -18,16 +18,11 @@ class MCoreSmokeResult(StrictModel):
     world_size: int = Field(gt=0)
     micro_batch_size: Literal[1] = 1
     seq_length: int = Field(gt=0)
-    num_microbatches: Literal[1] = 1
+    num_microbatches: int = Field(gt=0)
     forward_verified: Literal[True] = True
     backward_verified: Literal[True] = True
     optimizer_step_verified: Literal[False] = False
     execution_authorized: Literal[False] = False
-
-
-def _parameter_grad(parameter):
-    main_grad = getattr(parameter, "main_grad", None)
-    return main_grad if main_grad is not None else parameter.grad
 
 
 def run_mcore_forward_backward_smoke(
@@ -36,12 +31,14 @@ def run_mcore_forward_backward_smoke(
     *,
     seq_length: int = 64,
     global_seed: int = 39735,
+    num_microbatches: int = 1,
+    initialize_parameters: bool = True,
 ) -> MCoreSmokeResult:
-    """Run one synthetic microbatch through the actual MCore PP/TP/CP/EP graph.
+    """Run synthetic microbatches through the actual MCore PP/TP/CP/EP graph.
 
-    This verifies graph construction plus autograd only. It does not create an optimizer,
-    update weights, consume cybersecurity training data, or authorize a paid training run.
-    Megatron DDP stores reduced gradients in ``main_grad``; raw modules use ``grad``.
+    This verifies graph construction plus autograd. When ``initialize_parameters`` is false,
+    existing model weights are preserved so the same path can be reused by the resumable
+    training loop for gradient accumulation.
     """
     try:
         import torch
@@ -56,43 +53,47 @@ def run_mcore_forward_backward_smoke(
         raise ValueError("smoke seq_length outside model context window")
     if seq_length % (2 * cp_size):
         raise ValueError("smoke seq_length must be divisible by 2*context_parallel_size")
+    if num_microbatches <= 0:
+        raise ValueError("num_microbatches must be positive")
 
     model = runtime.model
-    initialize_mcore_native_parameters(model, global_seed=global_seed)
+    if initialize_parameters:
+        initialize_mcore_native_parameters(model, global_seed=global_seed)
     model.train()
-    model.zero_grad(set_to_none=True)
-    if hasattr(model, "zero_grad_buffer"):
-        model.zero_grad_buffer()
 
     device = torch.device("cuda", runtime.local_rank)
-    generator = torch.Generator(device=device)
-    generator.manual_seed(global_seed)
-    tokens = torch.randint(
-        low=0,
-        high=spec.transformer.vocab_size,
-        size=(1, seq_length),
-        device=device,
-        dtype=torch.long,
-        generator=generator,
-    )
-    labels = tokens.roll(shifts=-1, dims=1)
-    position_ids = torch.arange(seq_length, device=device, dtype=torch.long).unsqueeze(0)
-    loss_mask = torch.ones((1, seq_length), device=device, dtype=torch.float32)
 
-    batch = {
-        "tokens": tokens,
-        "labels": labels,
-        "loss_mask": loss_mask,
-        "position_ids": position_ids,
-        "attention_mask": None,
-        "cu_seqlens": None,
-    }
-    if cp_size > 1:
-        batch = get_batch_on_this_cp_rank(
-            batch,
-            is_hybrid_cp=False,
-            cp_group=parallel_state.get_context_parallel_group(),
+    def make_batch(microbatch_index: int):
+        generator = torch.Generator(device=device)
+        generator.manual_seed(global_seed + microbatch_index)
+        tokens = torch.randint(
+            low=0,
+            high=spec.transformer.vocab_size,
+            size=(1, seq_length),
+            device=device,
+            dtype=torch.long,
+            generator=generator,
         )
+        labels = tokens.roll(shifts=-1, dims=1)
+        position_ids = torch.arange(seq_length, device=device, dtype=torch.long).unsqueeze(0)
+        loss_mask = torch.ones((1, seq_length), device=device, dtype=torch.float32)
+        batch = {
+            "tokens": tokens,
+            "labels": labels,
+            "loss_mask": loss_mask,
+            "position_ids": position_ids,
+            "attention_mask": None,
+            "cu_seqlens": None,
+        }
+        if cp_size > 1:
+            batch = get_batch_on_this_cp_rank(
+                batch,
+                is_hybrid_cp=False,
+                cp_group=parallel_state.get_context_parallel_group(),
+            )
+        return batch
+
+    batches = [make_batch(index) for index in range(num_microbatches)]
 
     def loss_func(local_loss_mask, output_tensor):
         losses = output_tensor.float().view(-1)
@@ -120,17 +121,21 @@ def run_mcore_forward_backward_smoke(
     schedule = get_forward_backward_func()
     schedule(
         forward_step_func=forward_step,
-        data_iterator=iter([batch]),
+        data_iterator=iter(batches),
         model=model,
-        num_microbatches=1,
+        num_microbatches=num_microbatches,
         seq_length=seq_length,
         micro_batch_size=1,
         forward_only=False,
         collect_non_loss_data=False,
     )
 
+    def gradient_for(parameter):
+        main_grad = getattr(parameter, "main_grad", None)
+        return main_grad if main_grad is not None else parameter.grad
+
     has_grad = any(
-        _parameter_grad(parameter) is not None
+        gradient_for(parameter) is not None
         for parameter in model.parameters()
         if parameter.requires_grad
     )
@@ -141,4 +146,5 @@ def run_mcore_forward_backward_smoke(
         global_rank=runtime.global_rank,
         world_size=runtime.world_size,
         seq_length=seq_length,
+        num_microbatches=num_microbatches,
     )
