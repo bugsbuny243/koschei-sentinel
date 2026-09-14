@@ -68,3 +68,35 @@ def test_router_collapse_trend_is_detected():
         _observe(tracker, step, util=0.9)
     snapshot = _observe(tracker, 4, util=0.5)
     assert "router_utilization_collapse_trend" in snapshot.blockers
+
+
+def test_failed_preview_does_not_mutate_history():
+    tracker = _tracker()
+    for step in range(1, 4):
+        _observe(tracker, step)
+    before = tracker.to_state()
+    snapshot = tracker.preview(
+        global_step=4,
+        lm_loss=20.0,
+        grad_norm=10.0,
+        max_activation_rms=20.0,
+        max_activation_abs=200.0,
+        worst_router_utilization_fraction=0.1,
+    )
+    assert snapshot.trend_passed is False
+    assert tracker.to_state() == before
+
+
+def test_preview_commits_only_after_explicit_consensus_commit():
+    tracker = _tracker()
+    snapshot = tracker.preview(
+        global_step=1,
+        lm_loss=2.0,
+        grad_norm=1.0,
+        max_activation_rms=2.0,
+        max_activation_abs=4.0,
+        worst_router_utilization_fraction=0.9,
+    )
+    assert tracker.to_state().losses == []
+    tracker.commit_values(snapshot, grad_norm=1.0)
+    assert tracker.to_state().losses == [2.0]
