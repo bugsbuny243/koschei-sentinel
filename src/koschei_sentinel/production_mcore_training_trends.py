@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
 
@@ -22,6 +22,28 @@ class TrainingTrendThresholds(StrictModel):
     max_activation_rms_ratio_to_median: float = Field(gt=1.0)
     max_activation_abs: float = Field(gt=0.0)
     max_router_utilization_drop: float = Field(gt=0.0, le=1.0)
+
+
+class TrainingTrendState(StrictModel):
+    schema_version: Literal["sentinel.mcore-training-trend-state.v1"] = (
+        "sentinel.mcore-training-trend-state.v1"
+    )
+    history_window: int = Field(ge=3, le=1024)
+    losses: list[float] = Field(default_factory=list)
+    grad_norms: list[float] = Field(default_factory=list)
+    activation_rms: list[float] = Field(default_factory=list)
+    router_utilization: list[float] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def coherent(self) -> "TrainingTrendState":
+        for values in (self.losses, self.grad_norms, self.activation_rms, self.router_utilization):
+            if len(values) > self.history_window:
+                raise ValueError("trend history exceeds configured window")
+            if any(not math.isfinite(value) for value in values):
+                raise ValueError("trend history must contain finite values")
+        if any(value < 0.0 or value > 1.0 for value in self.router_utilization):
+            raise ValueError("router utilization history outside [0,1]")
+        return self
 
 
 class TrainingTrendSnapshot(StrictModel):
@@ -67,6 +89,30 @@ class TrainingTrendTracker:
         self._grad_norms = deque(maxlen=size)
         self._activation_rms = deque(maxlen=size)
         self._router_utilization = deque(maxlen=size)
+
+    @classmethod
+    def from_state(
+        cls,
+        thresholds: TrainingTrendThresholds,
+        state: TrainingTrendState,
+    ) -> "TrainingTrendTracker":
+        if state.history_window != thresholds.history_window:
+            raise ValueError("trend history window does not match current thresholds")
+        tracker = cls(thresholds)
+        tracker._losses.extend(state.losses)
+        tracker._grad_norms.extend(state.grad_norms)
+        tracker._activation_rms.extend(state.activation_rms)
+        tracker._router_utilization.extend(state.router_utilization)
+        return tracker
+
+    def to_state(self) -> TrainingTrendState:
+        return TrainingTrendState(
+            history_window=self.thresholds.history_window,
+            losses=list(self._losses),
+            grad_norms=list(self._grad_norms),
+            activation_rms=list(self._activation_rms),
+            router_utilization=list(self._router_utilization),
+        )
 
     def preview(
         self,
@@ -131,26 +177,7 @@ class TrainingTrendTracker:
             trend_passed=not blockers,
         )
 
-    def commit(self, snapshot: TrainingTrendSnapshot) -> None:
-        if not snapshot.trend_passed:
-            raise ValueError("cannot commit a failed trend snapshot")
-        if snapshot.lm_loss is not None and math.isfinite(snapshot.lm_loss):
-            self._losses.append(float(snapshot.lm_loss))
-        if math.isfinite(snapshot.grad_norm_ratio_to_median or 0.0):
-            # Grad norm itself is reconstructed from ratio only when unavailable; callers use observe
-            # for backward-compatible mutation. preview/commit users call commit_values below.
-            pass
-        if snapshot.max_activation_rms is not None and math.isfinite(snapshot.max_activation_rms):
-            self._activation_rms.append(float(snapshot.max_activation_rms))
-        if snapshot.worst_router_utilization_fraction is not None:
-            self._router_utilization.append(float(snapshot.worst_router_utilization_fraction))
-
-    def commit_values(
-        self,
-        snapshot: TrainingTrendSnapshot,
-        *,
-        grad_norm: float,
-    ) -> None:
+    def commit_values(self, snapshot: TrainingTrendSnapshot, *, grad_norm: float) -> None:
         if not snapshot.trend_passed:
             raise ValueError("cannot commit a failed trend snapshot")
         if snapshot.lm_loss is not None and math.isfinite(snapshot.lm_loss):
