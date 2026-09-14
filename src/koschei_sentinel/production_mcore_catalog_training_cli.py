@@ -5,6 +5,7 @@ import json
 
 from koschei_sentinel.production_mcore_catalog_training import CatalogTrainingConfig, run_catalog_training
 from koschei_sentinel.production_mcore_distributed_runtime import initialize_mcore_distributed_runtime
+from koschei_sentinel.production_mcore_recovery import RecoveryPolicy
 from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
 
 
@@ -23,6 +24,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-every-steps", type=int, default=1)
     parser.add_argument("--prefetch-workers", type=int, default=2)
     parser.add_argument("--prefetch-depth", type=int, default=8)
+    parser.add_argument("--max-retries-per-batch", type=int, default=2)
+    parser.add_argument("--learning-rate-backoff", type=float, default=0.5)
+    parser.add_argument("--min-learning-rate", type=float, default=1.0e-7)
+    parser.add_argument("--quarantine-after-failures", type=int, default=3)
+    parser.add_argument(
+        "--no-skip-quarantined-batch",
+        action="store_true",
+        help="Fail the job after quarantine instead of advancing past the offending global batch window",
+    )
     return parser
 
 
@@ -31,6 +41,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         spec = load_production_megatron_model_spec(args.model_spec)
         runtime = initialize_mcore_distributed_runtime(spec)
+        recovery_policy = RecoveryPolicy(
+            max_retries_per_batch=args.max_retries_per_batch,
+            learning_rate_backoff=args.learning_rate_backoff,
+            min_learning_rate=args.min_learning_rate,
+            quarantine_after_failures=args.quarantine_after_failures,
+            skip_quarantined_batch=not args.no_skip_quarantined_batch,
+        )
         config = CatalogTrainingConfig(
             max_steps=args.max_steps,
             microbatches_per_step=args.microbatches_per_step,
@@ -41,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             checkpoint_every_steps=args.checkpoint_every_steps,
             prefetch_workers=args.prefetch_workers,
             prefetch_depth=args.prefetch_depth,
+            recovery_policy=recovery_policy,
         )
         result = run_catalog_training(
             runtime,
