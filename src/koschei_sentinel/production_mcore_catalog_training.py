@@ -544,7 +544,7 @@ def run_catalog_training(
                     _set_optimizer_lr(optimizer, current_lr)
                     if decision.retry_allowed:
                         retry_attempts += 1
-                        total_retries += 1
+                        total_retries = recovery_ledger.total_retries
                         continue
                     if decision.quarantine_batch:
                         event = CatalogQuarantineEvent(
@@ -623,23 +623,27 @@ def run_catalog_training(
                     global_seed=config.global_seed,
                     data_state=cursor.model_dump(mode="json"),
                 )
-                if (
+                regular_checkpoint = (
                     state.global_step % config.checkpoint_every_steps == 0
                     or state.global_step == config.max_steps
-                ):
-                    step_dir = root / f"step-{state.global_step:08d}"
-                    state, final_checkpoint = _save_runtime_checkpoint(
-                        model,
-                        optimizer,
-                        state,
-                        checkpoint_dir=step_dir,
-                        catalog_sha256=catalog.catalog_sha256,
-                        current_learning_rate=current_lr,
-                        ledger=recovery_ledger,
-                        trend_tracker=trend_tracker,
-                        total_retries=total_retries,
-                        quarantine_events=quarantines,
-                    )
+                )
+                checkpoint_dir = root / (
+                    f"step-{state.global_step:08d}"
+                    if regular_checkpoint
+                    else f"recovery-step-{state.global_step:08d}"
+                )
+                state, final_checkpoint = _save_runtime_checkpoint(
+                    model,
+                    optimizer,
+                    state,
+                    checkpoint_dir=checkpoint_dir,
+                    catalog_sha256=catalog.catalog_sha256,
+                    current_learning_rate=current_lr,
+                    ledger=recovery_ledger,
+                    trend_tracker=trend_tracker,
+                    total_retries=total_retries,
+                    quarantine_events=quarantines,
+                )
                 step_committed = True
     finally:
         activation_probe.detach()
