@@ -31,9 +31,9 @@ def _owned_by_rank(
 ) -> bool:
     if entry.pipeline_stage != pipeline_rank:
         return False
-    if tensor_rank >= entry.tensor_parallel_shards:
+    if not entry.replicated_across_tensor_parallel and tensor_rank >= entry.tensor_parallel_shards:
         return False
-    if expert_rank >= entry.expert_parallel_shards:
+    if not entry.replicated_across_expert_parallel and expert_rank >= entry.expert_parallel_shards:
         return False
     return True
 
