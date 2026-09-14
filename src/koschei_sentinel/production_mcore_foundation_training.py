@@ -69,11 +69,15 @@ def _run_real_batches(runtime, spec, sequences: list[PackedFoundationSequence]) 
         from megatron.core.utils import get_batch_on_this_cp_rank
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("PyTorch and Megatron-Core are required for foundation training") from exc
+    if not sequences:
+        raise ValueError("foundation training requires at least one packed sequence")
 
     device = torch.device("cuda", runtime.local_rank)
     cp_size = spec.topology.context_parallel_size
     batches = []
     for sequence in sequences:
+        if len(sequence.input_ids) != spec.max_position_embeddings and len(sequence.input_ids) > spec.max_position_embeddings:
+            raise ValueError("packed sequence exceeds model context window")
         batch = _to_device_batch(sequence, device=device)
         if cp_size > 1:
             batch = get_batch_on_this_cp_rank(
@@ -111,7 +115,7 @@ def _run_real_batches(runtime, spec, sequences: list[PackedFoundationSequence]) 
         data_iterator=iter(batches),
         model=runtime.model,
         num_microbatches=len(batches),
-        seq_length=spec.transformer.max_position_embeddings if hasattr(spec.transformer, "max_position_embeddings") else len(sequences[0].input_ids),
+        seq_length=len(sequences[0].input_ids),
         micro_batch_size=1,
         forward_only=False,
         collect_non_loss_data=False,
@@ -148,17 +152,16 @@ def run_foundation_training(
     )
     resumed = resume_checkpoint is not None
     if resumed:
-        training_state, metadata = load_mcore_training_checkpoint(
+        training_state, _ = load_mcore_training_checkpoint(
             model,
             optimizer,
             checkpoint_dir=resume_checkpoint,
             expected_global_seed=train_config.global_seed,
         )
         if sampler_state is None:
-            payload = metadata.get("foundation_sampler_state") if isinstance(metadata, dict) else None
-            if payload is None:
+            if training_state.data_state is None:
                 raise ValueError("resume checkpoint lacks foundation sampler state")
-            sampler_state = FoundationSamplerState.model_validate(payload)
+            sampler_state = FoundationSamplerState.model_validate(training_state.data_state)
     else:
         initialize_mcore_native_parameters(model, global_seed=train_config.global_seed)
         training_state = MCoreTrainingState(
@@ -166,6 +169,7 @@ def run_foundation_training(
             consumed_microbatches=0,
             learning_rate=train_config.learning_rate,
             global_seed=train_config.global_seed,
+            data_state=None,
         )
 
     start_step = training_state.global_step
@@ -196,16 +200,11 @@ def run_foundation_training(
             consumed_microbatches=training_state.consumed_microbatches + train_config.microbatches_per_step,
             learning_rate=train_config.learning_rate,
             global_seed=train_config.global_seed,
+            data_state=sampler_state.model_dump(mode="json"),
         )
         if training_state.global_step % train_config.checkpoint_every_steps == 0 or training_state.global_step == train_config.max_steps:
             step_dir = root / f"step-{training_state.global_step:08d}"
-            save_mcore_training_checkpoint(
-                model,
-                optimizer,
-                training_state,
-                checkpoint_dir=step_dir,
-                extra_metadata={"foundation_sampler_state": sampler_state.model_dump(mode="json")},
-            )
+            save_mcore_training_checkpoint(model, optimizer, training_state, checkpoint_dir=step_dir)
             final_checkpoint = step_dir.as_posix()
 
     if sampler_state is None:
