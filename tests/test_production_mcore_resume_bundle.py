@@ -45,7 +45,7 @@ def base_state() -> MCoreTrainingState:
     )
 
 
-def test_v2_resume_restores_ledger_and_trend_history():
+def test_v2_resume_restores_ledger_trend_and_quarantine_history():
     ledger = RecoveryLedger.empty()
     fingerprint = "c" * 64
     ledger.record_failure(fingerprint)
@@ -60,12 +60,21 @@ def test_v2_resume_restores_ledger_and_trend_history():
         worst_router_utilization_fraction=0.9,
     )
     tracker.commit_values(snapshot, grad_norm=1.0)
+    quarantine_event = {
+        "batch_fingerprint": fingerprint,
+        "global_sequence_offset": 64,
+        "global_window": 32,
+        "failure_count": 3,
+        "skipped": True,
+        "reason_codes": ["lm_loss_spike"],
+    }
     state = attach_catalog_resume_state(
         base_state(),
         catalog_sha256=CATALOG,
         current_learning_rate=5.0e-6,
         ledger=ledger,
         trend_tracker=tracker,
+        quarantine_events=[quarantine_event],
     )
 
     restored = restore_catalog_resume_bundle(
@@ -77,6 +86,8 @@ def test_v2_resume_restores_ledger_and_trend_history():
     assert restored.cursor.global_sequence_offset == 96
     assert restored.ledger.failures_by_fingerprint[fingerprint] == 1
     assert restored.ledger.total_retries == 1
+    assert restored.total_retries == 1
+    assert restored.quarantine_events == [quarantine_event]
     assert restored.trend_tracker.to_state().losses == [2.0]
     assert restored.current_learning_rate == 5.0e-6
 
@@ -96,6 +107,8 @@ def test_v1_style_state_falls_back_to_empty_recovery_and_trend():
     )
     assert restored.ledger.failures_by_fingerprint == {}
     assert restored.ledger.quarantined == set()
+    assert restored.total_retries == 0
+    assert restored.quarantine_events == []
     assert restored.trend_tracker.to_state().losses == []
 
 
@@ -141,4 +154,26 @@ def test_resume_rejects_changed_trend_window():
             state,
             expected_catalog_sha256=CATALOG,
             trend_thresholds=thresholds(window=16),
+        )
+
+
+def test_resume_rejects_retry_counter_disagreement():
+    ledger = RecoveryLedger.empty()
+    ledger.record_retry()
+    tracker = TrainingTrendTracker(thresholds())
+    state = attach_catalog_resume_state(
+        base_state(),
+        catalog_sha256=CATALOG,
+        current_learning_rate=5.0e-6,
+        ledger=ledger,
+        trend_tracker=tracker,
+    )
+    raw = dict(state.recovery_state or {})
+    raw["total_retries"] = 0
+    state = state.model_copy(update={"recovery_state": raw})
+    with pytest.raises(ValueError, match="retry count disagrees"):
+        restore_catalog_resume_bundle(
+            state,
+            expected_catalog_sha256=CATALOG,
+            trend_thresholds=thresholds(),
         )
