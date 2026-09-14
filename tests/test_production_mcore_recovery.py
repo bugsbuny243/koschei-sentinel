@@ -46,6 +46,7 @@ def test_recovery_backoff_retries_then_quarantines():
     assert first.retry_allowed is True
     assert first.quarantine_batch is False
     assert first.next_learning_rate == pytest.approx(5.0e-6)
+    assert ledger.total_retries == 1
 
     second = build_recovery_decision(
         globally_unstable=True,
@@ -58,6 +59,7 @@ def test_recovery_backoff_retries_then_quarantines():
     assert second.failure_count == 2
     assert second.retry_allowed is True
     assert second.next_learning_rate == pytest.approx(2.5e-6)
+    assert ledger.total_retries == 2
 
     third = build_recovery_decision(
         globally_unstable=True,
@@ -72,6 +74,7 @@ def test_recovery_backoff_retries_then_quarantines():
     assert third.quarantine_batch is True
     assert third.skip_batch is True
     assert fp in ledger.quarantined
+    assert ledger.total_retries == 2
 
 
 def test_recovery_learning_rate_stops_at_floor():
@@ -85,6 +88,7 @@ def test_recovery_learning_rate_stops_at_floor():
         reason_codes=["grad_norm_spike"],
     )
     assert decision.next_learning_rate == pytest.approx(1.0e-7)
+    assert ledger.total_retries == 1
 
 
 def test_stable_consensus_does_not_mutate_ledger():
@@ -101,6 +105,7 @@ def test_stable_consensus_does_not_mutate_ledger():
     assert decision.offending_batch_fingerprint is None
     assert ledger.failures_by_fingerprint == {}
     assert ledger.quarantined == set()
+    assert ledger.total_retries == 0
 
 
 def test_invalid_quarantine_threshold_fails_closed():
