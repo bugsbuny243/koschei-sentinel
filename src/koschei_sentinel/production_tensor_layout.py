@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import Field
@@ -19,6 +18,8 @@ class TensorLayoutEntry(StrictModel):
     pipeline_stage: int = Field(ge=0)
     tensor_parallel_shards: int = Field(gt=0)
     expert_parallel_shards: int = Field(gt=0)
+    replicated_across_tensor_parallel: bool = False
+    replicated_across_expert_parallel: bool = False
     replicated_across_data_parallel: Literal[True] = True
     meta_device_only: Literal[True] = True
 
@@ -65,7 +66,8 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
 
     entries: list[TensorLayoutEntry] = []
 
-    # Vocabulary-parallel embedding on the first pipeline stage.
+    # Vocabulary-parallel embedding on the first pipeline stage. Expert parallelism does
+    # not shard dense tensors, so the local TP shard is replicated across EP ranks.
     embedding_shape = (t.vocab_size, t.hidden_size)
     entries.append(
         TensorLayoutEntry(
@@ -76,6 +78,7 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
             pipeline_stage=0,
             tensor_parallel_shards=tp,
             expert_parallel_shards=1,
+            replicated_across_expert_parallel=True,
         )
     )
 
@@ -97,6 +100,8 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
                     pipeline_stage=stage,
                     tensor_parallel_shards=1,
                     expert_parallel_shards=1,
+                    replicated_across_tensor_parallel=True,
+                    replicated_across_expert_parallel=True,
                 ),
                 TensorLayoutEntry(
                     name=f"{prefix}.self_attention.q_proj.weight",
@@ -106,6 +111,7 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
                     pipeline_stage=stage,
                     tensor_parallel_shards=tp,
                     expert_parallel_shards=1,
+                    replicated_across_expert_parallel=True,
                 ),
                 TensorLayoutEntry(
                     name=f"{prefix}.self_attention.k_proj.weight",
@@ -115,6 +121,7 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
                     pipeline_stage=stage,
                     tensor_parallel_shards=tp,
                     expert_parallel_shards=1,
+                    replicated_across_expert_parallel=True,
                 ),
                 TensorLayoutEntry(
                     name=f"{prefix}.self_attention.v_proj.weight",
@@ -124,6 +131,7 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
                     pipeline_stage=stage,
                     tensor_parallel_shards=tp,
                     expert_parallel_shards=1,
+                    replicated_across_expert_parallel=True,
                 ),
                 TensorLayoutEntry(
                     name=f"{prefix}.self_attention.o_proj.weight",
@@ -133,6 +141,7 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
                     pipeline_stage=stage,
                     tensor_parallel_shards=tp,
                     expert_parallel_shards=1,
+                    replicated_across_expert_parallel=True,
                 ),
                 TensorLayoutEntry(
                     name=f"{prefix}.post_attention_layernorm.weight",
@@ -142,6 +151,8 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
                     pipeline_stage=stage,
                     tensor_parallel_shards=1,
                     expert_parallel_shards=1,
+                    replicated_across_tensor_parallel=True,
+                    replicated_across_expert_parallel=True,
                 ),
                 TensorLayoutEntry(
                     name=f"{prefix}.shared_mlp.gate_up.weight",
@@ -151,6 +162,7 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
                     pipeline_stage=stage,
                     tensor_parallel_shards=tp,
                     expert_parallel_shards=1,
+                    replicated_across_expert_parallel=True,
                 ),
                 TensorLayoutEntry(
                     name=f"{prefix}.shared_mlp.down.weight",
@@ -160,6 +172,7 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
                     pipeline_stage=stage,
                     tensor_parallel_shards=tp,
                     expert_parallel_shards=1,
+                    replicated_across_expert_parallel=True,
                 ),
                 TensorLayoutEntry(
                     name=f"{prefix}.moe.router.weight",
@@ -169,6 +182,8 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
                     pipeline_stage=stage,
                     tensor_parallel_shards=1,
                     expert_parallel_shards=1,
+                    replicated_across_tensor_parallel=True,
+                    replicated_across_expert_parallel=True,
                 ),
                 TensorLayoutEntry(
                     name=f"{prefix}.moe.experts.gate_up.weight",
@@ -200,6 +215,8 @@ def build_tensor_layout(spec: ProductionMegatronModelSpec) -> TensorLayoutPlan:
             pipeline_stage=pp - 1,
             tensor_parallel_shards=1,
             expert_parallel_shards=1,
+            replicated_across_tensor_parallel=True,
+            replicated_across_expert_parallel=True,
         )
     )
 
