@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import math
-import time
-from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import Field, model_validator
@@ -20,6 +18,7 @@ class StabilityThresholds(StrictModel):
     max_expert_load_cv: float = Field(ge=0.0)
     require_finite_parameters: bool = True
     require_finite_gradients: bool = True
+    require_router_telemetry: bool = True
 
 
 class MoERouterTelemetry(StrictModel):
@@ -159,7 +158,10 @@ def collect_mcore_stability_telemetry(
         blockers.append("non_finite_moe_aux_loss")
     if z_loss is not None and not math.isfinite(z_loss):
         blockers.append("non_finite_moe_z_loss")
-    if router is not None:
+    if router is None:
+        if thresholds.require_router_telemetry:
+            blockers.append("router_telemetry_missing")
+    else:
         if router.utilization_fraction < thresholds.min_expert_utilization_fraction:
             blockers.append("expert_utilization_below_threshold")
         if router.load_cv > thresholds.max_expert_load_cv:
