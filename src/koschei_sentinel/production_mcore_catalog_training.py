@@ -17,6 +17,14 @@ from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistribut
 from koschei_sentinel.production_mcore_moe_metrics_probe import clear_native_moe_metrics, read_native_moe_losses
 from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
 from koschei_sentinel.production_mcore_optimizer_smoke import build_mcore_distributed_optimizer
+from koschei_sentinel.production_mcore_recovery import (
+    RecoveryDecision,
+    RecoveryLedger,
+    RecoveryPolicy,
+    build_recovery_decision,
+    distributed_any_unstable,
+    fingerprint_batch,
+)
 from koschei_sentinel.production_mcore_router_probe import MCoreRouterProbe
 from koschei_sentinel.production_mcore_stability_telemetry import (
     MCoreStabilityStepTelemetry,
@@ -66,6 +74,15 @@ class CatalogTrainingConfig(StrictModel):
             max_router_utilization_drop=0.35,
         )
     )
+    recovery_policy: RecoveryPolicy = Field(
+        default_factory=lambda: RecoveryPolicy(
+            max_retries_per_batch=2,
+            learning_rate_backoff=0.5,
+            min_learning_rate=1.0e-7,
+            quarantine_after_failures=3,
+            skip_quarantined_batch=True,
+        )
+    )
 
 
 class CatalogTrainingStepMetrics(StrictModel):
@@ -78,10 +95,21 @@ class CatalogTrainingStepMetrics(StrictModel):
     lm_loss: float | None = Field(default=None, ge=0.0)
     stability: MCoreStabilityStepTelemetry
     trend: TrainingTrendSnapshot
+    recovery_attempts_before_success: int = Field(ge=0)
+    effective_learning_rate: float = Field(gt=0.0)
     worker_prefetch: Literal[True] = True
     pinned_memory: Literal[True] = True
     async_h2d: Literal[True] = True
     double_buffered: Literal[True] = True
+
+
+class CatalogQuarantineEvent(StrictModel):
+    batch_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    global_sequence_offset: int = Field(ge=0)
+    global_window: int = Field(gt=0)
+    failure_count: int = Field(gt=0)
+    skipped: bool
+    reason_codes: list[str] = Field(default_factory=list)
 
 
 class CatalogTrainingResult(StrictModel):
@@ -92,8 +120,12 @@ class CatalogTrainingResult(StrictModel):
     resumed_from_checkpoint: bool
     catalog_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     step_metrics: list[CatalogTrainingStepMetrics] = Field(min_length=1)
+    quarantine_events: list[CatalogQuarantineEvent] = Field(default_factory=list)
+    total_retries: int = Field(ge=0)
+    final_learning_rate: float = Field(gt=0.0)
     final_checkpoint_dir: str | None = None
     all_steps_stable: Literal[True] = True
+    distributed_recovery_consensus: Literal[True] = True
     execution_authorized: Literal[False] = False
 
 
@@ -124,7 +156,6 @@ def _run_prefetched_batches(runtime, spec, batches) -> float | None:
                 cp_group=parallel_state.get_context_parallel_group(),
             )
         prepared.append(local)
-
     if not prepared:
         raise RuntimeError("catalog prefetch produced no batches")
 
@@ -164,7 +195,6 @@ def _run_prefetched_batches(runtime, spec, batches) -> float | None:
         forward_only=False,
         collect_non_loss_data=False,
     )
-
     local_sum = float(sum(local_losses))
     local_count = float(len(local_losses))
     payload = torch.tensor([local_sum, local_count], device=prepared[0]["tokens"].device, dtype=torch.float64)
@@ -187,13 +217,7 @@ def _optimizer_step_result(value) -> tuple[bool, float]:
     return successful, grad_norm
 
 
-def _restore_last_good(
-    model,
-    optimizer,
-    *,
-    checkpoint_dir: str | None,
-    global_seed: int,
-) -> MCoreTrainingState | None:
+def _restore_last_good(model, optimizer, *, checkpoint_dir: str | None, global_seed: int) -> MCoreTrainingState | None:
     if checkpoint_dir is None:
         return None
     restored_state, _ = load_mcore_training_checkpoint(
@@ -203,6 +227,25 @@ def _restore_last_good(
         expected_global_seed=global_seed,
     )
     return restored_state
+
+
+def _set_optimizer_lr(optimizer, learning_rate: float) -> None:
+    groups = getattr(optimizer, "param_groups", None)
+    if groups is None:
+        raise RuntimeError("Megatron optimizer does not expose param_groups for recovery LR backoff")
+    changed = False
+    for group in groups:
+        if isinstance(group, dict):
+            group["lr"] = learning_rate
+            changed = True
+    if not changed:
+        raise RuntimeError("Megatron optimizer exposed no mutable parameter groups")
+
+
+def _save_initial_recovery_checkpoint(model, optimizer, state: MCoreTrainingState, root: Path) -> str:
+    target = root / "recovery-base-step-00000000"
+    save_mcore_training_checkpoint(model, optimizer, state, checkpoint_dir=target)
+    return target.as_posix()
 
 
 def run_catalog_training(
@@ -229,6 +272,9 @@ def run_catalog_training(
     if config.prefetch_depth < config.prefetch_workers:
         raise ValueError("prefetch_depth must be >= prefetch_workers")
 
+    # Fresh runs initialize the raw MCore model before DDP broadcasts parameters.
+    if resume_checkpoint is None:
+        initialize_mcore_native_parameters(runtime.model, global_seed=config.global_seed)
     ddp_runtime = wrap_runtime_with_megatron_ddp(runtime)
     model = ddp_runtime.model
     optimizer = build_mcore_distributed_optimizer(
@@ -237,11 +283,13 @@ def run_catalog_training(
         weight_decay=config.weight_decay,
         clip_grad=config.clip_grad,
     )
+
     router_probe = MCoreRouterProbe()
     activation_probe = MCoreActivationProbe()
     router_probe.attach(model)
     activation_probe.attach(model)
     trend_tracker = TrainingTrendTracker(config.trend_thresholds)
+    recovery_ledger = RecoveryLedger.empty()
 
     resumed = resume_checkpoint is not None
     cursor: FoundationCatalogCursor | None = None
@@ -259,7 +307,6 @@ def run_catalog_training(
         if cursor.catalog_sha256 != catalog.catalog_sha256:
             raise ValueError("resume checkpoint catalog digest mismatch")
     else:
-        initialize_mcore_native_parameters(model, global_seed=config.global_seed)
         state = MCoreTrainingState(
             global_step=0,
             consumed_microbatches=0,
@@ -280,131 +327,195 @@ def run_catalog_training(
     root = Path(checkpoint_root)
     root.mkdir(parents=True, exist_ok=True)
     metrics: list[CatalogTrainingStepMetrics] = []
-    final_checkpoint: str | None = resume_checkpoint.as_posix() if isinstance(resume_checkpoint, Path) else (
-        str(resume_checkpoint) if resume_checkpoint is not None else None
-    )
+    quarantines: list[CatalogQuarantineEvent] = []
+    total_retries = 0
+    current_lr = state.learning_rate
+    final_checkpoint: str | None = str(resume_checkpoint) if resume_checkpoint is not None else None
+    if final_checkpoint is None:
+        final_checkpoint = _save_initial_recovery_checkpoint(model, optimizer, state, root)
+
     device = torch.device("cuda", runtime.local_rank)
     global_offset = cursor.global_sequence_offset if cursor is not None else 0
+    completed_step = start_step
 
     try:
-        for zero_based_step in range(start_step, config.max_steps):
+        while completed_step < config.max_steps:
             window = config.microbatches_per_step * dp_size
-            indices = [
-                ordinal
-                for ordinal in range(global_offset, global_offset + window)
-                if (ordinal - global_offset) % dp_size == dp_rank
-            ]
-            worker_prefetch = FoundationWorkerPrefetch(
-                catalog_path,
-                indices,
-                workers=config.prefetch_workers,
-                prefetch_depth=config.prefetch_depth,
-            )
-            sequences = [item.sequence for item in worker_prefetch]
-            if len(sequences) != config.microbatches_per_step:
-                raise RuntimeError("catalog worker prefetch returned wrong local batch count")
-
-            optimizer.zero_grad(set_to_none=True)
-            model.zero_grad_buffer()
-            router_probe.reset()
-            activation_probe.reset()
-            clear_native_moe_metrics()
-            torch.cuda.reset_peak_memory_stats(runtime.local_rank)
-            double_buffer = FoundationDoubleBuffer(sequences, device=device, depth=2)
-
-            dist.barrier()
-            torch.cuda.synchronize(runtime.local_rank)
-            started = time.perf_counter()
-            lm_loss = _run_prefetched_batches(ddp_runtime, spec, double_buffer)
-            model.finish_grad_sync()
-            native_moe_losses = read_native_moe_losses()
-            step_result = optimizer.step()
-            successful, grad_norm = _optimizer_step_result(step_result)
-            if not successful:
-                restored = _restore_last_good(
-                    model,
-                    optimizer,
-                    checkpoint_dir=final_checkpoint,
-                    global_seed=config.global_seed,
-                )
-                suffix = "; restored last good checkpoint" if restored is not None else ""
-                raise RuntimeError(f"catalog optimizer failed at step {zero_based_step + 1}{suffix}")
-            torch.cuda.synchronize(runtime.local_rank)
-            dist.barrier()
-            elapsed = time.perf_counter() - started
-            if elapsed <= 0:
-                raise RuntimeError("catalog training step duration must be positive")
-
-            local_tokens = catalog.sequence_length * config.microbatches_per_step
-            global_tokens = local_tokens * dp_size
-            router_snapshot = router_probe.snapshot()
-            activation_snapshot = activation_probe.snapshot()
-            stability = collect_mcore_stability_telemetry(
-                model=model,
-                global_step=zero_based_step + 1,
-                local_tokens=local_tokens,
-                global_tokens=global_tokens,
-                elapsed_seconds=elapsed,
-                grad_norm=grad_norm,
-                thresholds=config.stability_thresholds,
-                local_rank=runtime.local_rank,
-                aux_loss=native_moe_losses.aux_loss,
-                z_loss=native_moe_losses.z_loss,
-                router_layers=[
-                    (layer.module_name, layer.tokens_per_expert) for layer in router_snapshot.layers
-                ],
-            )
-            trend = trend_tracker.observe(
-                global_step=zero_based_step + 1,
-                lm_loss=lm_loss,
-                grad_norm=grad_norm,
-                max_activation_rms=activation_snapshot.max_rms,
-                max_activation_abs=activation_snapshot.max_abs,
-                worst_router_utilization_fraction=stability.worst_router_utilization_fraction,
-            )
-            blockers = [*stability.blockers, *trend.blockers]
-            if blockers:
-                restored = _restore_last_good(
-                    model,
-                    optimizer,
-                    checkpoint_dir=final_checkpoint,
-                    global_seed=config.global_seed,
-                )
-                suffix = "; restored last good checkpoint" if restored is not None else "; no prior checkpoint available"
-                raise RuntimeError(
-                    f"training stability gate failed at step {zero_based_step + 1}: {blockers}{suffix}"
-                )
-
-            global_offset += window
-            cursor = FoundationCatalogCursor(
-                global_sequence_offset=global_offset,
+            batch_fingerprint = fingerprint_batch(
                 catalog_sha256=catalog.catalog_sha256,
-                data_parallel_size=dp_size,
+                global_sequence_offset=global_offset,
+                global_window=window,
             )
-            metrics.append(
-                CatalogTrainingStepMetrics(
-                    global_step=zero_based_step + 1,
-                    local_tokens=local_tokens,
-                    global_tokens=global_tokens,
-                    elapsed_seconds=elapsed,
-                    local_tokens_per_second=local_tokens / elapsed,
-                    global_tokens_per_second=global_tokens / elapsed,
-                    lm_loss=lm_loss,
-                    stability=stability,
-                    trend=trend,
+            if batch_fingerprint in recovery_ledger.quarantined:
+                global_offset += window
+                continue
+
+            retry_attempts = 0
+            step_committed = False
+            while not step_committed:
+                indices = [
+                    ordinal
+                    for ordinal in range(global_offset, global_offset + window)
+                    if (ordinal - global_offset) % dp_size == dp_rank
+                ]
+                worker_prefetch = FoundationWorkerPrefetch(
+                    catalog_path,
+                    indices,
+                    workers=config.prefetch_workers,
+                    prefetch_depth=config.prefetch_depth,
                 )
-            )
-            state = MCoreTrainingState(
-                global_step=zero_based_step + 1,
-                consumed_microbatches=state.consumed_microbatches + config.microbatches_per_step,
-                learning_rate=config.learning_rate,
-                global_seed=config.global_seed,
-                data_state=cursor.model_dump(mode="json"),
-            )
-            if state.global_step % config.checkpoint_every_steps == 0 or state.global_step == config.max_steps:
-                step_dir = root / f"step-{state.global_step:08d}"
-                save_mcore_training_checkpoint(model, optimizer, state, checkpoint_dir=step_dir)
-                final_checkpoint = step_dir.as_posix()
+                sequences = [item.sequence for item in worker_prefetch]
+                if len(sequences) != config.microbatches_per_step:
+                    raise RuntimeError("catalog worker prefetch returned wrong local batch count")
+
+                optimizer.zero_grad(set_to_none=True)
+                model.zero_grad_buffer()
+                router_probe.reset()
+                activation_probe.reset()
+                clear_native_moe_metrics()
+                torch.cuda.reset_peak_memory_stats(runtime.local_rank)
+                double_buffer = FoundationDoubleBuffer(sequences, device=device, depth=2)
+
+                dist.barrier()
+                torch.cuda.synchronize(runtime.local_rank)
+                started = time.perf_counter()
+                local_exception: Exception | None = None
+                lm_loss: float | None = None
+                grad_norm = 0.0
+                successful = False
+                stability = None
+                trend = None
+                local_blockers: list[str] = []
+                try:
+                    lm_loss = _run_prefetched_batches(ddp_runtime, spec, double_buffer)
+                    model.finish_grad_sync()
+                    native_moe_losses = read_native_moe_losses()
+                    step_result = optimizer.step()
+                    successful, grad_norm = _optimizer_step_result(step_result)
+                    if not successful:
+                        local_blockers.append("optimizer_step_failed")
+                    torch.cuda.synchronize(runtime.local_rank)
+                    elapsed = time.perf_counter() - started
+                    if elapsed <= 0:
+                        local_blockers.append("non_positive_step_duration")
+                        elapsed = 1.0e-9
+
+                    local_tokens = catalog.sequence_length * config.microbatches_per_step
+                    global_tokens = local_tokens * dp_size
+                    router_snapshot = router_probe.snapshot()
+                    activation_snapshot = activation_probe.snapshot()
+                    stability = collect_mcore_stability_telemetry(
+                        model=model,
+                        global_step=completed_step + 1,
+                        local_tokens=local_tokens,
+                        global_tokens=global_tokens,
+                        elapsed_seconds=elapsed,
+                        grad_norm=grad_norm,
+                        thresholds=config.stability_thresholds,
+                        local_rank=runtime.local_rank,
+                        aux_loss=native_moe_losses.aux_loss,
+                        z_loss=native_moe_losses.z_loss,
+                        router_layers=[(layer.module_name, layer.tokens_per_expert) for layer in router_snapshot.layers],
+                    )
+                    trend = trend_tracker.observe(
+                        global_step=completed_step + 1,
+                        lm_loss=lm_loss,
+                        grad_norm=grad_norm,
+                        max_activation_rms=activation_snapshot.max_rms,
+                        max_activation_abs=activation_snapshot.max_abs,
+                        worst_router_utilization_fraction=stability.worst_router_utilization_fraction,
+                    )
+                    local_blockers.extend(stability.blockers)
+                    local_blockers.extend(trend.blockers)
+                except Exception as exc:  # synchronize recovery instead of letting one rank exit alone
+                    local_exception = exc
+                    local_blockers.append(f"rank_exception:{type(exc).__name__}")
+
+                local_unstable = bool(local_blockers)
+                globally_unstable = distributed_any_unstable(local_unstable, device=device)
+                if globally_unstable:
+                    reason_codes = local_blockers or ["remote_rank_instability"]
+                    decision: RecoveryDecision = build_recovery_decision(
+                        globally_unstable=True,
+                        batch_fingerprint=batch_fingerprint,
+                        current_learning_rate=current_lr,
+                        policy=config.recovery_policy,
+                        ledger=recovery_ledger,
+                        reason_codes=reason_codes,
+                    )
+                    restored = _restore_last_good(
+                        model,
+                        optimizer,
+                        checkpoint_dir=final_checkpoint,
+                        global_seed=config.global_seed,
+                    )
+                    if restored is None:
+                        raise RuntimeError("distributed recovery required but no last-good checkpoint exists") from local_exception
+                    state = restored
+                    current_lr = decision.next_learning_rate
+                    _set_optimizer_lr(optimizer, current_lr)
+                    if decision.retry_allowed:
+                        retry_attempts += 1
+                        total_retries += 1
+                        continue
+                    if decision.quarantine_batch:
+                        quarantines.append(
+                            CatalogQuarantineEvent(
+                                batch_fingerprint=batch_fingerprint,
+                                global_sequence_offset=global_offset,
+                                global_window=window,
+                                failure_count=decision.failure_count,
+                                skipped=decision.skip_batch,
+                                reason_codes=decision.reason_codes,
+                            )
+                        )
+                        if decision.skip_batch:
+                            global_offset += window
+                            step_committed = True
+                            break
+                    raise RuntimeError(
+                        f"distributed recovery exhausted for batch {batch_fingerprint}: {decision.reason_codes}"
+                    ) from local_exception
+
+                if stability is None or trend is None:
+                    raise RuntimeError("stable consensus reached without local telemetry")
+                elapsed = max(1.0e-9, time.perf_counter() - started)
+                local_tokens = catalog.sequence_length * config.microbatches_per_step
+                global_tokens = local_tokens * dp_size
+                global_offset += window
+                cursor = FoundationCatalogCursor(
+                    global_sequence_offset=global_offset,
+                    catalog_sha256=catalog.catalog_sha256,
+                    data_parallel_size=dp_size,
+                )
+                completed_step += 1
+                metrics.append(
+                    CatalogTrainingStepMetrics(
+                        global_step=completed_step,
+                        local_tokens=local_tokens,
+                        global_tokens=global_tokens,
+                        elapsed_seconds=elapsed,
+                        local_tokens_per_second=local_tokens / elapsed,
+                        global_tokens_per_second=global_tokens / elapsed,
+                        lm_loss=lm_loss,
+                        stability=stability,
+                        trend=trend,
+                        recovery_attempts_before_success=retry_attempts,
+                        effective_learning_rate=current_lr,
+                    )
+                )
+                state = MCoreTrainingState(
+                    global_step=completed_step,
+                    consumed_microbatches=state.consumed_microbatches + config.microbatches_per_step,
+                    learning_rate=current_lr,
+                    global_seed=config.global_seed,
+                    data_state=cursor.model_dump(mode="json"),
+                )
+                if state.global_step % config.checkpoint_every_steps == 0 or state.global_step == config.max_steps:
+                    step_dir = root / f"step-{state.global_step:08d}"
+                    save_mcore_training_checkpoint(model, optimizer, state, checkpoint_dir=step_dir)
+                    final_checkpoint = step_dir.as_posix()
+                step_committed = True
     finally:
         activation_probe.detach()
         router_probe.detach()
@@ -415,5 +526,8 @@ def run_catalog_training(
         resumed_from_checkpoint=resumed,
         catalog_sha256=catalog.catalog_sha256,
         step_metrics=metrics,
+        quarantine_events=quarantines,
+        total_retries=total_retries,
+        final_learning_rate=current_lr,
         final_checkpoint_dir=final_checkpoint,
     )
