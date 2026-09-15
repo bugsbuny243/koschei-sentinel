@@ -19,6 +19,12 @@ class AsyncCheckpointConfig(StrictModel):
     verify_integrity: bool = False
 
 
+@dataclass(frozen=True)
+class AsyncCheckpointScheduleResult:
+    request_id: int
+    finalized_request_ids: tuple[int, ...] = ()
+
+
 @dataclass
 class MCoreAsyncCheckpointQueue:
     config: AsyncCheckpointConfig
@@ -53,7 +59,7 @@ class MCoreAsyncCheckpointQueue:
         training_state: MCoreTrainingState,
         *,
         checkpoint_dir: str | Path,
-    ) -> int | None:
+    ) -> AsyncCheckpointScheduleResult:
         if not self.config.enabled:
             raise RuntimeError("async checkpoint queue is disabled; use synchronous checkpoint save")
         try:
@@ -62,10 +68,11 @@ class MCoreAsyncCheckpointQueue:
             raise RuntimeError("Megatron-Core distributed checkpointing is required") from exc
 
         queue = self._ensure_queue()
-        # Bound outstanding host-memory snapshots. This blocks before scheduling a new
-        # checkpoint instead of allowing unbounded 397B checkpoint staging pressure.
+        finalized: list[int] = []
+        # Bound outstanding host-memory snapshots. Preserve the IDs finalized by this
+        # backpressure wait so the recovery index can publish them before a newer save.
         if queue.get_num_unfinalized_calls() >= self.config.max_unfinalized:
-            queue.maybe_finalize_async_calls(blocking=True)
+            finalized = list(queue.maybe_finalize_async_calls(blocking=True))
 
         target = Path(checkpoint_dir)
         if target.exists() and any(target.iterdir()):
@@ -92,4 +99,8 @@ class MCoreAsyncCheckpointQueue:
         )
         if request is None:
             raise RuntimeError("Megatron-Core async checkpoint save returned no AsyncRequest")
-        return int(queue.schedule_async_request(request))
+        request_id = int(queue.schedule_async_request(request))
+        return AsyncCheckpointScheduleResult(
+            request_id=request_id,
+            finalized_request_ids=tuple(int(item) for item in finalized),
+        )
