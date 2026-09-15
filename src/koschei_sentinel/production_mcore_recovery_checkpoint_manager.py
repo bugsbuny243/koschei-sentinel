@@ -45,7 +45,7 @@ class RecoveryCheckpointManager:
     def pending_steps(self) -> tuple[int, ...]:
         return tuple(sorted(entry.global_step for entry in self.pending.values()))
 
-    def _finalize_ids(self, ids: list[int]) -> list[str]:
+    def _finalize_ids(self, ids: list[int] | tuple[int, ...]) -> list[str]:
         deleted: list[str] = []
         for request_id in ids:
             entry = self.pending.pop(int(request_id), None)
@@ -62,7 +62,6 @@ class RecoveryCheckpointManager:
         return self._finalize_ids(self.queue.wait())
 
     def wait_for_committed_step(self, global_step: int) -> RecoveryCheckpointEntry:
-        """Block until the requested step is finalized and published in the recovery index."""
         if global_step < 0:
             raise ValueError("global_step must be non-negative")
         self.poll()
@@ -87,7 +86,6 @@ class RecoveryCheckpointManager:
         kind: str,
         durable: bool = False,
     ) -> int:
-        # Finalize completed saves before allocating another host-side snapshot.
         self.poll()
         target = Path(checkpoint_dir).resolve()
         entry = RecoveryCheckpointEntry(
@@ -96,9 +94,11 @@ class RecoveryCheckpointManager:
             kind=kind,
             durable=durable,
         )
-        request_id = self.queue.save(model, optimizer, state, checkpoint_dir=target)
-        if request_id is None:
-            raise RuntimeError("async checkpoint manager expected a request id")
+        result = self.queue.save(model, optimizer, state, checkpoint_dir=target)
+        # queue.save can finalize older requests while applying memory backpressure.
+        # Publish those completions before exposing the newly pending request.
+        self._finalize_ids(result.finalized_request_ids)
+        request_id = result.request_id
         if request_id in self.pending:
             raise RuntimeError("async checkpoint request id collision")
         self.pending[request_id] = entry
