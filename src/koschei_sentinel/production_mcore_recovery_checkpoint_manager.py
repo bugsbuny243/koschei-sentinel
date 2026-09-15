@@ -31,6 +31,20 @@ class RecoveryCheckpointManager:
             keep_recovery_slots=self.keep_recovery_slots,
         )
 
+    @property
+    def committed_last_good(self) -> RecoveryCheckpointEntry | None:
+        """Newest finalized checkpoint only; pending async saves are never recoverable."""
+        return self.index.latest
+
+    @property
+    def committed_last_good_dir(self) -> str | None:
+        entry = self.committed_last_good
+        return None if entry is None else entry.checkpoint_dir
+
+    @property
+    def pending_steps(self) -> tuple[int, ...]:
+        return tuple(sorted(entry.global_step for entry in self.pending.values()))
+
     def _finalize_ids(self, ids: list[int]) -> list[str]:
         deleted: list[str] = []
         for request_id in ids:
@@ -46,6 +60,22 @@ class RecoveryCheckpointManager:
 
     def wait(self) -> list[str]:
         return self._finalize_ids(self.queue.wait())
+
+    def wait_for_committed_step(self, global_step: int) -> RecoveryCheckpointEntry:
+        """Block until the requested step is finalized and published in the recovery index."""
+        if global_step < 0:
+            raise ValueError("global_step must be non-negative")
+        self.poll()
+        matches = [entry for entry in self.index.entries if entry.global_step == global_step]
+        if matches:
+            return max(matches, key=lambda entry: entry.durable)
+        if global_step not in self.pending_steps:
+            raise RuntimeError(f"recovery checkpoint step {global_step} is neither committed nor pending")
+        self.wait()
+        matches = [entry for entry in self.index.entries if entry.global_step == global_step]
+        if not matches:
+            raise RuntimeError(f"async checkpoint step {global_step} finalized without an index entry")
+        return max(matches, key=lambda entry: entry.durable)
 
     def save_async(
         self,
