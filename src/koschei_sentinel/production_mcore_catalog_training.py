@@ -12,6 +12,7 @@ from koschei_sentinel.production_foundation_worker_prefetch import FoundationWor
 from koschei_sentinel.production_mcore_activation_probe import MCoreActivationProbe
 from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointConfig
 from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
+from koschei_sentinel.production_mcore_distributed_commit import save_and_commit_state
 from koschei_sentinel.production_mcore_moe_metrics_probe import clear_native_moe_metrics, read_native_moe_losses
 from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
 from koschei_sentinel.production_mcore_optimizer_smoke import build_mcore_distributed_optimizer
@@ -69,8 +70,13 @@ def _set_optimizer_lr(optimizer,lr):
     if groups is None: raise RuntimeError("Megatron optimizer exposes no mutable param_groups")
     for group in groups: group["lr"]=lr
 def _attach(state,catalog,lr,ledger,trend,retries,quarantines): return attach_catalog_resume_state(state.model_copy(update={"learning_rate":lr}),catalog_sha256=catalog,current_learning_rate=lr,ledger=ledger,trend_tracker=trend,total_retries=retries,quarantine_events=[q.model_dump(mode="json") for q in quarantines])
-def _sync_save(model,optimizer,state,path,catalog,lr,ledger,trend,retries,quarantines):
-    state=_attach(state,catalog,lr,ledger,trend,retries,quarantines); save_mcore_training_checkpoint(model,optimizer,state,checkpoint_dir=path); return state,Path(path).as_posix()
+def _sync_save(model,optimizer,state,path,catalog,lr,ledger,trend,retries,quarantines,*,device):
+    proposed=_attach(state,catalog,lr,ledger,trend,retries,quarantines)
+    def _save():
+        save_mcore_training_checkpoint(model,optimizer,proposed,checkpoint_dir=path)
+        return proposed
+    saved,committed=save_and_commit_state(_save,checkpoint_dir=path,device=device)
+    return saved,committed.checkpoint_dir
 
 def run_catalog_training(runtime,spec,config,*,catalog_path,checkpoint_root,resume_checkpoint=None):
     import torch
@@ -89,13 +95,14 @@ def run_catalog_training(runtime,spec,config,*,catalog_path,checkpoint_root,resu
     dp_rank=parallel_state.get_data_parallel_rank(with_context_parallel=False); dp_size=parallel_state.get_data_parallel_world_size(with_context_parallel=False)
     if cursor and cursor.data_parallel_size!=dp_size: raise ValueError("resume checkpoint data parallel size mismatch")
     root=Path(checkpoint_root); root.mkdir(parents=True,exist_ok=True); manager=RecoveryCheckpointManager(root,AsyncCheckpointConfig(enabled=True,strategy=config.async_checkpoint_strategy,max_unfinalized=config.max_unfinalized_checkpoints),config.keep_recovery_slots) if config.async_recovery_checkpoints else None; final=str(resume_checkpoint) if resumed else None
-    if final is None: state,final=_sync_save(model,optimizer,state,root/"recovery-base-step-00000000",catalog.catalog_sha256,lr,ledger,trend_tracker,retries,quarantines)
-    device=torch.device("cuda",runtime.local_rank); offset=cursor.global_sequence_offset if cursor else 0; completed=start; metrics=[]
+    device=torch.device("cuda",runtime.local_rank)
+    if final is None: state,final=_sync_save(model,optimizer,state,root/"recovery-base-step-00000000",catalog.catalog_sha256,lr,ledger,trend_tracker,retries,quarantines,device=device)
+    offset=cursor.global_sequence_offset if cursor else 0; completed=start; metrics=[]
     try:
         while completed<config.max_steps:
             window=config.microbatches_per_step*dp_size; fp=fingerprint_batch(catalog_sha256=catalog.catalog_sha256,global_sequence_offset=offset,global_window=window)
             if fp in ledger.quarantined:
-                offset+=window; cursor=FoundationCatalogCursor(global_sequence_offset=offset,catalog_sha256=catalog.catalog_sha256,data_parallel_size=dp_size); state=state.model_copy(update={"data_state":cursor.model_dump(mode="json")}); state,final=_sync_save(model,optimizer,state,root/f"recovery-skip-{offset:016d}",catalog.catalog_sha256,lr,ledger,trend_tracker,retries,quarantines); continue
+                proposed_offset=offset+window; proposed_cursor=FoundationCatalogCursor(global_sequence_offset=proposed_offset,catalog_sha256=catalog.catalog_sha256,data_parallel_size=dp_size); proposed_state=state.model_copy(update={"data_state":proposed_cursor.model_dump(mode="json")}); saved,committed=_sync_save(model,optimizer,proposed_state,root/f"recovery-skip-{proposed_offset:016d}",catalog.catalog_sha256,lr,ledger,trend_tracker,retries,quarantines,device=device); offset=proposed_offset; cursor=proposed_cursor; state=saved; final=committed; continue
             attempts=0
             while True:
                 indices=[i for i in range(offset,offset+window) if (i-offset)%dp_size==dp_rank]; sequences=[x.sequence for x in FoundationWorkerPrefetch(catalog_path,indices,workers=config.prefetch_workers,prefetch_depth=config.prefetch_depth)]
@@ -116,7 +123,7 @@ def run_catalog_training(runtime,spec,config,*,catalog_path,checkpoint_root,resu
                     state=restored; lr=decision.next_learning_rate; _set_optimizer_lr(optimizer,lr)
                     if decision.retry_allowed: attempts+=1; retries=ledger.total_retries; continue
                     if decision.quarantine_batch and decision.skip_batch:
-                        quarantines.append(CatalogQuarantineEvent(batch_fingerprint=fp,global_sequence_offset=offset,global_window=window,failure_count=decision.failure_count,skipped=True,reason_codes=reasons)); offset+=window; cursor=FoundationCatalogCursor(global_sequence_offset=offset,catalog_sha256=catalog.catalog_sha256,data_parallel_size=dp_size); state=state.model_copy(update={"data_state":cursor.model_dump(mode="json"),"learning_rate":lr}); state,final=_sync_save(model,optimizer,state,root/f"recovery-quarantine-{offset:016d}",catalog.catalog_sha256,lr,ledger,trend_tracker,retries,quarantines); break
+                        event=CatalogQuarantineEvent(batch_fingerprint=fp,global_sequence_offset=offset,global_window=window,failure_count=decision.failure_count,skipped=True,reason_codes=reasons); proposed_quarantines=[*quarantines,event]; proposed_offset=offset+window; proposed_cursor=FoundationCatalogCursor(global_sequence_offset=proposed_offset,catalog_sha256=catalog.catalog_sha256,data_parallel_size=dp_size); proposed_state=state.model_copy(update={"data_state":proposed_cursor.model_dump(mode="json"),"learning_rate":lr}); saved,committed=_sync_save(model,optimizer,proposed_state,root/f"recovery-quarantine-{proposed_offset:016d}",catalog.catalog_sha256,lr,ledger,trend_tracker,retries,proposed_quarantines,device=device); quarantines=proposed_quarantines; offset=proposed_offset; cursor=proposed_cursor; state=saved; final=committed; break
                     raise RuntimeError(f"distributed recovery exhausted for batch {fp}: {reasons}") from local_exception
                 if stability is None or trend is None: raise RuntimeError("stable consensus reached without local telemetry")
                 trend_tracker.commit_values(trend,grad_norm=grad_norm); elapsed=max(time.perf_counter()-started,1e-9); local_tokens=catalog.sequence_length*config.microbatches_per_step; global_tokens=local_tokens*dp_size; offset+=window; completed+=1; cursor=FoundationCatalogCursor(global_sequence_offset=offset,catalog_sha256=catalog.catalog_sha256,data_parallel_size=dp_size); metrics.append(CatalogTrainingStepMetrics(global_step=completed,local_tokens=local_tokens,global_tokens=global_tokens,elapsed_seconds=elapsed,local_tokens_per_second=local_tokens/elapsed,global_tokens_per_second=global_tokens/elapsed,lm_loss=lm_loss,stability=stability,trend=trend,recovery_attempts_before_success=attempts,effective_learning_rate=lr)); state=MCoreTrainingState(global_step=completed,consumed_microbatches=state.consumed_microbatches+config.microbatches_per_step,learning_rate=lr,global_seed=config.global_seed,data_state=cursor.model_dump(mode="json")); regular=completed%config.checkpoint_every_steps==0 or completed==config.max_steps; path=root/(f"step-{completed:08d}" if regular else f"recovery-step-{completed:08d}"); state=_attach(state,catalog.catalog_sha256,lr,ledger,trend_tracker,retries,quarantines)
@@ -125,7 +132,7 @@ def run_catalog_training(runtime,spec,config,*,catalog_path,checkpoint_root,resu
                 else: save_mcore_training_checkpoint(model,optimizer,state,checkpoint_dir=path); final=path.as_posix()
                 break
         if manager:
-            manager.wait(); final=manager.committed_last_good_dir
+            manager.wait(); final=manager.committed_last_good_dir or final
             if final is None: raise RuntimeError("async recovery manager completed without a committed checkpoint")
     finally:
         if manager: manager.close(abort=False)
