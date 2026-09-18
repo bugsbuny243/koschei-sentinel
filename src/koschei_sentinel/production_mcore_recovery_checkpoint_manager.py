@@ -50,14 +50,37 @@ class RecoveryCheckpointManager:
         generations.extend(entry.commit_generation for entry in self.pending.values())
         return 0 if not generations else max(generations) + 1
 
+    def _publish_entry(self, entry: RecoveryCheckpointEntry) -> list[str]:
+        """All ranks participate; rank 0 alone mutates recovery metadata and retention."""
+        try:
+            import torch.distributed as dist
+        except ImportError as exc:
+            raise RuntimeError("PyTorch distributed is required for recovery checkpoint publication") from exc
+        if not dist.is_initialized():
+            raise RuntimeError("torch.distributed must be initialized before recovery checkpoint publication")
+        payload: list[Any] = [None]
+        if dist.get_rank() == 0:
+            try:
+                self.index, removed = record_recovery_checkpoint(self.root, self.index, entry)
+                payload[0] = {"ok": True, "removed": removed}
+            except Exception as exc:
+                payload[0] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        dist.broadcast_object_list(payload, src=0)
+        result = payload[0]
+        if not isinstance(result, dict) or not result.get("ok"):
+            detail = result.get("error") if isinstance(result, dict) else "invalid rank-0 publication result"
+            raise RuntimeError(f"recovery checkpoint publication failed: {detail}")
+        dist.barrier()
+        self.index = load_recovery_checkpoint_index(self.root, keep_recovery_slots=self.keep_recovery_slots)
+        return list(result.get("removed", []))
+
     def _finalize_ids(self, ids: list[int] | tuple[int, ...]) -> list[str]:
         deleted: list[str] = []
         for request_id in ids:
             entry = self.pending.pop(int(request_id), None)
             if entry is None:
                 raise RuntimeError(f"async checkpoint finalized unknown request id {request_id}")
-            self.index, removed = record_recovery_checkpoint(self.root, self.index, entry)
-            deleted.extend(removed)
+            deleted.extend(self._publish_entry(entry))
         return deleted
 
     def poll(self) -> list[str]:
