@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointConfig, MCoreAsyncCheckpointQueue
 from koschei_sentinel.production_mcore_checkpoint_retention import (
@@ -109,7 +110,7 @@ class RecoveryCheckpointManager:
             kind=kind,
             durable=durable,
         )
-        self.index, _ = record_recovery_checkpoint(self.root, self.index, entry)
+        self._publish_entry(entry)
         return entry
 
     def wait_for_committed_step(self, global_step: int) -> RecoveryCheckpointEntry:
