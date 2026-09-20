@@ -49,7 +49,19 @@ class RecoveryCheckpointManager:
     def _next_commit_generation(self) -> int:
         generations = [entry.commit_generation for entry in self.index.entries]
         generations.extend(entry.commit_generation for entry in self.pending.values())
-        return 0 if not generations else max(generations) + 1
+        local_next = 0 if not generations else max(generations) + 1
+        try:
+            import torch.distributed as dist
+        except ImportError:
+            return local_next
+        if not dist.is_initialized():
+            return local_next
+        proposed: list[Any] = [local_next]
+        dist.broadcast_object_list(proposed, src=0)
+        agreed = proposed[0]
+        if not isinstance(agreed, int) or agreed < 0:
+            raise RuntimeError("rank-0 proposed an invalid recovery commit generation")
+        return agreed
 
     def _publish_entry(self, entry: RecoveryCheckpointEntry) -> list[str]:
         """All ranks participate; rank 0 alone mutates recovery metadata and retention."""
