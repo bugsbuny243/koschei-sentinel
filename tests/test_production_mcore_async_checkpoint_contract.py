@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointScheduleResult
 from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointEntry
 from koschei_sentinel.production_mcore_recovery_checkpoint_manager import RecoveryCheckpointManager
@@ -70,3 +72,72 @@ def test_next_generation_accounts_for_pending_async_entry(tmp_path: Path):
     manager.index = Index()
     manager.pending = {7: pending}
     assert manager._next_commit_generation() == 23
+
+
+class _FakeDist:
+    def __init__(self, *, gathered=None, broadcast_result=None):
+        self.gathered = gathered
+        self.broadcast_result = broadcast_result
+        self.broadcast_calls = 0
+
+    def is_initialized(self): return True
+    def get_rank(self): return 0
+    def get_world_size(self): return 2
+    def gather_object(self, value, output, dst=0):
+        assert dst == 0
+        values = self.gathered if self.gathered is not None else [value, value]
+        output[:] = values
+    def broadcast_object_list(self, payload, src=0):
+        assert src == 0
+        self.broadcast_calls += 1
+        if self.broadcast_result is not None:
+            payload[0] = self.broadcast_result
+
+
+def _manager_for_publication(tmp_path: Path):
+    manager = object.__new__(RecoveryCheckpointManager)
+    manager.root = tmp_path.resolve()
+    manager.keep_recovery_slots = 2
+    manager.pending = {}
+    return manager
+
+
+def test_publication_rejects_divergent_rank_metadata(tmp_path: Path, monkeypatch):
+    import torch.distributed as dist
+    from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointIndex
+
+    manager = _manager_for_publication(tmp_path)
+    manager.index = RecoveryCheckpointIndex(keep_recovery_slots=2, entries=[])
+    entry = RecoveryCheckpointEntry(global_step=8, commit_generation=1, checkpoint_dir=(tmp_path / "rank0").as_posix(), kind="recovery", durable=False)
+    other = entry.model_copy(update={"checkpoint_dir": (tmp_path / "rank1").as_posix()})
+    fake = _FakeDist(gathered=[entry.model_dump(mode="json"), other.model_dump(mode="json")])
+    monkeypatch.setattr(dist, "is_initialized", fake.is_initialized)
+    monkeypatch.setattr(dist, "get_rank", fake.get_rank)
+    monkeypatch.setattr(dist, "get_world_size", fake.get_world_size)
+    monkeypatch.setattr(dist, "gather_object", fake.gather_object)
+    monkeypatch.setattr(dist, "broadcast_object_list", fake.broadcast_object_list)
+
+    with pytest.raises(RuntimeError, match="proposals diverged across ranks"):
+        manager._publish_entry(entry)
+    assert fake.broadcast_calls == 1
+
+
+def test_publication_propagates_rank_zero_failure(tmp_path: Path, monkeypatch):
+    import torch.distributed as dist
+    import koschei_sentinel.production_mcore_recovery_checkpoint_manager as module
+    from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointIndex
+
+    manager = _manager_for_publication(tmp_path)
+    manager.index = RecoveryCheckpointIndex(keep_recovery_slots=2, entries=[])
+    entry = RecoveryCheckpointEntry(global_step=8, commit_generation=1, checkpoint_dir=(tmp_path / "rank0").as_posix(), kind="recovery", durable=False)
+    fake = _FakeDist()
+    monkeypatch.setattr(dist, "is_initialized", fake.is_initialized)
+    monkeypatch.setattr(dist, "get_rank", fake.get_rank)
+    monkeypatch.setattr(dist, "get_world_size", fake.get_world_size)
+    monkeypatch.setattr(dist, "gather_object", fake.gather_object)
+    monkeypatch.setattr(dist, "broadcast_object_list", fake.broadcast_object_list)
+    monkeypatch.setattr(module, "record_recovery_checkpoint", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")))
+
+    with pytest.raises(RuntimeError, match="OSError: disk full"):
+        manager._publish_entry(entry)
+    assert fake.broadcast_calls == 1
