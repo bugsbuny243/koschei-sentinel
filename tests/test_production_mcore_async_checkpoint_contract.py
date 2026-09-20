@@ -155,3 +155,38 @@ def test_finalize_ids_uses_generation_order_not_request_id_order(tmp_path: Path,
     manager._finalize_ids((900, 12))
     assert published == [30, 31]
     assert manager.pending == {}
+
+
+def test_next_generation_uses_rank_zero_consensus(tmp_path: Path, monkeypatch):
+    import torch.distributed as dist
+
+    manager = object.__new__(RecoveryCheckpointManager)
+    manager.root = tmp_path
+    manager.pending = {}
+
+    class Index:
+        entries = []
+        latest = None
+
+    manager.index = Index()
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "broadcast_object_list", lambda payload, src=0: payload.__setitem__(0, 41))
+    assert manager._next_commit_generation() == 41
+
+
+def test_next_generation_rejects_invalid_rank_zero_value(tmp_path: Path, monkeypatch):
+    import torch.distributed as dist
+
+    manager = object.__new__(RecoveryCheckpointManager)
+    manager.root = tmp_path
+    manager.pending = {}
+
+    class Index:
+        entries = []
+        latest = None
+
+    manager.index = Index()
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "broadcast_object_list", lambda payload, src=0: payload.__setitem__(0, -1))
+    with pytest.raises(RuntimeError, match="invalid recovery commit generation"):
+        manager._next_commit_generation()
