@@ -141,3 +141,17 @@ def test_publication_propagates_rank_zero_failure(tmp_path: Path, monkeypatch):
     with pytest.raises(RuntimeError, match="OSError: disk full"):
         manager._publish_entry(entry)
     assert fake.broadcast_calls == 1
+
+
+def test_finalize_ids_uses_generation_order_not_request_id_order(tmp_path: Path, monkeypatch):
+    manager = object.__new__(RecoveryCheckpointManager)
+    manager.root = tmp_path
+    older = RecoveryCheckpointEntry(global_step=4, commit_generation=30, checkpoint_dir=(tmp_path / "older").as_posix(), kind="recovery", durable=False)
+    newer = RecoveryCheckpointEntry(global_step=5, commit_generation=31, checkpoint_dir=(tmp_path / "newer").as_posix(), kind="recovery", durable=False)
+    manager.pending = {900: newer, 12: older}
+    published = []
+    monkeypatch.setattr(manager, "_publish_entry", lambda entry: published.append(entry.commit_generation) or [])
+
+    manager._finalize_ids((900, 12))
+    assert published == [30, 31]
+    assert manager.pending == {}
