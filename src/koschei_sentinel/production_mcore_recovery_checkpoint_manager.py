@@ -49,19 +49,38 @@ class RecoveryCheckpointManager:
     def _next_commit_generation(self) -> int:
         generations = [entry.commit_generation for entry in self.index.entries]
         generations.extend(entry.commit_generation for entry in self.pending.values())
-        local_next = 0 if not generations else max(generations) + 1
+        return 0 if not generations else max(generations) + 1
+
+    def _agree_entry(self, entry: RecoveryCheckpointEntry) -> RecoveryCheckpointEntry:
+        """Assign rank-0 generation and validate logical checkpoint metadata in one collective phase."""
         try:
             import torch.distributed as dist
         except ImportError:
-            return local_next
+            return entry
         if not dist.is_initialized():
-            return local_next
-        proposed: list[Any] = [local_next]
-        dist.broadcast_object_list(proposed, src=0)
-        agreed = proposed[0]
-        if not isinstance(agreed, int) or agreed < 0:
-            raise RuntimeError("rank-0 proposed an invalid recovery commit generation")
-        return agreed
+            return entry
+        candidate = entry.model_dump(mode="json")
+        gathered: list[Any] | None = [None] * dist.get_world_size() if dist.get_rank() == 0 else None
+        dist.gather_object(candidate, gathered, dst=0)
+        payload: list[Any] = [None]
+        if dist.get_rank() == 0:
+            try:
+                if gathered is None or not gathered:
+                    raise RuntimeError("recovery checkpoint agreement gathered no rank proposals")
+                logical = ("global_step", "checkpoint_dir", "kind", "durable")
+                first = gathered[0]
+                if any(any(candidate[key] != first[key] for key in logical) for candidate in gathered[1:]):
+                    raise RuntimeError("recovery checkpoint proposals diverged across ranks")
+                first["commit_generation"] = self._next_commit_generation()
+                payload[0] = {"ok": True, "entry": first}
+            except Exception as exc:
+                payload[0] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        dist.broadcast_object_list(payload, src=0)
+        result = payload[0]
+        if not isinstance(result, dict) or not result.get("ok"):
+            detail = result.get("error") if isinstance(result, dict) else "invalid rank-0 agreement result"
+            raise RuntimeError(f"recovery checkpoint agreement failed: {detail}")
+        return RecoveryCheckpointEntry.model_validate(result["entry"])
 
     def _publish_entry(self, entry: RecoveryCheckpointEntry) -> list[str]:
         """All ranks participate; rank 0 alone mutates recovery metadata and retention."""
@@ -137,6 +156,7 @@ class RecoveryCheckpointManager:
             kind=kind,
             durable=durable,
         )
+        entry = self._agree_entry(entry)
         self._publish_entry(entry)
         return entry
 
@@ -174,6 +194,7 @@ class RecoveryCheckpointManager:
             kind=kind,
             durable=durable,
         )
+        entry = self._agree_entry(entry)
         result = self.queue.save(model, optimizer, state, checkpoint_dir=target)
         self._finalize_ids(result.finalized_request_ids)
         request_id = result.request_id
