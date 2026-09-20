@@ -157,36 +157,52 @@ def test_finalize_ids_uses_generation_order_not_request_id_order(tmp_path: Path,
     assert manager.pending == {}
 
 
-def test_next_generation_uses_rank_zero_consensus(tmp_path: Path, monkeypatch):
+def test_agree_entry_assigns_generation_and_preserves_logical_identity(tmp_path: Path, monkeypatch):
     import torch.distributed as dist
 
-    manager = object.__new__(RecoveryCheckpointManager)
-    manager.root = tmp_path
-    manager.pending = {}
+    manager = _manager_for_publication(tmp_path)
+    committed = RecoveryCheckpointEntry(global_step=3, commit_generation=7, checkpoint_dir=(tmp_path / "committed").as_posix(), kind="recovery", durable=False)
+
+    class Index:
+        entries = [committed]
+        latest = committed
+
+    manager.index = Index()
+    entry = RecoveryCheckpointEntry(global_step=4, commit_generation=8, checkpoint_dir=(tmp_path / "next").as_posix(), kind="skip", durable=True)
+    fake = _FakeDist()
+    monkeypatch.setattr(dist, "is_initialized", fake.is_initialized)
+    monkeypatch.setattr(dist, "get_rank", fake.get_rank)
+    monkeypatch.setattr(dist, "get_world_size", fake.get_world_size)
+    monkeypatch.setattr(dist, "gather_object", fake.gather_object)
+    monkeypatch.setattr(dist, "broadcast_object_list", fake.broadcast_object_list)
+
+    agreed = manager._agree_entry(entry)
+    assert agreed.commit_generation == 8
+    assert agreed.global_step == 4
+    assert agreed.kind == "skip"
+    assert agreed.durable is True
+    assert fake.broadcast_calls == 1
+
+
+def test_agree_entry_rejects_divergent_logical_identity(tmp_path: Path, monkeypatch):
+    import torch.distributed as dist
+
+    manager = _manager_for_publication(tmp_path)
 
     class Index:
         entries = []
         latest = None
 
     manager.index = Index()
-    monkeypatch.setattr(dist, "is_initialized", lambda: True)
-    monkeypatch.setattr(dist, "broadcast_object_list", lambda payload, src=0: payload.__setitem__(0, 41))
-    assert manager._next_commit_generation() == 41
+    entry = RecoveryCheckpointEntry(global_step=4, commit_generation=0, checkpoint_dir=(tmp_path / "same").as_posix(), kind="recovery", durable=False)
+    other = entry.model_copy(update={"global_step": 5})
+    fake = _FakeDist(gathered=[entry.model_dump(mode="json"), other.model_dump(mode="json")])
+    monkeypatch.setattr(dist, "is_initialized", fake.is_initialized)
+    monkeypatch.setattr(dist, "get_rank", fake.get_rank)
+    monkeypatch.setattr(dist, "get_world_size", fake.get_world_size)
+    monkeypatch.setattr(dist, "gather_object", fake.gather_object)
+    monkeypatch.setattr(dist, "broadcast_object_list", fake.broadcast_object_list)
 
-
-def test_next_generation_rejects_invalid_rank_zero_value(tmp_path: Path, monkeypatch):
-    import torch.distributed as dist
-
-    manager = object.__new__(RecoveryCheckpointManager)
-    manager.root = tmp_path
-    manager.pending = {}
-
-    class Index:
-        entries = []
-        latest = None
-
-    manager.index = Index()
-    monkeypatch.setattr(dist, "is_initialized", lambda: True)
-    monkeypatch.setattr(dist, "broadcast_object_list", lambda payload, src=0: payload.__setitem__(0, -1))
-    with pytest.raises(RuntimeError, match="invalid recovery commit generation"):
-        manager._next_commit_generation()
+    with pytest.raises(RuntimeError, match="proposals diverged across ranks"):
+        manager._agree_entry(entry)
+    assert fake.broadcast_calls == 1
