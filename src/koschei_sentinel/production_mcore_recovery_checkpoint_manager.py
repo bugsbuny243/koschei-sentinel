@@ -87,11 +87,15 @@ class RecoveryCheckpointManager:
         return list(result.get("removed", []))
 
     def _finalize_ids(self, ids: list[int] | tuple[int, ...]) -> list[str]:
-        deleted: list[str] = []
+        """Translate rank-local queue IDs to logical entries, then publish in generation order."""
+        finalized: list[RecoveryCheckpointEntry] = []
         for request_id in ids:
             entry = self.pending.pop(int(request_id), None)
             if entry is None:
                 raise RuntimeError(f"async checkpoint finalized unknown request id {request_id}")
+            finalized.append(entry)
+        deleted: list[str] = []
+        for entry in sorted(finalized, key=lambda item: item.commit_generation):
             deleted.extend(self._publish_entry(entry))
         return deleted
 
