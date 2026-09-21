@@ -22,7 +22,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install pytest
+          pip install pytest torch
       - name: Compile recovery modules
         run: |
           python -m py_compile src/koschei_sentinel/production_mcore_recovery_checkpoint_manager.py
