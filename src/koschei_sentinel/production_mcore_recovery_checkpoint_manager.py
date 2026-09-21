@@ -22,6 +22,7 @@ class RecoveryCheckpointManager:
     queue: MCoreAsyncCheckpointQueue = field(init=False)
     index: RecoveryCheckpointIndex = field(init=False)
     pending: dict[int, RecoveryCheckpointEntry] = field(default_factory=dict, init=False)
+    locally_finalized_generations: set[int] = field(default_factory=set, init=False)
 
     def __post_init__(self) -> None:
         self.root = self.root.resolve()
@@ -117,18 +118,41 @@ class RecoveryCheckpointManager:
         self.index = load_recovery_checkpoint_index(self.root, keep_recovery_slots=self.keep_recovery_slots)
         return list(result.get("removed", []))
 
+    def _publish_globally_ready(self) -> list[str]:
+        """Publish only generations that every rank has locally finalized."""
+        local_ready = set(getattr(self, "locally_finalized_generations", set()))
+        try:
+            import torch.distributed as dist
+        except ImportError:
+            dist = None
+        if dist is not None and dist.is_initialized():
+            gathered: list[Any] = [None] * dist.get_world_size()
+            dist.all_gather_object(gathered, sorted(local_ready))
+            ready = set.intersection(*(set(int(item) for item in rank_ready) for rank_ready in gathered))
+        else:
+            ready = local_ready
+
+        deleted: list[str] = []
+        for generation in sorted(ready):
+            matches = [(request_id, entry) for request_id, entry in self.pending.items() if entry.commit_generation == generation]
+            if len(matches) != 1:
+                raise RuntimeError(f"globally finalized recovery generation {generation} does not map to exactly one pending entry")
+            request_id, entry = matches[0]
+            deleted.extend(self._publish_entry(entry))
+            self.pending.pop(request_id)
+            self.locally_finalized_generations.discard(generation)
+        return deleted
+
     def _finalize_ids(self, ids: list[int] | tuple[int, ...]) -> list[str]:
-        """Translate rank-local queue IDs to logical entries, then publish in generation order."""
-        finalized: list[RecoveryCheckpointEntry] = []
+        """Mark rank-local completions, then publish only globally ready generations."""
+        if not hasattr(self, "locally_finalized_generations"):
+            self.locally_finalized_generations = set()
         for request_id in ids:
-            entry = self.pending.pop(int(request_id), None)
+            entry = self.pending.get(int(request_id))
             if entry is None:
                 raise RuntimeError(f"async checkpoint finalized unknown request id {request_id}")
-            finalized.append(entry)
-        deleted: list[str] = []
-        for entry in sorted(finalized, key=lambda item: item.commit_generation):
-            deleted.extend(self._publish_entry(entry))
-        return deleted
+            self.locally_finalized_generations.add(entry.commit_generation)
+        return self._publish_globally_ready()
 
     def poll(self) -> list[str]:
         return self._finalize_ids(self.queue.maybe_finalize(blocking=False))
