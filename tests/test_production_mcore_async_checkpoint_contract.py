@@ -206,3 +206,65 @@ def test_agree_entry_rejects_divergent_logical_identity(tmp_path: Path, monkeypa
     with pytest.raises(RuntimeError, match="proposals diverged across ranks"):
         manager._agree_entry(entry)
     assert fake.broadcast_calls == 1
+
+
+def test_global_readiness_retains_pending_until_all_ranks_ready(tmp_path: Path, monkeypatch):
+    import torch.distributed as dist
+    manager = _manager_for_publication(tmp_path)
+    entry = RecoveryCheckpointEntry(global_step=10, commit_generation=40, checkpoint_dir=(tmp_path / "pending").as_posix(), kind="recovery", durable=False)
+    manager.pending = {77: entry}
+    manager.locally_finalized_generations = {40}
+
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    def all_gather(output, value):
+        output[:] = [[40], []]
+    monkeypatch.setattr(dist, "all_gather_object", all_gather)
+    published = []
+    monkeypatch.setattr(manager, "_publish_entry", lambda item: published.append(item.commit_generation) or [])
+
+    assert manager._publish_globally_ready() == []
+    assert published == []
+    assert 77 in manager.pending
+    assert manager.locally_finalized_generations == {40}
+
+
+def test_global_readiness_publishes_and_removes_only_after_success(tmp_path: Path, monkeypatch):
+    import torch.distributed as dist
+    manager = _manager_for_publication(tmp_path)
+    entry = RecoveryCheckpointEntry(global_step=10, commit_generation=41, checkpoint_dir=(tmp_path / "pending").as_posix(), kind="recovery", durable=False)
+    manager.pending = {78: entry}
+    manager.locally_finalized_generations = {41}
+
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    def all_gather(output, value):
+        output[:] = [[41], [41]]
+    monkeypatch.setattr(dist, "all_gather_object", all_gather)
+    published = []
+    monkeypatch.setattr(manager, "_publish_entry", lambda item: published.append(item.commit_generation) or ["old"])
+
+    assert manager._publish_globally_ready() == ["old"]
+    assert published == [41]
+    assert manager.pending == {}
+    assert manager.locally_finalized_generations == set()
+
+
+def test_global_readiness_publication_failure_retains_pending(tmp_path: Path, monkeypatch):
+    import torch.distributed as dist
+    manager = _manager_for_publication(tmp_path)
+    entry = RecoveryCheckpointEntry(global_step=10, commit_generation=42, checkpoint_dir=(tmp_path / "pending").as_posix(), kind="recovery", durable=False)
+    manager.pending = {79: entry}
+    manager.locally_finalized_generations = {42}
+
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    def all_gather(output, value):
+        output[:] = [[42], [42]]
+    monkeypatch.setattr(dist, "all_gather_object", all_gather)
+    monkeypatch.setattr(manager, "_publish_entry", lambda item: (_ for _ in ()).throw(OSError("publish failed")))
+
+    with pytest.raises(OSError, match="publish failed"):
+        manager._publish_globally_ready()
+    assert 79 in manager.pending
+    assert manager.locally_finalized_generations == {42}
