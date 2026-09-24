@@ -68,7 +68,7 @@ Routing policy is configuration, not business logic. No provider name is embedde
 
 ## Commercial evolution
 
-V1: hosted reasoning engines + Sentinel-owned security/control plane.
+V1: replaceable reasoning engines + Sentinel-owned security/control plane.
 V2: security-specialized fine-tuned/open-weight engines where economics and measured quality justify them.
 Sentinel Max: Koschei-native large sparse-MoE target, including the existing 397B/~35B-active research architecture, only when revenue/compute and benchmark evidence justify the scale.
 
