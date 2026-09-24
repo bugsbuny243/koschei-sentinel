@@ -94,3 +94,17 @@ W3C AI Agent Protocol Community Group scope and September meetings indicate acti
 IETF draft-asor-wimse-agent-delegation-chain-01 (2026-09-03) proposes verifiable attenuated delegation for AI-agent chains. It is an individual Internet-Draft with no formal IETF standards standing. Sentinel should track the security properties, not hard-code the draft.
 
 IETF draft-seymour-wimse-connected-flight-00 (2026-09-18) is another individual Internet-Draft exploring chained agent trust in a zero-trust setting. It is research signal, not a standard dependency.
+
+
+## Research delta — 2026-09-25
+
+Fresh standards watch strengthens three V1 requirements without introducing any platform dependency:
+
+- Agent identity must bind an agent to a controlling entity and an explicit authorization scope. W3C Agent Identity Registry Protocol work is incubating cryptographically verifiable cross-organization identity; this remains Community Group work, not a W3C Recommendation.
+- Delegation must be capability-bound and attenuating. New September IETF individual drafts explore scoped context disclosure, verifiable delegation chains, and enforcement-point verification. These drafts have no formal IETF standards standing and are inputs to adapters/threat fixtures, not canonical dependencies.
+- Authorization decisions need replayable audit evidence. September WIMSE document listings now include work on an AI-agent authorization audit-record format. Sentinel's canonical evidence envelope should therefore preserve principal/controller, delegate, authority scope, constraints, decision, evidence references, timestamps, protocol/version and cryptographic verification metadata.
+- Credential ecosystems require explicit privacy threat handling. The 24 September 2026 VC Data Model Threat Model v2.1 is a W3C Group Note Draft and reinforces treating issuer/holder/verifier boundaries, correlation and disclosure as security inputs.
+
+### V1 implementation consequence
+
+The first provider-neutral runtime interface will expose model reasoning only behind Sentinel-owned identity, authority, evidence and policy envelopes. External protocol formats are normalized at adapters; no draft-specific object becomes the internal source of truth.
