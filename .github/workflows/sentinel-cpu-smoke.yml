@@ -1,4 +1,4 @@
-name: Sentinel CPU Distributed Smoke
+name: Sentinel Production CPU Gates
 
 on:
   push:
@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  recovery-contract:
+  production-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,25 +23,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
           pip install pytest torch
-      - name: Compile recovery modules
-        run: |
-          python -m py_compile src/koschei_sentinel/production_mcore_recovery_checkpoint_manager.py
-          python -m py_compile src/koschei_sentinel/production_mcore_checkpoint_retention.py
-      - name: Run recovery checkpoint contract tests
-        run: pytest -q tests/test_production_mcore_async_checkpoint_contract.py
+      - name: Compile production modules
+        run: python -m compileall -q src/koschei_sentinel
+      - name: Run Sentinel contract suite
+        run: pytest -q
       - name: Run real two-process Gloo agreement smoke
         shell: bash
         run: |
           cat > /tmp/sentinel_gloo_smoke.py <<'PY'
-          import os
-          import tempfile
+          import os, tempfile
           from pathlib import Path
           import torch.distributed as dist
           import torch.multiprocessing as mp
-          from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointConfig
           from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointEntry, RecoveryCheckpointIndex
           from koschei_sentinel.production_mcore_recovery_checkpoint_manager import RecoveryCheckpointManager
-
           def worker(rank, world_size, init_file, root):
               dist.init_process_group("gloo", init_method=f"file://{init_file}", rank=rank, world_size=world_size)
               try:
@@ -49,21 +44,15 @@ jobs:
                   manager.root = Path(root).resolve()
                   manager.keep_recovery_slots = 2
                   manager.pending = {}
+                  manager.locally_finalized_generations = set()
                   manager.index = RecoveryCheckpointIndex(keep_recovery_slots=2, entries=[])
-                  entry = RecoveryCheckpointEntry(
-                      global_step=1,
-                      commit_generation=99 + rank,
-                      checkpoint_dir=(Path(root) / "checkpoint-1").as_posix(),
-                      kind="recovery",
-                      durable=False,
-                  )
+                  entry = RecoveryCheckpointEntry(global_step=1, commit_generation=99 + rank, checkpoint_dir=(Path(root) / "checkpoint-1").as_posix(), kind="recovery", durable=False)
                   agreed = manager._agree_entry(entry)
                   assert agreed.commit_generation == 0
                   assert agreed.global_step == 1
                   assert agreed.checkpoint_dir.endswith("checkpoint-1")
               finally:
                   dist.destroy_process_group()
-
           if __name__ == "__main__":
               with tempfile.TemporaryDirectory() as td:
                   init_file = os.path.join(td, "dist-init")
