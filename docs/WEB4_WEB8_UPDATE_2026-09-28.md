@@ -27,3 +27,51 @@ https://datatracker.ietf.org/doc/draft-hillier-conformance-continuity/
 
 ## Web7 / Web8
 No accepted IETF/W3C generation standards named Web7 or Web8 identified; keep these as research labels.
+
+## Additional agent-security watch
+
+### AAuth Protocol v11
+
+AAuth introduces key-bound agent identity, mission-scoped governance and multiple agent-to-resource authorization modes.
+
+Sentinel implication:
+- model telemetry should distinguish authenticated agent, represented person/principal, mission scope and actual authorization;
+- anomaly models must not treat a valid identity token as permission for the observed action.
+
+Source:
+https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11
+
+### Agent Execution Protocol (AEP)
+
+AEP defines a governing enforcement boundary around agent execution and tamper-evident transition recording.
+
+Sentinel implication:
+- evaluate deviations between proposed intent, granted authority, attempted action and observed effect;
+- keep Sentinel scoring advisory while deterministic enforcement remains outside the model.
+
+Source:
+https://datatracker.ietf.org/doc/draft-sato-soos-aep/
+
+### A2A roadmap
+
+A2A's current roadmap emphasizes v1.1 task semantics, bidirectional streaming, multi-turn/human-in-the-loop workflows and validation tooling.
+
+Sentinel implication:
+- streaming agent-to-agent sessions create a useful detection surface for delegation drift, scope changes and unexpected artifact/tool transitions;
+- telemetry must be evidence-bound and caller-scoped.
+
+Sources:
+https://a2a-protocol.org/latest/roadmap/
+https://a2a-protocol.org/dev/specification/
+
+### MCP security proposal watch
+
+Active proposals cover signed capability declarations, tamper-evident audit records, asynchronous approval and structured authorization denials.
+
+Sentinel implication:
+- useful future features for model evaluation datasets and security telemetry;
+- proposal status means observe/research only, not production trust authority.
+
+Sources:
+https://github.com/modelcontextprotocol/modelcontextprotocol/pulls
+https://plan.modelcontextprotocol.io/seps
