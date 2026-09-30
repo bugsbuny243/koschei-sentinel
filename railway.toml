@@ -1,0 +1,10 @@
+[build]
+builder = "RAILPACK"
+buildCommand = "pip install ."
+
+[deploy]
+startCommand = "koschei-sentinel"
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
