@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -27,8 +28,18 @@ def _write_model(path: Path, model) -> Path:
     return path
 
 
+def _digest(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _finalization() -> dict:
-    return {
+    payload = {
         "schema_version": "sentinel.candidate-finalization.v1",
         "candidate_id": "candidate-1",
         "state": "finalized_incubation",
@@ -48,8 +59,8 @@ def _finalization() -> dict:
         "automatic_registry_replacement_allowed": False,
         "automatic_promotion_allowed": False,
         "production_deployment_allowed": False,
-        "finalization_digest": DIGEST,
     }
+    return {**payload, "finalization_digest": _digest(payload)}
 
 
 def _owner_keypair(tmp_path: Path):
