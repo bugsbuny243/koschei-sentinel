@@ -1,2 +1,0 @@
-[lint.per-file-ignores]
-"src/koschei_sentinel/pq_evidence_review.py" = ["TRY004"]
