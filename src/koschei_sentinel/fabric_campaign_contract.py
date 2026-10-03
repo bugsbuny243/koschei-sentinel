@@ -53,7 +53,7 @@ class FabricCampaignEvidence(BaseModel):
     wrongdoing_claim: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_boundary_and_hash(self) -> "FabricCampaignEvidence":
+    def validate_boundary_and_hash(self) -> FabricCampaignEvidence:
         if not self.campaign_ref.strip():
             raise ValueError("campaign_ref is required")
         if not _is_sha256(self.campaign_evidence_hash_sha256):
@@ -104,7 +104,7 @@ class SentinelCampaignOpinion(BaseModel):
     wrongdoing_claim: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_opinion_hash(self) -> "SentinelCampaignOpinion":
+    def validate_opinion_hash(self) -> SentinelCampaignOpinion:
         if not _is_sha256(self.evidence_contract_hash_sha256):
             raise ValueError("evidence contract hash must be sha256")
         if sentinel_campaign_opinion_hash(self) != self.opinion_hash_sha256:
