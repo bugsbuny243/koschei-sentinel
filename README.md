@@ -1,14 +1,14 @@
 # Koschei Sentinel
 
-## Product direction and joint packages
+## Product direction
 
-Koschei Sentinel is an independent cybersecurity model for code development, vulnerability research, attack-path reasoning and remediation. The single-model architecture target remains 397B total / 35B active parameters. ARVIS commentary is one application; trained-product readiness and competitive superiority require independent evaluation evidence.
+Koschei Sentinel is an independent cybersecurity AI/model product for secure software development, vulnerability research, attack-path reasoning, security testing, remediation and threat intelligence. The single-model architecture target remains 397B total / 35B active parameters. ARVIS evidence interpretation is one optional application; trained-product readiness and competitive superiority require independent evaluation evidence.
 
-**Koschei Lang and Koschei Sentinel are offered together in the same commercial packages.** Their runtime dependencies and release gates remain independent. See [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md) and the [offline bundle contract](docs/COMMERCIAL_BUNDLE_V1.md).
+**Koschei Sentinel is sold and licensed separately from Koschei Lang and Koschei Web3 Hub.** Interoperability may use explicit versioned contracts, but it does not create shared pricing, entitlement or product authority. See [the standalone product charter](docs/PRODUCT_CHARTER_SENTINEL_V1.md), [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md) and the [legacy compatibility bundle contract](docs/COMMERCIAL_BUNDLE_V1.md).
 
-Evidence-grounded Web3 security model, dataset, training, evaluation, and inference platform for Koschei.
+Evidence-grounded cybersecurity model, dataset, training, evaluation, and inference platform for Koschei.
 
-Koschei Sentinel is not allowed to replace a signed deterministic verdict. Its job is to explain bounded evidence, surface limitations, and produce structured commentary that can be checked automatically.
+When Sentinel is given a signed deterministic verdict from another system, it is not allowed to silently replace that external authority. Its job is to reason over bounded evidence, surface limitations, and produce structured commentary that can be checked automatically.
 
 ## v0.8.0 — Read-Only Neon Dataset Source
 
@@ -197,7 +197,7 @@ curl -X POST http://127.0.0.1:8080/v1/opinions \
 
 ## Non-negotiable contract
 
-1. The signed deterministic verdict remains final.
+1. The signed deterministic verdict remains final when a Sentinel case contains such an external verdict.
 2. Every factual claim must cite one or more known `evidence_id` values.
 3. Claim confidence cannot exceed the weakest cited evidence.
 4. Unknown or missing information must be reported as a limitation.
