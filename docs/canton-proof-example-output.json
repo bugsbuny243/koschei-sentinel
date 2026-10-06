@@ -1,0 +1,22 @@
+{
+  "evidence": {
+    "schema": "canton.security.evidence.v1",
+    "source_class": "public_test_fixture",
+    "subject_ref": "canton-test-app",
+    "artifact_version": "fixture-v1",
+    "provenance": "public/reproducible-test-fixture",
+    "integrity": "fixture-integrity-ok",
+    "expected_evidence": true,
+    "observed_evidence": true,
+    "evidence_id": "generated deterministically as sha256:<digest>"
+  },
+  "finding": {
+    "contract": "canton.security.assurance.v1",
+    "rule_id": "CANTON-EVIDENCE-COVERAGE-001",
+    "status": "pass",
+    "severity": "none",
+    "reason": "bounded evidence satisfies the prototype assurance condition",
+    "evidence_ids": ["same generated evidence_id"],
+    "finding_id": "generated deterministically as sha256:<digest>"
+  }
+}

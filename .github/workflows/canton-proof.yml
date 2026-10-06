@@ -1,0 +1,26 @@
+name: canton-proof
+
+on:
+  push:
+    branches: [canton-proof-of-work]
+  pull_request:
+    paths:
+      - "src/koschei_sentinel/canton_assurance.py"
+      - "src/koschei_sentinel/canton_assurance_cli.py"
+      - "tests/test_canton_assurance.py"
+      - "tests/test_canton_assurance_cli.py"
+      - "fixtures/canton/**"
+      - "docs/canton-proof-*"
+      - ".github/workflows/canton-proof.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e . pytest
+      - run: pytest -q tests/test_canton_assurance.py tests/test_canton_assurance_cli.py
+      - run: python -m koschei_sentinel.canton_assurance_cli fixtures/canton/public_test_fixture.json

@@ -1,0 +1,9 @@
+{
+  "source_class": "public_test_fixture",
+  "subject_ref": "canton-test-app",
+  "artifact_version": "fixture-v1",
+  "provenance": "public/reproducible-test-fixture",
+  "integrity": "fixture-integrity-ok",
+  "expected_evidence": true,
+  "observed_evidence": true
+}
