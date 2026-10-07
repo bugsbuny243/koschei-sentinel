@@ -12,7 +12,10 @@ from koschei_sentinel.full_release import (
     load_canary_evidence,
     verify_full_release,
 )
-from koschei_sentinel.production_authority import (\n    ProductionAuthority,\n    ProductionAuthorityProposal,\n)
+from koschei_sentinel.production_authority import (
+    ProductionAuthority,
+    ProductionAuthorityProposal,
+)
 from koschei_sentinel.promotion import load_owner_private_key, load_owner_public_key
 
 
@@ -50,7 +53,8 @@ def _write(path: str, model) -> None:
         raise FileExistsError(f"artifact already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
-        json.dumps(model.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        json.dumps(model.model_dump(mode="json"), indent=2, sort_keys=True) + "
+",
         encoding="utf-8",
     )
 
