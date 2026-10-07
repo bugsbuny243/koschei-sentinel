@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import base64
-
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -19,7 +17,6 @@ from koschei_sentinel.production_authority import (
     canonical_json_digest,
 )
 from koschei_sentinel.promotion import public_key_fingerprint
-
 
 DIGEST = "a" * 64
 
