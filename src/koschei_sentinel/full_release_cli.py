@@ -53,8 +53,7 @@ def _write(path: str, model) -> None:
         raise FileExistsError(f"artifact already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
-        json.dumps(model.model_dump(mode="json"), indent=2, sort_keys=True) + "
-",
+        json.dumps(model.model_dump(mode="json"), indent=2, sort_keys=True) + "\\n",
         encoding="utf-8",
     )
 
