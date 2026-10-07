@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (\n    Ed25519PrivateKey,\n    Ed25519PublicKey,\n)
 from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
