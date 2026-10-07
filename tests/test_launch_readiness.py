@@ -16,7 +16,6 @@ from koschei_sentinel.production_authority import (
 )
 from koschei_sentinel.promotion import public_key_fingerprint
 
-
 DIGEST = "a" * 64
 
 
