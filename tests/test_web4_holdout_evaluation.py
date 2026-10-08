@@ -198,7 +198,7 @@ def test_inference_pack_excludes_answer_key_values(tmp_path: Path) -> None:
             benchmark_policy_path=_BENCHMARK,
         )
 
-    owner, release, answer_dir = _build_signed_release(tmp_path / "valid")
+    owner, release, _ = _build_signed_release(tmp_path / "valid")
     pack = build_web4_holdout_inference_pack(
         release=release,
         owner_public_key=owner.public_key(),
@@ -377,7 +377,7 @@ def test_prediction_self_hash_tampering_is_rejected(tmp_path: Path) -> None:
 
 
 def test_mixed_model_identity_is_rejected(tmp_path: Path) -> None:
-    owner, release, _, pack, prediction_set = _perfect_prediction_stack(tmp_path)
+    _, release, _, pack, prediction_set = _perfect_prediction_stack(tmp_path)
     original = prediction_set.predictions[0]
     different = build_web4_holdout_prediction(
         inference_case=pack.cases[0],
