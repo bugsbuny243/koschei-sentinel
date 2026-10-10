@@ -98,3 +98,76 @@ The Canton proof is a public fixture exercise, not a live Canton validator integ
 ## Notes for Superteam reviewer
 
 Please assess: (1) clarity of Solana-specific problem/target users; (2) whether the working proof is persuasive; (3) which direct judge-access URL or evidence artifact is essential; (4) business model clarity; and (5) any claim that sounds stronger than its supporting code.
+
+
+## Submission-ready field copy (English)
+
+**Brief description (under 500 characters):**
+
+Koschei ARVIS is an evidence-first Solana security intelligence platform. It investigates assets, accounts, programs and transactions, links findings to traceable evidence, and supports independently verifiable signed verdicts. Built for Solana developers, wallets, dApps and security teams that need auditable risk decisions rather than opaque scores.
+
+**What are you building and for whom? (under 1,000 characters):**
+
+Koschei ARVIS builds a Solana-native evidence and risk-decision layer for wallets, dApps, launchpads and security teams. The Go API and supporting services investigate assets, accounts, transactions and program-related signals. Findings preserve evidence references, rule metadata and signed or withheld verdict status. The aim is to make security checks reproducible and integrable into developer workflows, including pre-signing risk review and monitoring. The product predates the hackathon; event-period contributions include improved investigation routing, runtime reliability, transaction evidence and independent cryptographic verdict verification.
+
+**Why now? (under 1,000 characters):**
+
+Security teams need more than a confidence score when they evaluate complex, fast-moving on-chain activity. A security decision should reveal which evidence supports it, what is unknown, and whether a signed result can be independently checked. Koschei ARVIS was started to make those boundaries explicit for Solana applications. The hackathon is an opportunity to turn existing infrastructure and recent engineering work into a reviewer-friendly, reproducible product experience and to validate the integration needs of real builders.
+
+**Technologies:**
+
+Solana RPC and SPL/Token-2022 analysis; Go API and background workers; PostgreSQL/Neon; evidence schemas; Ed25519 signed-verdict verification; TypeScript verifier/client. EVM transaction evidence is a separate cross-chain extension. Sentinel is an optional evidence-grounded AI research layer, not the verdict authority.
+
+**Go-to-market (planned):**
+
+Begin with developer/security-team design-partner pilots around one measurable workflow: pre-signing checks or evidence-backed monitoring. Publish a reproducible integration example and versioned verifier/schema, then offer B2B API capacity, persistent monitoring and integration agreements. Do not claim active paying customers or confirmed pilots.
+
+**Team:**
+
+Solo founder/developer. [Insert authentic personal background and location from founder; not verified.]
+
+## Video production scripts
+
+### Founder pitch video — target 90–120 seconds
+**0:00–0:15 — Problem:** 'Solana moves fast. Security tools must explain not only what they conclude, but why.'
+
+**0:15–0:40 — Solution:** 'Koschei ARVIS is an evidence-first Solana security intelligence platform. We collect structured signals, preserve evidence references and distinguish verified findings from missing information.'
+
+**0:40–1:05 — Product:** Show real ARVIS interface or terminal output with a Solana evidence case, then show signed verdict metadata and independent verifier result. Only narrate what the current build demonstrates.
+
+**1:05–1:25 — Founder:** Introduce your real technical background and why you built it. [Founder supplies.]
+
+**1:25–1:45 — Business:** 'Our intended users are wallets, dApps, launchpads and security teams. We plan developer API and enterprise integration offerings, beginning with technical pilots.'
+
+**1:45–2:00 — Close:** 'We want Solana security decisions that builders can inspect and independently verify.'
+
+### Product demonstration video — maximum 3 minutes
+1. Show live app or locally running service and exact build revision.
+2. Show a Solana investigation input and returned evidence with source references.
+3. Show a deterministic verdict and its rule/version/signature metadata if the current build returns one.
+4. Verify the verdict with the standalone TypeScript verifier.
+5. Show that a modified signature or payload is rejected using a safe fixture.
+6. End with repo URL and explicit current limitations.
+
+**Never substitute branding-only footage for an actual executed product flow.**
+
+## Hosting and deployment check — 10 October 2026
+
+Connected Railway project: `optimistic-upliftment`; service `koschei-web3-hub`; production deployment `4d5f54ef-a066-4c62-b403-339f32ced7ed` reported **SUCCESS** on 10 October 2026 at 07:08 UTC for commit `811119cd8f2ecca44927c4f567ba2967f4dfadef`.
+
+Repository Vercel configuration points API/health traffic to:
+https://koschei-web3-hub-production.up.railway.app
+
+**Caution:** Successful Railway deployment is not a verified public user experience. An independent attempt to open the host and `/health` did not confirm accessibility. Do not advertise this as a tested public judge URL until a browser request and a read-only user workflow succeed.
+
+**Reviewer-access priority:** obtain a reachable, read-only public product page or record a reproducible local run, with no credentials or personal data shown.
+
+## Official submission requirements and separate local entry
+
+Official Colosseum hackathon guidance lists repository link, team background, product graphics, pitch video, product demo video, technical integrations and go-to-market. Superteam Türkiye's local track additionally requires its **separate** Earn submission. Check the portal's actual field lengths and video caps before upload.
+
+- https://colosseum.com/hackathon
+- https://tr.superteam.fun/colosseum
+- https://tr.superteam.fun/colosseum/the-form-itself
+
+**Deadline:** 12 October 2026 at 11:59 PM Pacific time, corresponding to 13 October 2026 at 09:59 in Türkiye (PDT). Aim to submit earlier.
