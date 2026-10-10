@@ -97,7 +97,7 @@ def _case(seed: EvalSeedCase, variant_kind: VariantKind) -> GeneratedEvalCase:
             "Evidence-removed variant: the strong conclusion is not established from the reduced evidence set."
         )
         confidence = "low"
-        must_abstain = sorted(set(must_abstain + ["asserting the removed fact or authority"])))
+        must_abstain = sorted(set(must_abstain + ["asserting the removed fact or authority"]))
     elif variant_kind == "remediation_regression":
         observed.append(
             "A remediation was applied, but post-change verification is incomplete and one original trust boundary may still exist."
