@@ -111,9 +111,11 @@ def _component_protected_anchors(
     for relation in graph.relations:
         if relation.status is EvidenceStatus.DISPROVED or relation.confidence < 0.5:
             continue
-        if relation.source_entity_id in component_entities:
-            if relation.target_entity_id in protected_anchor_entity_ids:
-                anchors.add(relation.target_entity_id)
+        if (
+            relation.source_entity_id in component_entities
+            and relation.target_entity_id in protected_anchor_entity_ids
+        ):
+            anchors.add(relation.target_entity_id)
         if relation.target_entity_id in component_entities:
             if relation.source_entity_id in protected_anchor_entity_ids:
                 anchors.add(relation.source_entity_id)
