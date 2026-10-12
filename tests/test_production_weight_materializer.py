@@ -4,8 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from koschei_sentinel.production_checkpoint_manifest import build_rank_checkpoint_manifest
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_checkpoint_manifest import (
+    build_rank_checkpoint_manifest,
+)
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 from koschei_sentinel.production_weight_materializer import (
     materialize_initialization_record,
     materialize_rank_weights,
