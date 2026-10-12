@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from collections.abc import Mapping
 from typing import Any
 
 from .authority_policy import DelegationChain, PolicyDecision
