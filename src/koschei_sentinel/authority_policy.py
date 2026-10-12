@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Mapping, Sequence
+from datetime import UTC, datetime
+from typing import Any
 
 from .inference_contract import AuthorityEnvelope
 
@@ -58,7 +59,7 @@ class AuthorityPolicy:
         audience: str | None = None,
         now: datetime | None = None,
     ) -> PolicyDecision:
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         grants = chain.grants
         if len(grants) > self.max_depth:
             raise AuthorityPolicyError("delegation chain exceeds maximum depth")
