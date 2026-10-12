@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
-import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointEntry, RecoveryCheckpointIndex
-from koschei_sentinel.production_mcore_recovery_checkpoint_manager import RecoveryCheckpointManager
+from koschei_sentinel.production_mcore_checkpoint_retention import (
+    RecoveryCheckpointEntry,
+    RecoveryCheckpointIndex,
+)
+from koschei_sentinel.production_mcore_recovery_checkpoint_manager import (
+    RecoveryCheckpointManager,
+)
 
 
 def _worker(rank: int, world_size: int, init_file: str, root: str) -> None:
