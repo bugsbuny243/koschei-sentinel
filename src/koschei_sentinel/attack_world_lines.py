@@ -8,7 +8,10 @@ from typing import Literal
 
 from pydantic import Field
 
-from koschei_sentinel.attack_progression import AttackComponentReport, analyze_attack_progression
+from koschei_sentinel.attack_progression import (
+    AttackComponentReport,
+    analyze_attack_progression,
+)
 from koschei_sentinel.cyber_state_graph import CyberStateGraph, EvidenceStatus
 from koschei_sentinel.models import StrictModel
 
