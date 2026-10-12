@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 from koschei_sentinel.production_model_construction import build_construction_plan
 
 CANDIDATE = Path("configs/training/production-megatron-model.397b-35b.candidate.json")
