@@ -2,7 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 from koschei_sentinel.production_meta_factory import instantiate_meta_rank
 
 
