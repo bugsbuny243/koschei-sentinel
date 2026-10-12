@@ -116,9 +116,11 @@ def _component_protected_anchors(
             and relation.target_entity_id in protected_anchor_entity_ids
         ):
             anchors.add(relation.target_entity_id)
-        if relation.target_entity_id in component_entities:
-            if relation.source_entity_id in protected_anchor_entity_ids:
-                anchors.add(relation.source_entity_id)
+        if (
+            relation.target_entity_id in component_entities
+            and relation.source_entity_id in protected_anchor_entity_ids
+        ):
+            anchors.add(relation.source_entity_id)
     return anchors
 
 
