@@ -4,7 +4,10 @@ import argparse
 import json
 from pathlib import Path
 
-from koschei_sentinel.agentic_security_eval_generator import generate_from_paths, write_bundle
+from koschei_sentinel.agentic_security_eval_generator import (
+    generate_from_paths,
+    write_bundle,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
