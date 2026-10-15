@@ -11,7 +11,12 @@ from typing import Any, Literal
 from pydantic import Field
 
 from koschei_sentinel.anonymize import require_dataset_salt
-from koschei_sentinel.dataset import ExportManifest, export_jsonl, export_record, load_records
+from koschei_sentinel.dataset import (
+    ExportManifest,
+    export_jsonl,
+    export_record,
+    load_records,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.readiness import (
     DatasetReadinessReport,
