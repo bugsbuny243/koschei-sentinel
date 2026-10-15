@@ -837,7 +837,7 @@ def _replay_raw_results(
         if not isinstance(messages, list) or not messages:
             raise ValueError(f"SWIFT result at line {line_number} has no messages list")
         if not isinstance(response, str):
-            raise ValueError(f"SWIFT result at line {line_number} has no text response")
+            raise TypeError(f"SWIFT result at line {line_number} has no text response")
         if not all(isinstance(row, dict) for row in messages):
             raise ValueError(f"SWIFT result at line {line_number} has malformed messages")
         assistant = messages[-1]
