@@ -91,7 +91,7 @@ def _load_corpus(path: Path) -> list[CorpusRow]:
             raise ValueError(f"blank corpus row at {path}:{line_number}")
         payload = json.loads(line)
         if not isinstance(payload, dict):
-            raise ValueError(f"corpus row is not an object at {path}:{line_number}")
+            raise TypeError(f"corpus row is not an object at {path}:{line_number}")
         artifact_id = payload.get("artifact_id")
         content_sha256 = payload.get("content_sha256")
         text = payload.get("text")
