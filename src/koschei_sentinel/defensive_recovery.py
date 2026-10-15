@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
-from typing import Any, Mapping, Protocol
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
 from .defensive_response import DefensiveActionRequest
 
@@ -61,7 +62,7 @@ class DefensiveRecoveryCoordinator:
             if not rollback_verified:
                 raise RuntimeError("defensive rollback could not be verified")
 
-        when = (issued_at or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        when = (issued_at or datetime.now(UTC)).astimezone(timezone.utc).isoformat()
         return DefensiveActionReceipt(
             action_id=request.action_id,
             tenant_id=request.tenant_id,
