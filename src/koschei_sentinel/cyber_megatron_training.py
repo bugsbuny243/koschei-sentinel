@@ -1231,8 +1231,8 @@ def plan_cyber_megatron_sft(
     if dataset.manifest is not None and dataset.manifest.validation_examples == 0:
         blockers.append("Cyber Megatron training requires a non-empty validation dataset")
     warnings = [
-        "397B topology is a candidate contract; validate memory, NCCL and storage "
-        "on the paid cluster",
+        ("397B topology is a candidate contract; validate memory, NCCL and storage "
+         "on the paid cluster"),
         f"execution requires {config.launch_approval_env}={config.run_id}",
         f"all nodes require the same unique {config.launch_session_env}",
     ]
