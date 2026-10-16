@@ -28,7 +28,7 @@ class FoundationCatalogReader:
             reader.close()
         self._readers.clear()
 
-    def __enter__(self) -> "FoundationCatalogReader":
+    def __enter__(self) -> FoundationCatalogReader:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

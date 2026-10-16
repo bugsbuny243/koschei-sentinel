@@ -36,7 +36,7 @@ class ProductionConstructionPlan(StrictModel):
     blockers: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def cannot_authorize_execution(self) -> "ProductionConstructionPlan":
+    def cannot_authorize_execution(self) -> ProductionConstructionPlan:
         if self.execution_authorized is not False:
             raise ValueError("construction planning cannot authorize GPU execution")
         return self
