@@ -5,9 +5,10 @@ import json
 import mmap
 import os
 import struct
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, Literal
+from typing import Literal
 
 from pydantic import Field, model_validator
 
