@@ -41,7 +41,7 @@ class TensorInitializationRecord(StrictModel):
     recipe_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def initialization_parameters_are_coherent(self) -> "TensorInitializationRecord":
+    def initialization_parameters_are_coherent(self) -> TensorInitializationRecord:
         if self.initialization == "normal":
             if self.mean is None or self.std is None:
                 raise ValueError("normal initialization requires mean and std")
@@ -72,7 +72,7 @@ class RankCheckpointManifest(StrictModel):
     manifest_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def verify_manifest(self) -> "RankCheckpointManifest":
+    def verify_manifest(self) -> RankCheckpointManifest:
         if self.tensor_count != len(self.tensors):
             raise ValueError("tensor_count disagrees with tensors")
         if self.local_elements != sum(item.local_elements for item in self.tensors):

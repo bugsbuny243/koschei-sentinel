@@ -30,7 +30,7 @@ class FoundationDatasetCatalog(StrictModel):
     catalog_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def coherent(self) -> "FoundationDatasetCatalog":
+    def coherent(self) -> FoundationDatasetCatalog:
         if self.total_sequences != sum(shard.sequence_count for shard in self.shards):
             raise ValueError("catalog total_sequences mismatch")
         if any(shard.sequence_length != self.sequence_length for shard in self.shards):

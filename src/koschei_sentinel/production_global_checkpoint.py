@@ -37,7 +37,7 @@ class GlobalCheckpointShard(StrictModel):
     materialized_file_sha256: str | None = Field(default=None, pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def shard_path_is_local(self) -> "GlobalCheckpointShard":
+    def shard_path_is_local(self) -> GlobalCheckpointShard:
         _relative_path(self.relative_path)
         return self
 
@@ -61,7 +61,7 @@ class GlobalCheckpointIndex(StrictModel):
     index_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def verify_index(self) -> "GlobalCheckpointIndex":
+    def verify_index(self) -> GlobalCheckpointIndex:
         expected = self.pipeline_parallel_size * self.tensor_parallel_size * self.expert_parallel_size
         if self.unique_model_shard_count != expected:
             raise ValueError("unique_model_shard_count disagrees with PP*TP*EP")

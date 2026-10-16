@@ -165,7 +165,7 @@ class PretokenizedFoundationReader:
         self._data_handle.close()
         self._index_handle.close()
 
-    def __enter__(self) -> "PretokenizedFoundationReader":
+    def __enter__(self) -> PretokenizedFoundationReader:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
