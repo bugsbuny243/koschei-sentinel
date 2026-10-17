@@ -41,17 +41,10 @@ def _receipt_digest(
     next_graph_sha256: str,
     next_plan_sha256: str,
 ) -> str:
-    payload = "|".join(
-        [
-            previous_wave_sha256,
-            previous_schedule_sha256,
-            previous_plan_sha256,
-            previous_source_batch_sha256,
-            previous_graph_sha256,
-            next_source_batch_sha256,
-            next_graph_sha256,
-            next_plan_sha256,
-        ]
+    payload = (
+        f"{previous_wave_sha256}|{previous_schedule_sha256}|{previous_plan_sha256}|"
+        f"{previous_source_batch_sha256}|{previous_graph_sha256}|"
+        f"{next_source_batch_sha256}|{next_graph_sha256}|{next_plan_sha256}"
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 

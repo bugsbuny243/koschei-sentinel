@@ -61,7 +61,7 @@ class ExpertTopologyManifest(StrictModel):
     manifest_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def active_experts_fit_pool(self) -> "ExpertTopologyManifest":
+    def active_experts_fit_pool(self) -> ExpertTopologyManifest:
         if self.experts_per_token > self.expert_count:
             raise ValueError("experts_per_token cannot exceed expert_count")
         return self

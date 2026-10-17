@@ -4,7 +4,10 @@ from typing import Literal
 
 from pydantic import Field
 
-from koschei_sentinel.active_defense_planner import ActiveDefensePlan, build_active_defense_plan
+from koschei_sentinel.active_defense_planner import (
+    ActiveDefensePlan,
+    build_active_defense_plan,
+)
 from koschei_sentinel.cyber_state_graph import CyberStateGraph, EvidenceStatus
 from koschei_sentinel.defense_authority import (
     DefenseActionType,

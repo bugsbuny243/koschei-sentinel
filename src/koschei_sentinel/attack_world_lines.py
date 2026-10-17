@@ -8,7 +8,10 @@ from typing import Literal
 
 from pydantic import Field
 
-from koschei_sentinel.attack_progression import AttackComponentReport, analyze_attack_progression
+from koschei_sentinel.attack_progression import (
+    AttackComponentReport,
+    analyze_attack_progression,
+)
 from koschei_sentinel.cyber_state_graph import CyberStateGraph, EvidenceStatus
 from koschei_sentinel.models import StrictModel
 
@@ -108,12 +111,16 @@ def _component_protected_anchors(
     for relation in graph.relations:
         if relation.status is EvidenceStatus.DISPROVED or relation.confidence < 0.5:
             continue
-        if relation.source_entity_id in component_entities:
-            if relation.target_entity_id in protected_anchor_entity_ids:
-                anchors.add(relation.target_entity_id)
-        if relation.target_entity_id in component_entities:
-            if relation.source_entity_id in protected_anchor_entity_ids:
-                anchors.add(relation.source_entity_id)
+        if (
+            relation.source_entity_id in component_entities
+            and relation.target_entity_id in protected_anchor_entity_ids
+        ):
+            anchors.add(relation.target_entity_id)
+        if (
+            relation.target_entity_id in component_entities
+            and relation.source_entity_id in protected_anchor_entity_ids
+        ):
+            anchors.add(relation.source_entity_id)
     return anchors
 
 

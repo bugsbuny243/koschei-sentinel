@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -11,8 +12,9 @@ from koschei_sentinel.launch_readiness import audit_launch_readiness
 from koschei_sentinel.production_authority import (
     approve_production_authority,
     build_production_authority_proposal,
+    canonical_json_digest,
 )
-
+from koschei_sentinel.promotion import public_key_fingerprint
 
 DIGEST = "a" * 64
 
@@ -28,7 +30,7 @@ def _write_model(path: Path, model) -> Path:
 
 
 def _finalization() -> dict:
-    return {
+    payload = {
         "schema_version": "sentinel.candidate-finalization.v1",
         "candidate_id": "candidate-1",
         "state": "finalized_incubation",
@@ -48,8 +50,65 @@ def _finalization() -> dict:
         "automatic_registry_replacement_allowed": False,
         "automatic_promotion_allowed": False,
         "production_deployment_allowed": False,
-        "finalization_digest": DIGEST,
     }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+    return {**payload, "finalization_digest": hashlib.sha256(encoded).hexdigest()}
+
+
+def _production_holdout(owner_fingerprint: str) -> dict:
+    report = {
+        "schema_version": "sentinel.gold-holdout-evaluation-report.v2",
+        "model_ref": "fixture-model",
+        "model_revision": DIGEST,
+        "adapter_digest": DIGEST,
+        "case_count": 1,
+        "prediction_count": 1,
+        "missing_case_ids": [],
+        "extra_case_ids": [],
+        "structural_exact_cases": 1,
+        "structural_exact_rate": 1.0,
+        "compared_steps": 1,
+        "predicted_steps": 1,
+        "mode_accuracy": 1.0,
+        "action_accuracy": 1.0,
+        "target_accuracy": 1.0,
+        "evidence_selection_accuracy": 1.0,
+        "evidence_grounding_rate": 1.0,
+        "target_grounding_rate": 1.0,
+        "outcome_verification_rate": 1.0,
+        "case_results": [],
+        "passed": True,
+        "violations": [],
+        "report_sha256": DIGEST,
+    }
+    payload = {
+        "schema_version": "sentinel.gold-holdout-evaluation-evidence.v1",
+        "model_ref": "fixture-model",
+        "model_revision": DIGEST,
+        "adapter_digest": DIGEST,
+        "source_gold_audit_sha256": DIGEST,
+        "review_signature_audit_sha256": DIGEST,
+        "candidate_training_binding_verification_sha256": DIGEST,
+        "inference_pack_signature_proof_sha256": DIGEST,
+        "reviewer_trust_policy_sha256": DIGEST,
+        "owner_key_fingerprint": owner_fingerprint,
+        "inference_inputs_sha256": DIGEST,
+        "inference_plan_sha256": DIGEST,
+        "inference_receipt_sha256": DIGEST,
+        "inference_verification_sha256": DIGEST,
+        "generation_policy_sha256": DIGEST,
+        "evaluation_policy_sha256": DIGEST,
+        "case_count": 1,
+        "prediction_count": 1,
+        "failure_count": 0,
+        "inference_verification_valid": True,
+        "complete_case_accounting": True,
+        "report": report,
+        "passed": True,
+    }
+    return {**payload, "evidence_sha256": canonical_json_digest(payload)}
 
 
 def _owner_keypair(tmp_path: Path):
@@ -94,11 +153,11 @@ def test_launch_readiness_requires_verifiable_production_authority(tmp_path: Pat
 def test_launch_readiness_accepts_signed_canary_authority(tmp_path: Path) -> None:
     finalization_payload = _finalization()
     finalization = _write(tmp_path / "candidate-finalization.json", finalization_payload)
+    private, public, public_path = _owner_keypair(tmp_path)
     holdout = _write(
         tmp_path / "holdout.json",
-        {"schema_version": "sentinel.gold-holdout-evaluation.v1", "ok": True},
+        _production_holdout(public_key_fingerprint(public)),
     )
-    private, public, public_path = _owner_keypair(tmp_path)
     finalization_model = CandidateFinalization.model_validate(finalization_payload)
     proposal = build_production_authority_proposal(
         finalization_model,

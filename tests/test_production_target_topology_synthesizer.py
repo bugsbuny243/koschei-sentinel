@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from koschei_sentinel.production_target_topology_synthesizer import enumerate_candidates, solve_exact
+from koschei_sentinel.production_target_topology_synthesizer import (
+    enumerate_candidates,
+    solve_exact,
+)
 
 
 def test_qwen_coder_inspired_shape_hits_exact_parameter_budget() -> None:

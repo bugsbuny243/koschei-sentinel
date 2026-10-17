@@ -36,7 +36,7 @@ class MCoreTrainingLoopConfig(StrictModel):
     checkpoint_every_steps: int = Field(gt=0)
 
     @model_validator(mode="after")
-    def validate_schedule(self) -> "MCoreTrainingLoopConfig":
+    def validate_schedule(self) -> MCoreTrainingLoopConfig:
         if self.min_learning_rate > self.learning_rate:
             raise ValueError("min_learning_rate cannot exceed learning_rate")
         if self.warmup_steps >= self.max_steps:

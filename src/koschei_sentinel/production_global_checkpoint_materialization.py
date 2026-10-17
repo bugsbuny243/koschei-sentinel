@@ -48,7 +48,7 @@ class GlobalCheckpointMaterializationReceipt(StrictModel):
     receipt_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def verify_receipt(self) -> "GlobalCheckpointMaterializationReceipt":
+    def verify_receipt(self) -> GlobalCheckpointMaterializationReceipt:
         if self.shard_count != len(self.shards):
             raise ValueError("shard_count disagrees with materialized shard receipts")
         if len({s.model_shard_rank for s in self.shards}) != self.shard_count:

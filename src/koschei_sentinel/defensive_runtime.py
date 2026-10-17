@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Mapping, Sequence
 
 from .authority_policy import DelegationChain
-from .cybersecurity_core import SecurityCase, SecurityFinding, build_security_inference_request, validate_security_findings
+from .cybersecurity_core import (
+    SecurityCase,
+    SecurityFinding,
+    build_security_inference_request,
+    validate_security_findings,
+)
 from .defensive_recovery import DefensiveActionReceipt, DefensiveRecoveryCoordinator
 from .defensive_response import DefensiveActionRequest, DefensivePolicy, DefensiveResponsePlane
 from .inference_contract import AuthorityEnvelope, RiskClass

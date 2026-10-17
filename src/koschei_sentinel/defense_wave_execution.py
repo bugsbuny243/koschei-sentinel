@@ -21,7 +21,10 @@ from koschei_sentinel.interception_execution import (
     start_interception_execution,
     verify_step_outcome,
 )
-from koschei_sentinel.interception_planner import InterceptionPlan, build_interception_plan
+from koschei_sentinel.interception_planner import (
+    InterceptionPlan,
+    build_interception_plan,
+)
 from koschei_sentinel.models import StrictModel
 
 _DIGEST = r"^[a-f0-9]{64}$"

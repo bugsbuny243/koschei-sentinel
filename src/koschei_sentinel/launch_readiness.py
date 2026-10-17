@@ -42,7 +42,7 @@ def _load_json(path: str | Path, label: str) -> dict:
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"{label} is not valid JSON: {source}") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain a JSON object: {source}")
+        raise TypeError(f"{label} must contain a JSON object: {source}")
     return payload
 
 
@@ -85,9 +85,12 @@ def audit_launch_readiness(
                 holdout_owner_fingerprints.add(evidence.owner_key_fingerprint)
             holdout_adapter_digests.add(evidence.adapter_digest)
 
-    if finalization is not None and holdout_adapter_digests:
-        if holdout_adapter_digests != {finalization.adapter_digest}:
-            blockers.append("Gold HOLDOUT evidence does not bind the finalized adapter")
+    if (
+        finalization is not None
+        and holdout_adapter_digests
+        and holdout_adapter_digests != {finalization.adapter_digest}
+    ):
+        blockers.append("Gold HOLDOUT evidence does not bind the finalized adapter")
 
     authority_present = production_authority_path is not None
     authority_verified = False

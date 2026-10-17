@@ -50,7 +50,7 @@ class Scoring(StrictModel):
     hard_fail_conditions: list[str] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def weights_sum_to_one(self) -> "Scoring":
+    def weights_sum_to_one(self) -> Scoring:
         if abs(sum(self.dimensions.values()) - 1.0) > 1e-9:
             raise ValueError("scoring dimension weights must sum to 1.0")
         if any(weight <= 0 for weight in self.dimensions.values()):
@@ -66,7 +66,7 @@ class EvalGeneration(StrictModel):
     require_remediation_regression_case: Literal[True]
 
     @model_validator(mode="after")
-    def distribution_is_complete(self) -> "EvalGeneration":
+    def distribution_is_complete(self) -> EvalGeneration:
         expected = {"positive", "hard_negative", "ambiguous", "abstention"}
         if set(self.required_distribution) != expected:
             raise ValueError("required_distribution must define all four case modes")
@@ -90,7 +90,7 @@ class Web3AuthorityEvalConfig(StrictModel):
     eval_generation: EvalGeneration
 
     @model_validator(mode="after")
-    def config_is_internally_consistent(self) -> "Web3AuthorityEvalConfig":
+    def config_is_internally_consistent(self) -> Web3AuthorityEvalConfig:
         expected_modes = {"positive", "hard_negative", "ambiguous", "abstention"}
         if set(self.case_modes) != expected_modes:
             raise ValueError("case_modes must contain each supported mode exactly once")
@@ -121,7 +121,7 @@ class EvalSeedCase(StrictModel):
     must_abstain_from: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def abstention_cases_define_boundary(self) -> "EvalSeedCase":
+    def abstention_cases_define_boundary(self) -> EvalSeedCase:
         if self.mode == "abstention" and not self.must_abstain_from:
             raise ValueError("abstention cases must define must_abstain_from")
         return self
@@ -134,7 +134,7 @@ class Web3AuthorityEvalSeeds(StrictModel):
     cases: list[EvalSeedCase] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def case_ids_are_unique(self) -> "Web3AuthorityEvalSeeds":
+    def case_ids_are_unique(self) -> Web3AuthorityEvalSeeds:
         case_ids = [case.id for case in self.cases]
         if len(case_ids) != len(set(case_ids)):
             raise ValueError("eval seed case ids must be unique")

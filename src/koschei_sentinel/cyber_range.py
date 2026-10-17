@@ -6,7 +6,10 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from koschei_sentinel.active_defense_planner import build_active_defense_plan
-from koschei_sentinel.adaptive_defense import ReassessmentDisposition, reassess_after_interception
+from koschei_sentinel.adaptive_defense import (
+    ReassessmentDisposition,
+    reassess_after_interception,
+)
 from koschei_sentinel.cyber_state_graph import CyberStateGraph
 from koschei_sentinel.defense_authority import DefenseActionType, DefenseMode
 from koschei_sentinel.interception_execution import (
@@ -16,7 +19,10 @@ from koschei_sentinel.interception_execution import (
     start_interception_execution,
     verify_step_outcome,
 )
-from koschei_sentinel.interception_planner import InterceptionPlan, build_interception_plan
+from koschei_sentinel.interception_planner import (
+    InterceptionPlan,
+    build_interception_plan,
+)
 from koschei_sentinel.models import StrictModel
 
 

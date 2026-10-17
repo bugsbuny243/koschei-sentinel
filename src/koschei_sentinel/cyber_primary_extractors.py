@@ -248,9 +248,7 @@ def _yara_in_scope(path: Path, root: Path) -> bool:
         return True
     if lowered == "readme.md":
         return True
-    if lowered.startswith("libyara/") and path.suffix.lower() in _YARA_SOURCE_SUFFIXES:
-        return True
-    return False
+    return lowered.startswith("libyara/") and path.suffix.lower() in _YARA_SOURCE_SUFFIXES
 
 
 def extract_yara_snapshot(

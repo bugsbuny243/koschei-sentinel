@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Mapping, Any
+from typing import Any
 
 
 class EffectAgreement(str, Enum):

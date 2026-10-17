@@ -25,7 +25,7 @@ class ReviewRecord(StrictModel):
     record_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def rewrite_decision_requires_reference(self) -> "ReviewRecord":
+    def rewrite_decision_requires_reference(self) -> ReviewRecord:
         if self.decision == "needs_rewrite" and not self.rewritten_case_ref:
             raise ValueError("needs_rewrite requires rewritten_case_ref")
         if self.decision != "needs_rewrite" and self.rewritten_case_ref is not None:
@@ -42,7 +42,7 @@ class ReviewBundle(StrictModel):
     automatic_gold_promotion_allowed: Literal[False] = False
 
     @model_validator(mode="after")
-    def unique_case_reviews(self) -> "ReviewBundle":
+    def unique_case_reviews(self) -> ReviewBundle:
         ids = [record.case_id for record in self.records]
         if len(ids) != len(set(ids)):
             raise ValueError("review bundle cannot contain duplicate case decisions")

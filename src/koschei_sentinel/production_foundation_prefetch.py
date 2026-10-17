@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from koschei_sentinel.production_foundation_data import PackedFoundationSequence
 

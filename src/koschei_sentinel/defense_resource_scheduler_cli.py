@@ -4,7 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
-from koschei_sentinel.assured_multi_incident_defense import AssuredMultiIncidentDefensePlan
+from koschei_sentinel.assured_multi_incident_defense import (
+    AssuredMultiIncidentDefensePlan,
+)
 from koschei_sentinel.defense_resource_scheduler import (
     DefenseResourcePolicy,
     DefenseSchedulerState,
