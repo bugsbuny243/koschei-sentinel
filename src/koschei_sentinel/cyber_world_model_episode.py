@@ -79,9 +79,8 @@ class CyberWorldModelEpisode(StrictModel):
         for index, transition in enumerate(self.transitions, 1):
             if transition.from_tick != index - 1 or transition.to_tick != index:
                 raise ValueError("world-model transition ticks must align with snapshot order")
-        if self.attack_world_lines is not None:
-            if self.attack_world_lines.ticks != len(self.snapshots):
-                raise ValueError("attack world-line ticks must align with world-model snapshots")
+        if self.attack_world_lines is not None and self.attack_world_lines.ticks != len(self.snapshots):
+            raise ValueError("attack world-line ticks must align with world-model snapshots")
         if self.training_authorization:
             raise ValueError(
                 "raw world-model episodes are observational records and cannot self-authorize training"

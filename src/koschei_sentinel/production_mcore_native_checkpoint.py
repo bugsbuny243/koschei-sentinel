@@ -34,8 +34,7 @@ def _is_norm_parameter(name: str) -> bool:
     return (
         "layernorm" in lowered
         or ".norm." in lowered
-        or lowered.endswith("norm.weight")
-        or lowered.endswith("layer_norm_weight")
+        or lowered.endswith(("norm.weight", "layer_norm_weight"))
     )
 
 
