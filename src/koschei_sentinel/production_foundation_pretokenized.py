@@ -61,7 +61,7 @@ def _sha256_file(path: Path) -> str:
 
 def _manifest_digest(manifest: PretokenizedFoundationManifest) -> str:
     payload = json.dumps(manifest.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def build_pretokenized_shard(

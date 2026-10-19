@@ -186,7 +186,7 @@ class Web4BenchmarkIntakePacket(StrictModel):
 
 def _sha256_canonical(payload: object) -> str:
     require_json_value(payload)
-    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return hashlib.sha256(canonical_json(payload).encode()).hexdigest()
 
 
 def _read_regular(path: Path, label: str) -> bytes:

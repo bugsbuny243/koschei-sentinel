@@ -111,7 +111,7 @@ def _sha256_bytes(payload: bytes) -> str:
 
 
 def _sha256_text(payload: str) -> str:
-    return _sha256_bytes(payload.encode("utf-8"))
+    return _sha256_bytes(payload.encode())
 
 
 def _digest_without(payload: dict[str, object], field_name: str) -> str:

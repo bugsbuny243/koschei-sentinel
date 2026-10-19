@@ -51,7 +51,7 @@ class FoundationCatalogCursor(StrictModel):
 
 
 def _catalog_digest_payload(payload: dict) -> str:
-    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(raw).hexdigest()
 
 

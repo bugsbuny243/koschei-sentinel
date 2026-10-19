@@ -20,12 +20,12 @@ def _canonical_digest(payload: object) -> str:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
-    ).encode("utf-8")
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
 def _seed64(*parts: object) -> int:
-    material = "\x1f".join(str(part) for part in parts).encode("utf-8")
+    material = "\x1f".join(str(part) for part in parts).encode()
     return int.from_bytes(hashlib.sha256(material).digest()[:8], "big") & ((1 << 63) - 1)
 
 
