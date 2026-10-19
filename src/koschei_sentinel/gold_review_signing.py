@@ -90,7 +90,7 @@ def load_reviewer_private_key(path: str | Path) -> Ed25519PrivateKey:
 def load_reviewer_public_key(path: str | Path) -> Ed25519PublicKey:
     key = serialization.load_pem_public_key(Path(path).read_bytes())
     if not isinstance(key, Ed25519PublicKey):
-        raise ValueError("Gold reviewer public key must be Ed25519")
+        raise TypeError("Gold reviewer public key must be Ed25519")
     return key
 
 

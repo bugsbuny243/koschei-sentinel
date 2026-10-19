@@ -28,7 +28,7 @@ def attest_production_readiness(
     report: ConformanceReport,
     manifest: ProductionEvidenceManifest,
     evidence: ProductionEvidence,
-    thresholds: ProductionThresholds = ProductionThresholds(),
+    thresholds: ProductionThresholds | None = None,
 ) -> ProductionAttestation:
     failures: list[str] = []
     if manifest.conformance_report_digest != report.digest():
@@ -38,7 +38,7 @@ def attest_production_readiness(
     except ValueError as exc:
         failures.append(str(exc))
 
-    gate: ProductionGateResult = evaluate_production_readiness(report, evidence, thresholds)
+    gate: ProductionGateResult = evaluate_production_readiness(report, evidence, thresholds if thresholds is not None else ProductionThresholds())
     failures.extend(gate.failures)
     failures = list(dict.fromkeys(failures))
     return ProductionAttestation(
