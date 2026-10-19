@@ -85,7 +85,7 @@ def _load_json(path: Path, label: str) -> tuple[dict[str, object], str]:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"invalid {label} JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain one JSON object")
+        raise TypeError(f"{label} must contain one JSON object")
     return payload, hashlib.sha256(raw).hexdigest()
 
 
@@ -104,7 +104,7 @@ def _load_jsonl(path: Path, label: str) -> tuple[list[dict[str, object]], str]:
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid {label} row at line {line_number}") from exc
         if not isinstance(row, dict):
-            raise ValueError(f"{label} row {line_number} must be a JSON object")
+            raise TypeError(f"{label} row {line_number} must be a JSON object")
         rows.append(row)
     if not rows:
         raise ValueError(f"{label} is empty")

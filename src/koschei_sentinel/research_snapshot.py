@@ -46,7 +46,7 @@ def load_strict_json_object(path: str | Path, label: str) -> dict[str, object]:
     except ValueError as exc:
         raise ValueError(f"invalid {label} JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain one JSON object")
+        raise TypeError(f"{label} must contain one JSON object")
     return payload
 
 

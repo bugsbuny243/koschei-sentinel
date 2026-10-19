@@ -78,7 +78,7 @@ def load_foundation_documents(config: FoundationDataConfig) -> tuple[list[tuple[
                 continue
             payload = json.loads(line)
             if not isinstance(payload, dict):
-                raise ValueError(f"JSONL row {line_number} must be an object")
+                raise TypeError(f"JSONL row {line_number} must be an object")
             text = payload.get(config.text_field)
             if not isinstance(text, str) or not text.strip():
                 continue

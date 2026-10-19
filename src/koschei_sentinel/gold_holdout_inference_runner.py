@@ -351,7 +351,7 @@ def _prediction_from_generated_text(
     except json.JSONDecodeError as exc:
         raise ValueError("model output is not exactly one JSON object") from exc
     if not isinstance(payload, dict):
-        raise ValueError("model output must be one JSON object")
+        raise TypeError("model output must be one JSON object")
     if set(payload) != {"interpretation", "defense_sequence"}:
         raise ValueError(
             "model output must contain exactly interpretation and defense_sequence"

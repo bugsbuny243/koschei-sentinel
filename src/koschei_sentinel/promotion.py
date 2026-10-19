@@ -140,14 +140,14 @@ def load_promotion_approval(path: str | Path) -> PromotionApproval:
 def load_owner_public_key(path: str | Path) -> Ed25519PublicKey:
     key = serialization.load_pem_public_key(Path(path).read_bytes())
     if not isinstance(key, Ed25519PublicKey):
-        raise ValueError("owner public key must be Ed25519")
+        raise TypeError("owner public key must be Ed25519")
     return key
 
 
 def load_owner_private_key(path: str | Path) -> Ed25519PrivateKey:
     key = serialization.load_pem_private_key(Path(path).read_bytes(), password=None)
     if not isinstance(key, Ed25519PrivateKey):
-        raise ValueError("owner private key must be unencrypted Ed25519 PEM")
+        raise TypeError("owner private key must be unencrypted Ed25519 PEM")
     return key
 
 
