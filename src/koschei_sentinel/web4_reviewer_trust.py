@@ -95,7 +95,7 @@ def load_web4_review_private_key(path: str | Path) -> Ed25519PrivateKey:
     except (OSError, ValueError, TypeError) as exc:
         raise ValueError("invalid Web4 review private key") from exc
     if not isinstance(key, Ed25519PrivateKey):
-        raise ValueError("Web4 review private key must be unencrypted Ed25519 PEM")
+        raise TypeError("Web4 review private key must be unencrypted Ed25519 PEM")
     return key
 
 
@@ -105,7 +105,7 @@ def load_web4_review_public_key(path: str | Path) -> Ed25519PublicKey:
     except (OSError, ValueError, TypeError) as exc:
         raise ValueError("invalid Web4 review public key") from exc
     if not isinstance(key, Ed25519PublicKey):
-        raise ValueError("Web4 review public key must be Ed25519")
+        raise TypeError("Web4 review public key must be Ed25519")
     return key
 
 
