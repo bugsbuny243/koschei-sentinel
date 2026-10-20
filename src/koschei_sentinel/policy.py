@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections import defaultdict
 import re
+from collections import defaultdict
 
 from .models import EvidenceClaim, EvidenceConfidence, SecurityCase, SentinelOpinion
 
@@ -69,7 +69,10 @@ def validate_opinion(case: SecurityCase, opinion: SentinelOpinion) -> list[str]:
         re.IGNORECASE | re.DOTALL,
     )
     for index, action in enumerate(opinion.recommended_actions):
-        if "```" in action or re.search(r"\b(?:tokenContract\.approve|setApprovalForAll)\s*\(", action):
+        executable_approval = re.search(
+            r"\b(?:tokenContract\.approve|setApprovalForAll)\s*\(", action
+        )
+        if "```" in action or executable_approval:
             violations.append(f"recommended_actions[{index}] contains executable contract instructions")
         if secret_request.search(action):
             violations.append(f"recommended_actions[{index}] requests wallet secrets")
