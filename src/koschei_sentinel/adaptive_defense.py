@@ -6,10 +6,16 @@ from typing import Literal
 
 from pydantic import Field
 
-from koschei_sentinel.active_defense_planner import ActiveDefensePlan, build_active_defense_plan
+from koschei_sentinel.active_defense_planner import (
+    ActiveDefensePlan,
+    build_active_defense_plan,
+)
 from koschei_sentinel.cyber_state_graph import CyberStateGraph
 from koschei_sentinel.interception_execution import InterceptionExecution
-from koschei_sentinel.interception_planner import InterceptionPlan, build_interception_plan
+from koschei_sentinel.interception_planner import (
+    InterceptionPlan,
+    build_interception_plan,
+)
 from koschei_sentinel.models import StrictModel
 
 

@@ -168,7 +168,7 @@ def _read_benchmark_policy(path: str | Path) -> tuple[dict[str, object], str]:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("invalid Web4 benchmark policy JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError("Web4 benchmark policy must contain one JSON object")
+        raise TypeError("Web4 benchmark policy must contain one JSON object")
     if payload.get("schema_version") != "sentinel.web4-eval-policy.v1":
         raise ValueError("unsupported Web4 benchmark policy schema")
     if payload.get("status") != "research_only":

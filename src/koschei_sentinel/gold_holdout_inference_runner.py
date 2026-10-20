@@ -111,7 +111,7 @@ def _sha256_bytes(payload: bytes) -> str:
 
 
 def _sha256_text(payload: str) -> str:
-    return _sha256_bytes(payload.encode("utf-8"))
+    return _sha256_bytes(payload.encode())
 
 
 def _digest_without(payload: dict[str, object], field_name: str) -> str:
@@ -351,7 +351,7 @@ def _prediction_from_generated_text(
     except json.JSONDecodeError as exc:
         raise ValueError("model output is not exactly one JSON object") from exc
     if not isinstance(payload, dict):
-        raise ValueError("model output must be one JSON object")
+        raise TypeError("model output must be one JSON object")
     if set(payload) != {"interpretation", "defense_sequence"}:
         raise ValueError(
             "model output must contain exactly interpretation and defense_sequence"

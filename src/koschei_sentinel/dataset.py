@@ -227,7 +227,7 @@ def source_fingerprint(value: Any, *, salt: str) -> str:
 
 def _ensure_mapping(value: Any) -> dict[str, Any]:
     if not isinstance(value, Mapping):
-        raise ValueError("each input record must be a JSON object")
+        raise TypeError("each input record must be a JSON object")
     return dict(value)
 
 

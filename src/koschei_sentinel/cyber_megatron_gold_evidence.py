@@ -10,13 +10,13 @@ from pydantic import Field, model_validator
 from koschei_sentinel.cyber_megatron_candidate import CyberMegatronCandidateManifest
 from koschei_sentinel.cyber_megatron_holdout import CyberMegatronHoldoutPlan
 from koschei_sentinel.cyber_megatron_holdout_worker import (
+    CyberMegatronHoldoutExecutionState,
+    CyberMegatronHoldoutRunReceipt,
+    CyberMegatronHoldoutWorkerPlan,
     EXECUTION_STATE_FILENAME,
     PREDICTIONS_FILENAME,
     RECEIPT_FILENAME,
     WORKER_PLAN_FILENAME,
-    CyberMegatronHoldoutExecutionState,
-    CyberMegatronHoldoutRunReceipt,
-    CyberMegatronHoldoutWorkerPlan,
     verify_cyber_megatron_holdout_output,
 )
 from koschei_sentinel.cyber_megatron_training import (
@@ -43,7 +43,7 @@ def _sha256_bytes(payload: bytes) -> str:
 
 
 def _sha256_canonical(payload: object) -> str:
-    return _sha256_bytes(canonical_json(payload).encode("utf-8"))
+    return _sha256_bytes(canonical_json(payload).encode())
 
 
 def _digest_without(payload: dict[str, object], field_name: str) -> str:
@@ -68,7 +68,7 @@ def _load_canonical_model(path: Path, model_type, label: str):
     except ValueError as exc:
         raise ValueError(f"{label} cannot be parsed") from exc
     expected = json.dumps(model.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
-    if raw != expected.encode("utf-8"):
+    if raw != expected.encode():
         raise ValueError(f"{label} is not canonical byte-for-byte")
     return model, raw
 

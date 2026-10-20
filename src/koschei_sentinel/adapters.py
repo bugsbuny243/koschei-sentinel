@@ -720,9 +720,8 @@ def _validate_endpoint(base_url: str, *, allow_local_network: bool) -> str:
             "unsafe_endpoint",
             "provider URL cannot contain credentials, query parameters, or fragments",
         )
-    if parsed.hostname.casefold() in {"localhost", "localhost.localdomain"}:
-        if not allow_local_network:
-            raise AdapterError("unsafe_endpoint", "local provider endpoints are disabled")
+    if parsed.hostname.casefold() in {"localhost", "localhost.localdomain"} and not allow_local_network:
+        raise AdapterError("unsafe_endpoint", "local provider endpoints are disabled")
     try:
         address = ipaddress.ip_address(parsed.hostname)
     except ValueError:

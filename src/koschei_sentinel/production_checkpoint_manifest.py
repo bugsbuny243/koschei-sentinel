@@ -20,12 +20,12 @@ def _canonical_digest(payload: object) -> str:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
-    ).encode("utf-8")
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
 def _seed64(*parts: object) -> int:
-    material = "\x1f".join(str(part) for part in parts).encode("utf-8")
+    material = "\x1f".join(str(part) for part in parts).encode()
     return int.from_bytes(hashlib.sha256(material).digest()[:8], "big") & ((1 << 63) - 1)
 
 
@@ -41,7 +41,7 @@ class TensorInitializationRecord(StrictModel):
     recipe_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def initialization_parameters_are_coherent(self) -> "TensorInitializationRecord":
+    def initialization_parameters_are_coherent(self) -> TensorInitializationRecord:
         if self.initialization == "normal":
             if self.mean is None or self.std is None:
                 raise ValueError("normal initialization requires mean and std")
@@ -72,7 +72,7 @@ class RankCheckpointManifest(StrictModel):
     manifest_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def verify_manifest(self) -> "RankCheckpointManifest":
+    def verify_manifest(self) -> RankCheckpointManifest:
         if self.tensor_count != len(self.tensors):
             raise ValueError("tensor_count disagrees with tensors")
         if self.local_elements != sum(item.local_elements for item in self.tensors):
@@ -88,9 +88,7 @@ def _rank_owns(entry: TensorLayoutEntry, *, pp: int, tp: int, ep: int) -> bool:
         return False
     if not entry.replicated_across_tensor_parallel and tp >= entry.tensor_parallel_shards:
         return False
-    if not entry.replicated_across_expert_parallel and ep >= entry.expert_parallel_shards:
-        return False
-    return True
+    return entry.replicated_across_expert_parallel or ep < entry.expert_parallel_shards
 
 
 def _initialization_for(

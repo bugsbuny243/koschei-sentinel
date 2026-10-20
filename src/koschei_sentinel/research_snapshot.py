@@ -25,7 +25,7 @@ def sha256_canonical_json(payload: object) -> str:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
-    ).encode("utf-8")
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -46,7 +46,7 @@ def load_strict_json_object(path: str | Path, label: str) -> dict[str, object]:
     except ValueError as exc:
         raise ValueError(f"invalid {label} JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain one JSON object")
+        raise TypeError(f"{label} must contain one JSON object")
     return payload
 
 

@@ -61,7 +61,7 @@ def _json_object(path: Path, *, label: str) -> dict[str, object]:
     except json.JSONDecodeError as exc:
         raise ValueError(f"{label} is not valid JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain a JSON object")
+        raise TypeError(f"{label} must contain a JSON object")
     return payload
 
 

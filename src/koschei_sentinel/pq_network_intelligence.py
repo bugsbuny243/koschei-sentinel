@@ -215,7 +215,7 @@ class _PQWatchRegistry:
             raise ValueError("PQ watch registry schema mismatch")
         policy = self.payload.get("source_policy")
         if not isinstance(policy, dict):
-            raise ValueError("PQ watch registry lacks source_policy")
+            raise TypeError("PQ watch registry lacks source_policy")
         required_policy = {
             "require_canonical_locator_before_verification": True,
             "require_snapshot_sha256_before_verification": True,
@@ -241,7 +241,7 @@ class _PQWatchRegistry:
         by_id: dict[str, dict[str, object]] = {}
         for row in discoveries:
             if not isinstance(row, dict):
-                raise ValueError("PQ watch seed discovery must be an object")
+                raise TypeError("PQ watch seed discovery must be an object")
             source_id = row.get("source_id")
             if not isinstance(source_id, str) or not source_id:
                 raise ValueError("PQ watch seed discovery lacks source_id")

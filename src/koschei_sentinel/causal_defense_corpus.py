@@ -92,13 +92,9 @@ def build_causal_defense_example(
         }
         for step in correction.corrected_steps
     ]
-    digest_payload = "|".join(
-        [
-            episode.episode_sha256,
-            episode.attack_world_lines.timeline_sha256,
-            correction.correction_sha256,
-            episode.source_report_sha256,
-        ]
+    digest_payload = (
+        f"{episode.episode_sha256}|{episode.attack_world_lines.timeline_sha256}|"
+        f"{correction.correction_sha256}|{episode.source_report_sha256}"
     )
     digest = hashlib.sha256(digest_payload.encode("utf-8")).hexdigest()
     return CausalDefenseTrainingExample(

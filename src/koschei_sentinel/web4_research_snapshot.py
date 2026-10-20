@@ -72,7 +72,7 @@ def _sha256_canonical(payload: object) -> str:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
-    ).encode("utf-8")
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -98,7 +98,7 @@ def _load_source_registry(path: Path) -> tuple[dict[str, dict[str, object]], str
         except ValueError as exc:
             raise ValueError(f"invalid Web4 source row at line {line_number}") from exc
         if not isinstance(row, dict):
-            raise ValueError(f"Web4 source row {line_number} must be a JSON object")
+            raise TypeError(f"Web4 source row {line_number} must be a JSON object")
         source_id = row.get("source_id")
         if not isinstance(source_id, str) or not source_id:
             raise ValueError(f"Web4 source row {line_number} lacks source_id")
@@ -211,7 +211,7 @@ def verify_web4_research_snapshot_receipt(
     except ValueError as exc:
         raise ValueError("invalid Web4 research snapshot receipt JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError("Web4 research snapshot receipt must contain one JSON object")
+        raise TypeError("Web4 research snapshot receipt must contain one JSON object")
     receipt = Web4ResearchSnapshotReceipt.model_validate(payload)
 
     rebuilt = build_web4_research_snapshot_receipt(

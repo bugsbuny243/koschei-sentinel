@@ -49,7 +49,7 @@ class ProductionMegatronModelSpec(StrictModel):
     topology: ProductionMegatronTopology
 
     @model_validator(mode="after")
-    def validate_megatron_shape(self) -> "ProductionMegatronModelSpec":
+    def validate_megatron_shape(self) -> ProductionMegatronModelSpec:
         t = self.transformer
         tp = self.topology.tensor_model_parallel_size
         pp = self.topology.pipeline_model_parallel_size

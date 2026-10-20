@@ -38,7 +38,7 @@ class MCoreOptimizerSmokeResult(StrictModel):
     execution_authorized: Literal[False] = False
 
     @model_validator(mode="after")
-    def roundtrip_fields_are_coherent(self) -> "MCoreOptimizerSmokeResult":
+    def roundtrip_fields_are_coherent(self) -> MCoreOptimizerSmokeResult:
         if self.before_digest == self.after_digest:
             raise ValueError("optimizer smoke requires a changed parameter digest")
         if self.checkpoint_roundtrip_verified:

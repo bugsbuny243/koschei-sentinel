@@ -46,7 +46,7 @@ def verify_rank_checkpoint_load(
         raise ValueError(f"unable to load checkpoint shard metadata: {path}") from exc
 
     if not isinstance(payload, dict):
-        raise ValueError("checkpoint shard payload must be a mapping")
+        raise TypeError("checkpoint shard payload must be a mapping")
     if payload.get("schema_version") != "sentinel.rank-weight-checkpoint.v1":
         raise ValueError("unsupported checkpoint shard schema")
     if payload.get("manifest_sha256") != manifest.manifest_sha256:
@@ -62,7 +62,7 @@ def verify_rank_checkpoint_load(
 
     state_dict = payload.get("state_dict")
     if not isinstance(state_dict, dict):
-        raise ValueError("checkpoint shard state_dict must be a mapping")
+        raise TypeError("checkpoint shard state_dict must be a mapping")
 
     expected = {record.name: record for record in manifest.tensors}
     if set(state_dict) != set(expected):

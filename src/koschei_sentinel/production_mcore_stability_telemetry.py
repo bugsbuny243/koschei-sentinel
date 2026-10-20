@@ -35,7 +35,7 @@ class MoERouterLayerTelemetry(StrictModel):
     max_tokens: int = Field(ge=0)
 
     @model_validator(mode="after")
-    def coherent(self) -> "MoERouterLayerTelemetry":
+    def coherent(self) -> MoERouterLayerTelemetry:
         if len(self.tokens_per_expert) != self.expert_count:
             raise ValueError("tokens_per_expert length must equal expert_count")
         if self.active_experts != sum(1 for value in self.tokens_per_expert if value > 0):
@@ -70,7 +70,7 @@ class MCoreStabilityStepTelemetry(StrictModel):
     execution_authorized: Literal[False] = False
 
     @model_validator(mode="after")
-    def blockers_match_status(self) -> "MCoreStabilityStepTelemetry":
+    def blockers_match_status(self) -> MCoreStabilityStepTelemetry:
         if self.stability_passed != (len(self.blockers) == 0):
             raise ValueError("stability_passed must match blocker presence")
         if self.router_layers:

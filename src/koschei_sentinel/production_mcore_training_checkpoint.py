@@ -114,7 +114,7 @@ def load_mcore_training_checkpoint(model: Any, optimizer: Any, *, checkpoint_dir
     if missing or unexpected:
         raise ValueError(f"training checkpoint mismatch; missing={missing[:5]} unexpected={unexpected[:5]}")
     if not isinstance(state, dict):
-        raise ValueError("training checkpoint state must be a mapping")
+        raise TypeError("training checkpoint state must be a mapping")
     model_state, optimizer_state, training_state_raw = state.get("model"), state.get("optimizer"), state.get("training_state")
     if model_state is None or optimizer_state is None or training_state_raw is None:
         raise ValueError("training checkpoint missing model, optimizer, or training state")

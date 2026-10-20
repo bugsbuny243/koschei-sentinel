@@ -33,9 +33,7 @@ def _owned_by_rank(
         return False
     if not entry.replicated_across_tensor_parallel and tensor_rank >= entry.tensor_parallel_shards:
         return False
-    if not entry.replicated_across_expert_parallel and expert_rank >= entry.expert_parallel_shards:
-        return False
-    return True
+    return entry.replicated_across_expert_parallel or expert_rank < entry.expert_parallel_shards
 
 
 def instantiate_meta_rank(

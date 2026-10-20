@@ -1,4 +1,7 @@
-from koschei_sentinel.production_mcore_recovery import RECOVERY_REASON_CODES, _canonical_recovery_reason
+from koschei_sentinel.production_mcore_recovery import (
+    RECOVERY_REASON_CODES,
+    _canonical_recovery_reason,
+)
 
 
 def test_recovery_reason_vocabulary_is_unique_and_stable():

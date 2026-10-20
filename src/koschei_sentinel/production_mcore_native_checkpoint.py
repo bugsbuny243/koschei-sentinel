@@ -25,7 +25,7 @@ class MCoreNativeInitializationResult(StrictModel):
 
 
 def _seed64(global_seed: int, name: str) -> int:
-    payload = f"{global_seed}\x1f{name}".encode("utf-8")
+    payload = f"{global_seed}\x1f{name}".encode()
     return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") & ((1 << 63) - 1)
 
 
@@ -34,8 +34,7 @@ def _is_norm_parameter(name: str) -> bool:
     return (
         "layernorm" in lowered
         or ".norm." in lowered
-        or lowered.endswith("norm.weight")
-        or lowered.endswith("layer_norm_weight")
+        or lowered.endswith(("norm.weight", "layer_norm_weight"))
     )
 
 

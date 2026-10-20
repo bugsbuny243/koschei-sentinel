@@ -28,7 +28,7 @@ class TargetArchitectureContract(StrictModel):
     )
 
     @model_validator(mode="after")
-    def lanes_must_not_be_conflated(self) -> "TargetArchitectureContract":
+    def lanes_must_not_be_conflated(self) -> TargetArchitectureContract:
         if self.current_executable_active_parameters == self.target_active_parameters:
             raise ValueError("validation lane must not masquerade as the 35B-active production target")
         if self.production_target_training_allowed:

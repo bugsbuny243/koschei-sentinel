@@ -146,7 +146,7 @@ def _load_policy_contract(path: str | Path) -> dict[str, object]:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("invalid Web4 batch intake policy JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError("Web4 batch intake policy must contain one JSON object")
+        raise TypeError("Web4 batch intake policy must contain one JSON object")
     if payload.get("schema_version") != "sentinel.web4-benchmark-intake-policy.v1":
         raise ValueError("unsupported Web4 batch intake policy schema")
     if payload.get("split_before_human_review") is not True:

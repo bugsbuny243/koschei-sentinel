@@ -5,9 +5,10 @@ import json
 import mmap
 import os
 import struct
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, Literal
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -60,7 +61,7 @@ def _sha256_file(path: Path) -> str:
 
 def _manifest_digest(manifest: PretokenizedFoundationManifest) -> str:
     payload = json.dumps(manifest.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def build_pretokenized_shard(
@@ -164,7 +165,7 @@ class PretokenizedFoundationReader:
         self._data_handle.close()
         self._index_handle.close()
 
-    def __enter__(self) -> "PretokenizedFoundationReader":
+    def __enter__(self) -> PretokenizedFoundationReader:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

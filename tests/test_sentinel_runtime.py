@@ -1,8 +1,11 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
-from koschei_sentinel.authority_policy import CapabilityGrant, DelegationChain
+from koschei_sentinel.authority_policy import (
+    CapabilityGrant,
+    DelegationChain,
+)
 from koschei_sentinel.inference_contract import (
     AuthorityEnvelope,
     EvidenceBinding,
@@ -11,11 +14,12 @@ from koschei_sentinel.inference_contract import (
     InferenceResponse,
     RiskClass,
 )
-from koschei_sentinel.inference_validation import FailClosedResponseValidator
+from koschei_sentinel.inference_validation import (
+    FailClosedResponseValidator,
+)
 from koschei_sentinel.sentinel_runtime import SentinelRuntime
 
-
-NOW = datetime(2026, 9, 27, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 27, tzinfo=UTC)
 
 
 class FixtureEngine:
