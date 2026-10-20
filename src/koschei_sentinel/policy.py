@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import re
 
 from .models import EvidenceClaim, EvidenceConfidence, SecurityCase, SentinelOpinion
 
@@ -59,6 +60,19 @@ def validate_opinion(case: SecurityCase, opinion: SentinelOpinion) -> list[str]:
         supporting_ids = evidence_by_rule.get(rule_id, set())
         if supporting_ids and not cited_ids.intersection(supporting_ids):
             violations.append(f"triggered rule {rule_id} has no cited supporting evidence")
+
+    # Recommended actions are untrusted model output, not executable instructions.
+    # Reject executable snippets and instructions that solicit wallet secrets.
+    secret_request = re.compile(
+        r"\\b(?:share|send|paste|enter|upload|provide|reveal)\\b.{0,80}"
+        r"\\b(?:seed phrase|recovery phrase|private key|wallet mnemonic)\\b",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for index, action in enumerate(opinion.recommended_actions):
+        if "```" in action or re.search(r"\\b(?:tokenContract\\.approve|setApprovalForAll)\\s*\\(", action):
+            violations.append(f"recommended_actions[{index}] contains executable contract instructions")
+        if secret_request.search(action):
+            violations.append(f"recommended_actions[{index}] requests wallet secrets")
 
     return violations
 
