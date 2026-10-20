@@ -64,12 +64,12 @@ def validate_opinion(case: SecurityCase, opinion: SentinelOpinion) -> list[str]:
     # Recommended actions are untrusted model output, not executable instructions.
     # Reject executable snippets and instructions that solicit wallet secrets.
     secret_request = re.compile(
-        r"\\b(?:share|send|paste|enter|upload|provide|reveal)\\b.{0,80}"
-        r"\\b(?:seed phrase|recovery phrase|private key|wallet mnemonic)\\b",
+        r"\b(?:share|send|paste|enter|upload|provide|reveal)\b.{0,80}"
+        r"\b(?:seed phrase|recovery phrase|private key|wallet mnemonic)\b",
         re.IGNORECASE | re.DOTALL,
     )
     for index, action in enumerate(opinion.recommended_actions):
-        if "```" in action or re.search(r"\\b(?:tokenContract\\.approve|setApprovalForAll)\\s*\\(", action):
+        if "```" in action or re.search(r"\b(?:tokenContract\.approve|setApprovalForAll)\s*\(", action):
             violations.append(f"recommended_actions[{index}] contains executable contract instructions")
         if secret_request.search(action):
             violations.append(f"recommended_actions[{index}] requests wallet secrets")
