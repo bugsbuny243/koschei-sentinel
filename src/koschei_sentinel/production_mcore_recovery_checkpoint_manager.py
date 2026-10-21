@@ -70,7 +70,7 @@ class RecoveryCheckpointManager:
                     raise RuntimeError("recovery checkpoint agreement gathered no rank proposals")
                 logical = ("global_step", "checkpoint_dir", "kind", "durable")
                 first = gathered[0]
-                if any(any(candidate[key] != first[key] for key in logical) for candidate in gathered[1:]):
+                if any(candidate[key] != first[key] for candidate in gathered[1:] for key in logical):
                     raise RuntimeError("recovery checkpoint proposals diverged across ranks")
                 first["commit_generation"] = self._next_commit_generation()
                 payload[0] = {"ok": True, "entry": first}
