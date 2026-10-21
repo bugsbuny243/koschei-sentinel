@@ -38,8 +38,10 @@ class ProductionGateResult:
 def evaluate_production_readiness(
     report: ConformanceReport,
     evidence: ProductionEvidence,
-    thresholds: ProductionThresholds = ProductionThresholds(),
+    thresholds: ProductionThresholds | None = None,
 ) -> ProductionGateResult:
+    if thresholds is None:
+        thresholds = ProductionThresholds()
     failures: list[str] = []
     if report.case_count < thresholds.min_cases:
         failures.append("insufficient conformance corpus")

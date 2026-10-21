@@ -62,7 +62,7 @@ class DefensiveRecoveryCoordinator:
             if not rollback_verified:
                 raise RuntimeError("defensive rollback could not be verified")
 
-        when = (issued_at or datetime.now(UTC)).astimezone(timezone.utc).isoformat()
+        when = (issued_at or datetime.now(UTC)).astimezone(UTC).isoformat()
         return DefensiveActionReceipt(
             action_id=request.action_id,
             tenant_id=request.tenant_id,
