@@ -4,13 +4,15 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.candidate_finalization import CandidateFinalization
 from koschei_sentinel.launch_readiness import audit_launch_readiness
 from koschei_sentinel.production_authority import (
-    approve_production_authority,
+    ProductionAuthorityBlocked,
     build_production_authority_proposal,
 )
 
@@ -20,11 +22,6 @@ DIGEST = "a" * 64
 
 def _write(path: Path, payload: dict) -> Path:
     path.write_text(json.dumps(payload), encoding="utf-8")
-    return path
-
-
-def _write_model(path: Path, model) -> Path:
-    path.write_text(json.dumps(model.model_dump(mode="json")), encoding="utf-8")
     return path
 
 
@@ -102,43 +99,27 @@ def test_launch_readiness_requires_verifiable_production_authority(tmp_path: Pat
     assert any("proposal is required" in item for item in report.blockers)
 
 
-def test_launch_readiness_accepts_signed_canary_authority(tmp_path: Path) -> None:
+def test_launch_readiness_rejects_fabricated_holdout_for_owner_signed_canary(tmp_path: Path) -> None:
+    # A valid owner key does not make an unverified Gold HOLDOUT receipt valid.
+    # Fail closed rather than replacing evidence with a fabricated passing report.
     finalization_payload = _finalization()
-    finalization = _write(tmp_path / "candidate-finalization.json", finalization_payload)
     holdout = _write(
         tmp_path / "holdout.json",
         {"schema_version": "sentinel.gold-holdout-evaluation.v1", "ok": True},
     )
-    private, public, public_path = _owner_keypair(tmp_path)
+    _, public, _ = _owner_keypair(tmp_path)
     finalization_model = CandidateFinalization.model_validate(finalization_payload)
-    proposal = build_production_authority_proposal(
-        finalization_model,
-        [holdout],
-        public,
-        max_initial_traffic_percent=5,
-    )
-    authority = approve_production_authority(
-        proposal,
-        private,
-        approver_id="owner-1",
-    )
-    proposal_path = _write_model(tmp_path / "production-proposal.json", proposal)
-    authority_path = _write_model(tmp_path / "production-authority.json", authority)
 
-    report = audit_launch_readiness(
-        finalization_path=finalization,
-        holdout_evidence_paths=[holdout],
-        production_authority_path=authority_path,
-        production_authority_proposal_path=proposal_path,
-        owner_public_key_path=public_path,
-    )
-
-    assert report.market_release_ready is True
-    assert report.production_authority_verified is True
-    assert report.deployment_scope == "canary_only"
-    assert report.max_initial_traffic_percent == 5
-    assert report.blockers == []
-
+    with pytest.raises(
+        ProductionAuthorityBlocked,
+        match="invalid Gold HOLDOUT evaluation evidence",
+    ):
+        build_production_authority_proposal(
+            finalization_model,
+            [holdout],
+            public,
+            max_initial_traffic_percent=5,
+        )
 
 def test_launch_readiness_blocks_missing_holdout_and_authority(tmp_path: Path) -> None:
     finalization = _write(tmp_path / "candidate-finalization.json", _finalization())
