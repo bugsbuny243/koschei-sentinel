@@ -160,3 +160,47 @@ def test_hypothesis_cannot_exceed_opinion_confidence_ceiling() -> None:
         build_sentinel_campaign_opinion(
             evidence, hypotheses=[overconfident], confidence_ceiling=0.3
         )
+
+
+def test_go_fabric_omitempty_html_escape_vector() -> None:
+    # Shared deterministic vector with the Go FabricCampaignEvidenceContract test.
+    # Go omits all three optional fingerprint fields and escapes &, < and >.
+    payload = {
+        "schema_version": CAMPAIGN_EVIDENCE_SCHEMA,
+        "mode": FABRIC_OBSERVE_MODE,
+        "campaign_ref": "KCAM1-&<>",
+        "campaign_revision": 3,
+        "campaign_state": "active",
+        "campaign_evidence_hash_sha256": "sha256:" + "1" * 64,
+        "ruleset_version": "campaign-rules.v1",
+        "first_observed_at": "2026-10-02T09:00:00Z",
+        "last_observed_at": "2026-10-02T10:00:00Z",
+        "networks": ["ethereum", "solana"],
+        "subjects": ["subject:a"],
+        "evidence_refs": ["obs:1"],
+        "verdict_refs": ["verdict:1"],
+        "attack_path_refs": [],
+        "missing_evidence": [],
+        "incident_refs": [],
+        # Go omitempty leaves temporal/radar/threat fingerprints out.
+        "contract_hash_sha256": (
+            "sha256:26e41702e842327415c7ed48d3ae548da8d5e7ca165ce09df771f607183a6832"
+        ),
+    }
+    evidence = FabricCampaignEvidence.model_validate(payload)
+    assert evidence.temporal_fingerprint_sha256 == ""
+    assert evidence.radar_fingerprint_sha256 == ""
+    assert evidence.threat_fingerprint_sha256 == ""
+    assert evidence.contract_hash_sha256 == payload["contract_hash_sha256"]
+
+    opinion = build_sentinel_campaign_opinion(
+        evidence, evidence_refs=["obs:1"], confidence_ceiling=0.5
+    )
+    assert opinion.evidence_contract_hash_sha256 == evidence.contract_hash_sha256
+    assert opinion.verdict_authority is False
+    assert opinion.response_execution_authority is False
+
+    tampered = dict(payload)
+    tampered["subjects"] = ["subject:forged"]
+    with pytest.raises(ValidationError, match="contract hash mismatch"):
+        FabricCampaignEvidence.model_validate(tampered)
