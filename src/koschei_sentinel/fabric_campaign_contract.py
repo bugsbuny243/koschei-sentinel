@@ -171,7 +171,31 @@ def build_sentinel_campaign_opinion(
 
 
 def fabric_campaign_evidence_hash(evidence: FabricCampaignEvidence) -> str:
-    return _sha256_payload(evidence.model_dump(mode="json"), clear_key="contract_hash_sha256")
+    """Match Go FabricCampaignEvidenceContract json.Marshal digest.
+
+    Go omits empty optional fingerprint fields and HTML-escapes JSON strings.
+    Pydantic model dumps keep default-empty fields, which would otherwise
+    produce a different SHA-256 for the same envelope.
+    """
+    canonical = evidence.model_dump(mode="json")
+    for optional in (
+        "temporal_fingerprint_sha256",
+        "radar_fingerprint_sha256",
+        "threat_fingerprint_sha256",
+    ):
+        if canonical.get(optional) == "":
+            canonical.pop(optional, None)
+    canonical["contract_hash_sha256"] = ""
+    serialized = json.dumps(canonical, ensure_ascii=False, separators=(",", ":"))
+    for char, replacement in (
+        ("&", r"\u0026"),
+        ("<", r"\u003c"),
+        (">", r"\u003e"),
+        ("\u2028", r"\u2028"),
+        ("\u2029", r"\u2029"),
+    ):
+        serialized = serialized.replace(char, replacement)
+    return "sha256:" + hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def sentinel_campaign_opinion_hash(opinion: SentinelCampaignOpinion) -> str:
