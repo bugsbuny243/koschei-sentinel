@@ -13,7 +13,8 @@ def test_construction_plan_preserves_parallel_sharding() -> None:
     plan = build_construction_plan(spec)
     assert plan.dense_parameter_shards == 32
     assert plan.expert_parameter_shards == 512
-    assert plan.checkpoint_shards == 1024
+    # Context parallelism partitions activations; it does not double model weight shards.
+    assert plan.checkpoint_shards == plan.expert_parameter_shards == 512
     assert plan.execution_authorized is False
     assert plan.status == "dry_run_only"
 
