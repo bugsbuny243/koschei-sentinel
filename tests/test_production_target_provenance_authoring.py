@@ -30,6 +30,7 @@ def _binding() -> ProductionTargetBinding:
 
 def _intake(model_ref: str = "koschei/sentinel-397b-35b") -> ProductionModelSourceIntake:
     payload = {
+        "schema_version": "sentinel.production-model-source-intake.v1",
         "model_ref": model_ref,
         "model_revision": "a" * 64,
         "source_kind": "internal-artifact",

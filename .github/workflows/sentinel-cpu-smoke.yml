@@ -3,6 +3,14 @@ name: Sentinel Production CPU Gates
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - "src/koschei_sentinel/production_mcore_*.py"
+      - "src/koschei_sentinel/production_model_*.py"
+      - "tests/test_production_mcore_*.py"
+      - "tests/test_production_model_construction.py"
+      - "tests/test_production_target_provenance_authoring.py"
+      - ".github/workflows/sentinel-cpu-smoke.yml"
   workflow_dispatch:
 
 permissions:
@@ -22,7 +30,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install pytest torch
+          pip install pytest torch 'numpy>=1.26,<3'
       - name: Compile production modules
         run: python -m compileall -q src/koschei_sentinel
       - name: Run Sentinel contract suite
