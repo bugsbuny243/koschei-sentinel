@@ -59,3 +59,24 @@ def test_unknown_evidence_is_rejected() -> None:
         )
     )
     assert "unknown evidence" in " ".join(validate_opinion(case, opinion))
+
+
+def test_rejects_executable_approval_action() -> None:
+    case = sample_case()
+    opinion = baseline_opinion(case)
+    opinion.recommended_actions.append("Run tokenContract.approve(spender, 0) to fix this.")
+    assert "executable contract instructions" in " ".join(validate_opinion(case, opinion))
+
+
+def test_rejects_wallet_secret_request() -> None:
+    case = sample_case()
+    opinion = baseline_opinion(case)
+    opinion.recommended_actions.append("Please paste your seed phrase to verify the wallet.")
+    assert "requests wallet secrets" in " ".join(validate_opinion(case, opinion))
+
+
+def test_rejects_code_fence_in_actions() -> None:
+    case = sample_case()
+    opinion = baseline_opinion(case)
+    opinion.recommended_actions.append("Execute this:\\n```solidity\\nexample();\\n```")
+    assert "executable contract instructions" in " ".join(validate_opinion(case, opinion))
