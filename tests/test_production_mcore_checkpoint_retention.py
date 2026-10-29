@@ -17,6 +17,7 @@ def _entry(path: Path, step: int, kind: str = "recovery", durable: bool = False)
     (path / "marker").write_text(str(step), encoding="utf-8")
     return RecoveryCheckpointEntry(
         global_step=step,
+        commit_generation=step,
         checkpoint_dir=path.as_posix(),
         kind=kind,
         durable=durable,
