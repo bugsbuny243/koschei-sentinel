@@ -132,3 +132,31 @@ def test_sentinel_campaign_opinion_rejects_out_of_envelope_evidence_ref() -> Non
     evidence = FabricCampaignEvidence.model_validate(_evidence_payload())
     with pytest.raises(ValueError, match="outside Fabric envelope"):
         build_sentinel_campaign_opinion(evidence, evidence_refs=["not-in-envelope"])
+
+
+def test_nested_hypothesis_must_cite_envelope() -> None:
+    evidence = FabricCampaignEvidence.model_validate(_evidence_payload())
+    unsupported = SentinelCampaignHypothesis(
+        hypothesis_id="H-outside",
+        summary="Unverified assertion",
+        evidence_refs=["unverified:ref"],
+        confidence=0.2,
+    )
+    with pytest.raises(ValueError, match="hypothesis references evidence outside"):
+        build_sentinel_campaign_opinion(
+            evidence, hypotheses=[unsupported], confidence_ceiling=0.5
+        )
+
+
+def test_hypothesis_cannot_exceed_opinion_confidence_ceiling() -> None:
+    evidence = FabricCampaignEvidence.model_validate(_evidence_payload())
+    overconfident = SentinelCampaignHypothesis(
+        hypothesis_id="H-overconfident",
+        summary="Exceeds the declared confidence cap",
+        evidence_refs=["obs:1"],
+        confidence=0.8,
+    )
+    with pytest.raises(ValueError, match="exceeds opinion confidence ceiling"):
+        build_sentinel_campaign_opinion(
+            evidence, hypotheses=[overconfident], confidence_ceiling=0.3
+        )
