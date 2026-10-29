@@ -12,7 +12,10 @@ from koschei_sentinel.full_release import (
     load_canary_evidence,
     verify_full_release,
 )
-from koschei_sentinel.production_authority import ProductionAuthority, ProductionAuthorityProposal
+from koschei_sentinel.production_authority import (
+    ProductionAuthority,
+    ProductionAuthorityProposal,
+)
 from koschei_sentinel.promotion import load_owner_private_key, load_owner_public_key
 
 

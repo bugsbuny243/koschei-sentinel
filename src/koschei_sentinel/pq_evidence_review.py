@@ -147,7 +147,7 @@ def load_pq_reviewer_public_key(path: str | Path) -> Ed25519PublicKey:
     except (OSError, ValueError) as exc:
         raise ValueError("invalid PQ reviewer public key") from exc
     if not isinstance(key, Ed25519PublicKey):
-        raise ValueError("PQ reviewer public key must be Ed25519")
+        raise TypeError("PQ reviewer public key must be Ed25519")
     return key
 
 
@@ -157,7 +157,7 @@ def load_pq_reviewer_private_key(path: str | Path) -> Ed25519PrivateKey:
     except (OSError, ValueError) as exc:
         raise ValueError("invalid PQ reviewer private key") from exc
     if not isinstance(key, Ed25519PrivateKey):
-        raise ValueError("PQ reviewer private key must be unencrypted Ed25519 PEM")
+        raise TypeError("PQ reviewer private key must be unencrypted Ed25519 PEM")
     return key
 
 
@@ -167,7 +167,7 @@ def load_pq_owner_public_key(path: str | Path) -> Ed25519PublicKey:
     except (OSError, ValueError) as exc:
         raise ValueError("invalid PQ owner public key") from exc
     if not isinstance(key, Ed25519PublicKey):
-        raise ValueError("PQ owner public key must be Ed25519")
+        raise TypeError("PQ owner public key must be Ed25519")
     return key
 
 
@@ -177,7 +177,7 @@ def load_pq_owner_private_key(path: str | Path) -> Ed25519PrivateKey:
     except (OSError, ValueError) as exc:
         raise ValueError("invalid PQ owner private key") from exc
     if not isinstance(key, Ed25519PrivateKey):
-        raise ValueError("PQ owner private key must be unencrypted Ed25519 PEM")
+        raise TypeError("PQ owner private key must be unencrypted Ed25519 PEM")
     return key
 
 
