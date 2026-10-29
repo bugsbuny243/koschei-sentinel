@@ -42,7 +42,7 @@ def _load_json(path: str | Path, label: str) -> dict:
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"{label} is not valid JSON: {source}") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain a JSON object: {source}")
+        raise TypeError(f"{label} must contain a JSON object: {source}")
     return payload
 
 
