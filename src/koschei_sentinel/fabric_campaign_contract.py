@@ -129,6 +129,12 @@ def build_sentinel_campaign_opinion(
     merged_missing = _normalized_strings([*evidence.missing_evidence, *(missing_evidence or [])])
     refs = _normalized_strings(evidence_refs or [])
     permitted_refs = set(evidence.evidence_refs) | set(evidence.verdict_refs) | set(evidence.attack_path_refs)
+    # Apply the same evidence authority boundary to nested hypothesis citations.
+    for hypothesis in hypotheses or []:
+        if any(ref not in permitted_refs for ref in hypothesis.evidence_refs):
+            raise ValueError("hypothesis references evidence outside Fabric envelope")
+        if hypothesis.confidence > confidence_ceiling:
+            raise ValueError("hypothesis confidence exceeds opinion confidence ceiling")
     if any(ref not in permitted_refs for ref in refs):
         raise ValueError("opinion references evidence outside Fabric envelope")
 
