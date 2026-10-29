@@ -15,7 +15,6 @@ from koschei_sentinel.production_authority import (
     build_production_authority_proposal,
 )
 
-
 DIGEST = "a" * 64
 
 
