@@ -1,6 +1,6 @@
 {
   "schema_version": "koschei.product-direction.v1",
-  "as_of": "2026-09-10",
+  "as_of": "2026-10-05",
   "product": "koschei-sentinel",
   "role": "independent-cybersecurity-model",
   "capability_targets": [
@@ -24,7 +24,8 @@
     "ambition": "surpass-on-matched-cybersecurity-evaluations",
     "status": "unmeasured-development-goal"
   },
-  "commercial_policy": "Lang-and-Sentinel-in-the-same-packages",
-  "web3_relationship": "ARVIS evidence interpretation is one use case",
+  "commercial_policy": "standalone-product-sold-and-licensed-separately-from-lang-and-web3",
+  "lang_relationship": "optional-versioned-interoperability-not-shared-entitlement",
+  "web3_relationship": "ARVIS evidence interpretation is one optional use case; no shared entitlement",
   "existing_training_evaluation_promotion_and_compute_gates": "preserve"
 }

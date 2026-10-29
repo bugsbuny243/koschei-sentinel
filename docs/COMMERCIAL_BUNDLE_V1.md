@@ -1,8 +1,19 @@
-# Lang + Sentinel commercial bundle v1
+# Lang + Sentinel bundle integrity contract v1 (compatibility only)
 
-Every package must include one `koschei-lang` and one `koschei-sentinel` component.
-This is an offline artifact-integrity contract. Existing publisher-signature,
-licensing, Lang release-trust and Sentinel model-promotion checks still apply.
+This file documents the historical `koschei.commercial-bundle.v1` artifact-integrity
+format. It is **not** the current commercial sales policy.
+
+Koschei Sentinel and Koschei Lang are standalone products sold and licensed
+separately. A customer may buy either product without buying the other. Shared
+entitlement, shared pricing and mandatory joint packaging are not implied by this
+validator.
+
+The validator is retained only for optional compatibility, internal release
+workflows or deployments that intentionally place one Sentinel artifact and one
+Lang artifact in the same integrity manifest.
+
+Existing publisher-signature, licensing, Lang release-trust and Sentinel
+model-promotion checks still apply independently.
 
 The validator uses only the Python standard library. The implementation is mirrored
 in both products to avoid adding an inter-repository runtime or package dependency.
@@ -15,7 +26,8 @@ The schema is `koschei.commercial-bundle.v1`. Bundle IDs are lowercase ASCII
 identifiers (letters, digits, dot, underscore, hyphen), at most 96 characters.
 Versions use `major.minor.patch`, optionally followed by a prerelease label.
 
-Each of the two component records has exactly:
+When this optional compatibility format is used, it contains exactly two component
+records:
 
 | Field | Meaning |
 | --- | --- |
@@ -40,3 +52,6 @@ invented; tests create explicitly synthetic temporary files.
 
 A digest comparison is not a signature or trusted publisher attestation. These
 checks never download, unpack, install, execute, train or promote anything.
+
+For current commercial policy, see `PRODUCT_CHARTER_SENTINEL_V1.md` and
+`../fabric/product-direction.v1.json`.
