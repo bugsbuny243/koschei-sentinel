@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from koschei_sentinel.production_megatron_config import ProductionMegatronConfig, ProductionMegatronTopology
+from koschei_sentinel.production_megatron_config import (
+    ProductionMegatronConfig,
+    ProductionMegatronTopology,
+)
 
 
 def _topology() -> ProductionMegatronTopology:

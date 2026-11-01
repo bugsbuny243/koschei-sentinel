@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
-from koschei_sentinel.production_foundation_catalog import load_foundation_catalog, locate_catalog_sequence
+from koschei_sentinel.production_foundation_catalog import (
+    load_foundation_catalog,
+    locate_catalog_sequence,
+)
 from koschei_sentinel.production_foundation_data import PackedFoundationSequence
-from koschei_sentinel.production_foundation_pretokenized import PretokenizedFoundationReader
+from koschei_sentinel.production_foundation_pretokenized import (
+    PretokenizedFoundationReader,
+)
 
 
 @dataclass(frozen=True)

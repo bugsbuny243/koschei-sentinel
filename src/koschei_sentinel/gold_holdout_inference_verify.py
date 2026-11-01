@@ -387,9 +387,7 @@ def verify_gold_holdout_inference_output(
             ):
                 identity_failures.append(prediction.case_id)
             case = case_by_id.get(prediction.case_id)
-            if case is None or prediction.scenario_id != case.scenario_id:
-                context_failures.append(prediction.case_id)
-            elif prediction.input_context_sha256 != case.input_context_sha256:
+            if case is None or prediction.scenario_id != case.scenario_id or prediction.input_context_sha256 != case.input_context_sha256:
                 context_failures.append(prediction.case_id)
 
         if prediction_hash_failures:
@@ -421,9 +419,7 @@ def verify_gold_holdout_inference_output(
                 )
             failure_ids.add(failure.case_id)
             case = case_by_id.get(failure.case_id)
-            if case is None or failure.scenario_id != case.scenario_id:
-                failure_context_mismatches.append(failure.case_id)
-            elif failure.input_context_sha256 != case.input_context_sha256:
+            if case is None or failure.scenario_id != case.scenario_id or failure.input_context_sha256 != case.input_context_sha256:
                 failure_context_mismatches.append(failure.case_id)
         if failure_context_mismatches:
             violations.append(

@@ -1,7 +1,9 @@
 import pytest
 
 from koschei_sentinel.cyber_perception import TelemetrySourceType
-from koschei_sentinel.perception_adapter_profiles import generic_endpoint_process_adapter
+from koschei_sentinel.perception_adapter_profiles import (
+    generic_endpoint_process_adapter,
+)
 from koschei_sentinel.perception_adapter_sdk import (
     SanitizedTelemetryEvent,
     run_perception_adapter_batch,

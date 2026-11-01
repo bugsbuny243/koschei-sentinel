@@ -8,9 +8,10 @@ from koschei_sentinel.production_checkpoint_manifest import (
     RankCheckpointManifest,
     build_rank_checkpoint_manifest,
 )
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 from koschei_sentinel.production_meta_factory import instantiate_meta_rank
-
 
 CANDIDATE = Path("configs/training/production-megatron-model.397b-35b.candidate.json")
 

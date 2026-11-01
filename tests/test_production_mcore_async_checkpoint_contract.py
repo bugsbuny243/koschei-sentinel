@@ -4,9 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointScheduleResult
-from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointEntry
-from koschei_sentinel.production_mcore_recovery_checkpoint_manager import RecoveryCheckpointManager
+from koschei_sentinel.production_mcore_async_checkpoint import (
+    AsyncCheckpointScheduleResult,
+)
+from koschei_sentinel.production_mcore_checkpoint_retention import (
+    RecoveryCheckpointEntry,
+)
+from koschei_sentinel.production_mcore_recovery_checkpoint_manager import (
+    RecoveryCheckpointManager,
+)
 
 
 def test_schedule_result_preserves_backpressure_finalizations():
@@ -104,7 +110,10 @@ def _manager_for_publication(tmp_path: Path):
 
 def test_publication_rejects_divergent_rank_metadata(tmp_path: Path, monkeypatch):
     import torch.distributed as dist
-    from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointIndex
+
+    from koschei_sentinel.production_mcore_checkpoint_retention import (
+        RecoveryCheckpointIndex,
+    )
 
     manager = _manager_for_publication(tmp_path)
     manager.index = RecoveryCheckpointIndex(keep_recovery_slots=2, entries=[])
@@ -124,8 +133,11 @@ def test_publication_rejects_divergent_rank_metadata(tmp_path: Path, monkeypatch
 
 def test_publication_propagates_rank_zero_failure(tmp_path: Path, monkeypatch):
     import torch.distributed as dist
+
     import koschei_sentinel.production_mcore_recovery_checkpoint_manager as module
-    from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointIndex
+    from koschei_sentinel.production_mcore_checkpoint_retention import (
+        RecoveryCheckpointIndex,
+    )
 
     manager = _manager_for_publication(tmp_path)
     manager.index = RecoveryCheckpointIndex(keep_recovery_slots=2, entries=[])

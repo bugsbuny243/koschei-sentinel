@@ -70,7 +70,7 @@ class ProductionTargetProvenance(StrictModel):
     owner_signature_b64: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def sources_are_complete(self) -> "ProductionTargetProvenance":
+    def sources_are_complete(self) -> ProductionTargetProvenance:
         kinds = [item.artifact_kind for item in self.sources]
         if sorted(kinds) != ["architecture", "expert_topology", "router"]:
             raise ValueError("production provenance must contain exactly one source for each manifest kind")

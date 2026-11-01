@@ -4,7 +4,10 @@ import argparse
 import json
 from pathlib import Path
 
-from koschei_sentinel.cyber_collection_batch import CollectionBatchSpec, seal_collection_batch
+from koschei_sentinel.cyber_collection_batch import (
+    CollectionBatchSpec,
+    seal_collection_batch,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:

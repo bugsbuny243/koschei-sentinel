@@ -6,7 +6,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.defense_reflex_gold_queue import _packet_digest
 from koschei_sentinel.defense_reflex_gold_review import _review_digest
-from koschei_sentinel.gold_model_visible_context import gold_model_visible_context_sha256
+from koschei_sentinel.gold_model_visible_context import (
+    gold_model_visible_context_sha256,
+)
 from koschei_sentinel.gold_review_signing import (
     GoldReviewSignatureProof,
     audit_gold_release_review_signatures,

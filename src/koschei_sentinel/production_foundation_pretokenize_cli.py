@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 
-from koschei_sentinel.production_foundation_data import FoundationDataConfig, iter_packed_foundation_sequences
+from koschei_sentinel.production_foundation_data import (
+    FoundationDataConfig,
+    iter_packed_foundation_sequences,
+)
 from koschei_sentinel.production_foundation_pretokenized import build_pretokenized_shard
 
 

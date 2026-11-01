@@ -1,5 +1,8 @@
 from koschei_sentinel.cyber_range import CyberRangeScenario, ScenarioTruth
-from koschei_sentinel.cyber_range_suite import CyberRangeGatePolicy, run_cyber_range_suite
+from koschei_sentinel.cyber_range_suite import (
+    CyberRangeGatePolicy,
+    run_cyber_range_suite,
+)
 from koschei_sentinel.cyber_state_graph import (
     CyberEntity,
     CyberEntityType,

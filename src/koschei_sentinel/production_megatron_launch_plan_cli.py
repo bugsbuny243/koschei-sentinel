@@ -4,8 +4,12 @@ import argparse
 import json
 from pathlib import Path
 
-from koschei_sentinel.production_megatron_launch_plan import compile_production_megatron_launch_plan
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_megatron_launch_plan import (
+    compile_production_megatron_launch_plan,
+)
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 from koschei_sentinel.training import atomic_write
 
 

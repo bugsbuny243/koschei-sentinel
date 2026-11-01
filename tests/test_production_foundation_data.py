@@ -5,7 +5,6 @@ import pytest
 import koschei_sentinel.production_foundation_data as foundation
 from koschei_sentinel.production_foundation_data import (
     FoundationDataConfig,
-    FoundationSamplerState,
     iter_packed_foundation_sequences,
     take_distributed_foundation_sequences,
 )

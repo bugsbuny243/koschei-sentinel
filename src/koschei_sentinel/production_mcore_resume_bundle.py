@@ -7,7 +7,10 @@ from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.production_foundation_catalog import FoundationCatalogCursor
-from koschei_sentinel.production_mcore_recovery import RecoveryLedger, RecoveryLedgerState
+from koschei_sentinel.production_mcore_recovery import (
+    RecoveryLedger,
+    RecoveryLedgerState,
+)
 from koschei_sentinel.production_mcore_training_checkpoint import MCoreTrainingState
 from koschei_sentinel.production_mcore_training_trends import (
     TrainingTrendState,

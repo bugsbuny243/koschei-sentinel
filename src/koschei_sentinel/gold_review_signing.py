@@ -21,7 +21,9 @@ from koschei_sentinel.defense_reflex_gold_release import (
     write_gold_defense_release,
 )
 from koschei_sentinel.defense_reflex_gold_review import GoldReviewedPacket
-from koschei_sentinel.gold_model_visible_context import verify_gold_model_visible_context
+from koschei_sentinel.gold_model_visible_context import (
+    verify_gold_model_visible_context,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
 
@@ -81,8 +83,7 @@ def reviewer_public_key_fingerprint(public_key: Ed25519PublicKey) -> str:
 
 
 def load_reviewer_private_key(path: str | Path) -> Ed25519PrivateKey:
-    key = serialization.load_pem_private_key(Path(path).read_bytes(), password=None)
-    if not isinstance(key, Ed25519PrivateKey):
+    key = serialization.load_pem_private_key(Path(path).read_bytes(), ***    if not isinstance(key, Ed25519PrivateKey):
         raise ValueError("Gold reviewer private key must be unencrypted Ed25519 PEM")
     return key
 

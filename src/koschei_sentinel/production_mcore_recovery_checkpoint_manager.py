@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointConfig, MCoreAsyncCheckpointQueue
+from koschei_sentinel.production_mcore_async_checkpoint import (
+    AsyncCheckpointConfig,
+    MCoreAsyncCheckpointQueue,
+)
 from koschei_sentinel.production_mcore_checkpoint_retention import (
     RecoveryCheckpointEntry,
     RecoveryCheckpointIndex,

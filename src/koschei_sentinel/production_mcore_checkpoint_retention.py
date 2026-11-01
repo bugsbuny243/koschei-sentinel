@@ -26,7 +26,7 @@ class RecoveryCheckpointIndex(StrictModel):
     entries: list[RecoveryCheckpointEntry] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def coherent(self) -> "RecoveryCheckpointIndex":
+    def coherent(self) -> RecoveryCheckpointIndex:
         generations = [item.commit_generation for item in self.entries]
         if len(generations) != len(set(generations)):
             raise ValueError("recovery checkpoint index contains duplicate commit generations")

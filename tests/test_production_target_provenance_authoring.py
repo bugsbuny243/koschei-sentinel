@@ -8,7 +8,9 @@ from koschei_sentinel.production_model_source import (
     _canonical_digest,
 )
 from koschei_sentinel.production_target_binding import ProductionTargetBinding
-from koschei_sentinel.production_target_provenance import verify_production_target_provenance
+from koschei_sentinel.production_target_provenance import (
+    verify_production_target_provenance,
+)
 from koschei_sentinel.production_target_provenance_authoring import (
     build_signed_production_target_provenance,
 )

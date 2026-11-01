@@ -17,11 +17,11 @@ from koschei_sentinel.production_target_provenance import (
     load_production_target_provenance,
     verify_production_target_provenance,
 )
+from koschei_sentinel.production_target_topology import ProductionTopologyVerification
 from koschei_sentinel.production_target_training_gate import (
     ProductionTargetTrainingBlocked,
     verify_production_training_gate,
 )
-from koschei_sentinel.production_target_topology import ProductionTopologyVerification
 from koschei_sentinel.promotion import load_owner_public_key
 
 

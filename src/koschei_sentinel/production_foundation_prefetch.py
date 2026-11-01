@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from koschei_sentinel.production_foundation_data import PackedFoundationSequence
 
@@ -74,7 +75,7 @@ class FoundationDoubleBuffer:
             staged = _pin_sequence(sequence)
             self._pending.append(_async_to_device(staged, device=self._device, stream=self._stream))
 
-    def __iter__(self) -> "FoundationDoubleBuffer":
+    def __iter__(self) -> FoundationDoubleBuffer:
         return self
 
     def __next__(self) -> PreparedFoundationBatch:

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -51,7 +52,7 @@ class PackedFoundationSequence(StrictModel):
     document_ids: list[str] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def coherent(self) -> "PackedFoundationSequence":
+    def coherent(self) -> PackedFoundationSequence:
         n = len(self.input_ids)
         if len(self.labels) != n or len(self.loss_mask) != n or len(self.position_ids) != n:
             raise ValueError("packed sequence fields must have equal length")

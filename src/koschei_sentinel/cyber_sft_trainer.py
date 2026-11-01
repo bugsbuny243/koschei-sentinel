@@ -84,7 +84,12 @@ def _load_dependencies() -> dict[str, Any]:
     try:
         import torch
         from datasets import Dataset
-        from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
+        from peft import (
+            LoraConfig,
+            PeftModel,
+            get_peft_model,
+            prepare_model_for_kbit_training,
+        )
         from transformers import (
             AutoModelForMultimodalLM,
             AutoProcessor,

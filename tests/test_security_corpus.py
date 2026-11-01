@@ -1,7 +1,11 @@
 import pytest
 
 from koschei_sentinel.cybersecurity_core import SecurityDomain
-from koschei_sentinel.security_corpus import SecurityCorpus, SecurityCorpusCase, validate_production_corpus
+from koschei_sentinel.security_corpus import (
+    SecurityCorpus,
+    SecurityCorpusCase,
+    validate_production_corpus,
+)
 
 
 def c(case_id, domain, *, clean=False, adversarial=False, findings=frozenset(), containment=False):

@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Literal
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 from pydantic import Field
 
 from koschei_sentinel.candidate_finalization import (
@@ -15,7 +18,9 @@ from koschei_sentinel.candidate_finalization import (
     CandidateFinalizationBlocked,
     verify_candidate_finalization,
 )
-from koschei_sentinel.gold_holdout_evaluation_evidence import GoldHoldoutEvaluationEvidence
+from koschei_sentinel.gold_holdout_evaluation_evidence import (
+    GoldHoldoutEvaluationEvidence,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.promotion import public_key_fingerprint
 

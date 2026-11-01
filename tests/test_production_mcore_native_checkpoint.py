@@ -2,10 +2,11 @@ from types import SimpleNamespace
 
 import pytest
 
-
 torch = pytest.importorskip("torch")
 
-from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
+from koschei_sentinel.production_mcore_native_checkpoint import (
+    initialize_mcore_native_parameters,
+)
 
 
 class TinyNativeModel(torch.nn.Module):

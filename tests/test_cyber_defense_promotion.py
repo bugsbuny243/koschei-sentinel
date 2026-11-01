@@ -7,7 +7,10 @@ from koschei_sentinel.cyber_defense_promotion import (
     build_cyber_defense_promotion_evidence,
 )
 from koschei_sentinel.cyber_range_suite import CyberRangeSuiteReport
-from koschei_sentinel.cyber_training_bundle import CyberTrainingBundle, CyberTrainingStage
+from koschei_sentinel.cyber_training_bundle import (
+    CyberTrainingBundle,
+    CyberTrainingStage,
+)
 from koschei_sentinel.defense_load_range import (
     DefenseLoadGatePolicy,
     DefenseLoadRangeReport,

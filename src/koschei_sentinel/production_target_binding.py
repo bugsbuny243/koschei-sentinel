@@ -31,7 +31,7 @@ class ProductionTargetBinding(StrictModel):
     blockers: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def fail_closed_until_verified(self) -> "ProductionTargetBinding":
+    def fail_closed_until_verified(self) -> ProductionTargetBinding:
         if self.production_training_allowed and self.verification_status != "verified":
             raise ValueError("production training requires a verified target binding")
         if self.verification_status == "verified" and self.blockers:

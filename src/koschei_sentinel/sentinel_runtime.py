@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Sequence
 
 from .audit_evidence import AuditEvidence, build_authorization_audit
 from .authority_policy import AuthorityPolicy, DelegationChain, PolicyDecision
-from .inference_contract import InferenceRequest, InferenceResponse, ReasoningEngine, ResponseValidator
+from .inference_contract import (
+    InferenceRequest,
+    InferenceResponse,
+    ReasoningEngine,
+    ResponseValidator,
+)
 
 
 @dataclass(frozen=True)

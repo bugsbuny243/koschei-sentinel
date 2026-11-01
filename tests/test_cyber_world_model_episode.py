@@ -1,5 +1,9 @@
 from koschei_sentinel.attack_world_lines import WorldLineTransitionType
-from koschei_sentinel.cyber_range import CyberRangeScenario, ScenarioTruth, run_cyber_range_scenario
+from koschei_sentinel.cyber_range import (
+    CyberRangeScenario,
+    ScenarioTruth,
+    run_cyber_range_scenario,
+)
 from koschei_sentinel.cyber_state_graph import (
     CyberEntity,
     CyberEntityType,

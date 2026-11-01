@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
 from koschei_sentinel.production_transformer_budget import estimate_transformer_budget
 
-
 CONFIG = Path("configs/training/production-megatron-model.397b-35b.candidate.json")
 
 

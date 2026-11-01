@@ -13,10 +13,16 @@ from koschei_sentinel.production_foundation_pretokenized import (
     take_distributed_pretokenized_sequences,
 )
 from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
-from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
+from koschei_sentinel.production_mcore_distributed_runtime import (
+    MCoreDistributedRuntime,
+)
 from koschei_sentinel.production_mcore_foundation_training import _run_real_batches
-from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
-from koschei_sentinel.production_mcore_optimizer_smoke import build_mcore_distributed_optimizer
+from koschei_sentinel.production_mcore_native_checkpoint import (
+    initialize_mcore_native_parameters,
+)
+from koschei_sentinel.production_mcore_optimizer_smoke import (
+    build_mcore_distributed_optimizer,
+)
 from koschei_sentinel.production_mcore_training_checkpoint import (
     MCoreTrainingState,
     load_mcore_training_checkpoint,

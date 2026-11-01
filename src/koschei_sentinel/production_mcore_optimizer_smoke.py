@@ -7,9 +7,13 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.production_mcore_checkpoint_roundtrip import verify_mcore_checkpoint_roundtrip
+from koschei_sentinel.production_mcore_checkpoint_roundtrip import (
+    verify_mcore_checkpoint_roundtrip,
+)
 from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
-from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
+from koschei_sentinel.production_mcore_distributed_runtime import (
+    MCoreDistributedRuntime,
+)
 from koschei_sentinel.production_mcore_smoke import run_mcore_forward_backward_smoke
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
 
@@ -38,7 +42,7 @@ class MCoreOptimizerSmokeResult(StrictModel):
     execution_authorized: Literal[False] = False
 
     @model_validator(mode="after")
-    def roundtrip_fields_are_coherent(self) -> "MCoreOptimizerSmokeResult":
+    def roundtrip_fields_are_coherent(self) -> MCoreOptimizerSmokeResult:
         if self.before_digest == self.after_digest:
             raise ValueError("optimizer smoke requires a changed parameter digest")
         if self.checkpoint_roundtrip_verified:

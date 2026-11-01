@@ -4,25 +4,63 @@ import time
 from functools import partial
 from pathlib import Path
 from typing import Literal
+
 from pydantic import Field
+
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.production_foundation_catalog import FoundationCatalogCursor, load_foundation_catalog
+from koschei_sentinel.production_foundation_catalog import (
+    FoundationCatalogCursor,
+    load_foundation_catalog,
+)
 from koschei_sentinel.production_foundation_prefetch import FoundationDoubleBuffer
-from koschei_sentinel.production_foundation_worker_prefetch import FoundationWorkerPrefetch
+from koschei_sentinel.production_foundation_worker_prefetch import (
+    FoundationWorkerPrefetch,
+)
 from koschei_sentinel.production_mcore_activation_probe import MCoreActivationProbe
 from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointConfig
 from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
 from koschei_sentinel.production_mcore_distributed_commit import save_and_commit_state
-from koschei_sentinel.production_mcore_moe_metrics_probe import clear_native_moe_metrics, read_native_moe_losses
-from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
-from koschei_sentinel.production_mcore_optimizer_smoke import build_mcore_distributed_optimizer
-from koschei_sentinel.production_mcore_recovery import RecoveryLedger, RecoveryPolicy, build_recovery_decision, distributed_recovery_consensus, fingerprint_batch
-from koschei_sentinel.production_mcore_recovery_checkpoint_manager import RecoveryCheckpointManager
-from koschei_sentinel.production_mcore_resume_bundle import attach_catalog_resume_state, restore_catalog_resume_bundle
+from koschei_sentinel.production_mcore_moe_metrics_probe import (
+    clear_native_moe_metrics,
+    read_native_moe_losses,
+)
+from koschei_sentinel.production_mcore_native_checkpoint import (
+    initialize_mcore_native_parameters,
+)
+from koschei_sentinel.production_mcore_optimizer_smoke import (
+    build_mcore_distributed_optimizer,
+)
+from koschei_sentinel.production_mcore_recovery import (
+    RecoveryLedger,
+    RecoveryPolicy,
+    build_recovery_decision,
+    distributed_recovery_consensus,
+    fingerprint_batch,
+)
+from koschei_sentinel.production_mcore_recovery_checkpoint_manager import (
+    RecoveryCheckpointManager,
+)
+from koschei_sentinel.production_mcore_resume_bundle import (
+    attach_catalog_resume_state,
+    restore_catalog_resume_bundle,
+)
 from koschei_sentinel.production_mcore_router_probe import MCoreRouterProbe
-from koschei_sentinel.production_mcore_stability_telemetry import MCoreStabilityStepTelemetry, StabilityThresholds, collect_mcore_stability_telemetry
-from koschei_sentinel.production_mcore_training_checkpoint import MCoreTrainingState, load_mcore_training_checkpoint, save_mcore_training_checkpoint
-from koschei_sentinel.production_mcore_training_trends import TrainingTrendSnapshot, TrainingTrendThresholds, TrainingTrendTracker
+from koschei_sentinel.production_mcore_stability_telemetry import (
+    MCoreStabilityStepTelemetry,
+    StabilityThresholds,
+    collect_mcore_stability_telemetry,
+)
+from koschei_sentinel.production_mcore_training_checkpoint import (
+    MCoreTrainingState,
+    load_mcore_training_checkpoint,
+    save_mcore_training_checkpoint,
+)
+from koschei_sentinel.production_mcore_training_trends import (
+    TrainingTrendSnapshot,
+    TrainingTrendThresholds,
+    TrainingTrendTracker,
+)
+
 
 class CatalogTrainingConfig(StrictModel):
     schema_version: Literal["sentinel.catalog-training-config.v1"]="sentinel.catalog-training-config.v1"; max_steps:int=Field(gt=0); microbatches_per_step:int=Field(gt=0); learning_rate:float=Field(gt=0); weight_decay:float=Field(ge=0); clip_grad:float=Field(gt=0); global_seed:int=Field(ge=0,lt=2**63); checkpoint_every_steps:int=Field(gt=0); prefetch_workers:int=Field(gt=0); prefetch_depth:int=Field(ge=2)

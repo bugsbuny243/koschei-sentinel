@@ -265,14 +265,13 @@ def read_neon_records(
             connect_timeout=15,
             application_name="koschei-sentinel-neon-readonly",
             row_factory=dict_row,
-        ) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("SET TRANSACTION READ ONLY")
-                cursor.execute("SET LOCAL statement_timeout = '120s'")
-                cursor.execute(_SCHEMA_SQL)
-                _validate_schema(cursor.fetchall())
-                cursor.execute(_SOURCE_SQL, (limit,))
-                rows = cursor.fetchall()
+        ) as connection, connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute("SET LOCAL statement_timeout = '120s'")
+            cursor.execute(_SCHEMA_SQL)
+            _validate_schema(cursor.fetchall())
+            cursor.execute(_SOURCE_SQL, (limit,))
+            rows = cursor.fetchall()
     except ValueError:
         raise
     except Exception:

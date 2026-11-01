@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from koschei_sentinel.agentic_security_eval_generator import GeneratedBundle, GeneratedCase
+from koschei_sentinel.agentic_security_eval_generator import (
+    GeneratedBundle,
+    GeneratedCase,
+)
 from koschei_sentinel.agentic_security_review import (
     ReviewBundle,
     ReviewRecord,

@@ -7,7 +7,10 @@ from typing import Any, Literal
 from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.production_mcore_training_checkpoint import MCoreTrainingState, _combined_sharded_state
+from koschei_sentinel.production_mcore_training_checkpoint import (
+    MCoreTrainingState,
+    _combined_sharded_state,
+)
 
 
 class AsyncCheckpointConfig(StrictModel):
@@ -33,7 +36,9 @@ class MCoreAsyncCheckpointQueue:
     def _ensure_queue(self):
         if self._queue is None:
             try:
-                from megatron.core.dist_checkpointing.strategies.async_utils import AsyncCallsQueue
+                from megatron.core.dist_checkpointing.strategies.async_utils import (
+                    AsyncCallsQueue,
+                )
             except ImportError as exc:  # pragma: no cover
                 raise RuntimeError("Megatron-Core async checkpoint queue is unavailable") from exc
             self._queue = AsyncCallsQueue(persistent=self.config.persistent_queue)

@@ -14,7 +14,6 @@ from koschei_sentinel.production_mcore_training_trends import (
     TrainingTrendTracker,
 )
 
-
 CATALOG = "a" * 64
 OTHER = "b" * 64
 

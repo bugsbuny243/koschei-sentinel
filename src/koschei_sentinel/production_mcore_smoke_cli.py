@@ -3,9 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 
-from koschei_sentinel.production_mcore_distributed_runtime import initialize_mcore_distributed_runtime
+from koschei_sentinel.production_mcore_distributed_runtime import (
+    initialize_mcore_distributed_runtime,
+)
 from koschei_sentinel.production_mcore_smoke import run_mcore_forward_backward_smoke
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:

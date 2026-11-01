@@ -7,7 +7,9 @@ from koschei_sentinel.cyber_perception import (
     compile_perception_batch,
 )
 from koschei_sentinel.cyber_state_graph import CyberEntityType, EvidenceStatus
-from koschei_sentinel.perception_adapter_profiles import generic_endpoint_process_adapter
+from koschei_sentinel.perception_adapter_profiles import (
+    generic_endpoint_process_adapter,
+)
 from koschei_sentinel.perception_adapter_sdk import (
     PerceptionAdapterDescriptor,
     SanitizedTelemetryEvent,

@@ -4,14 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from koschei_sentinel.production_megatron_launch_plan import compile_production_megatron_launch_plan
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_megatron_launch_plan import (
+    compile_production_megatron_launch_plan,
+)
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 from koschei_sentinel.production_megatron_runtime_preflight import (
     MegatronRuntimeInventory,
     MegatronRuntimePreflight,
     verify_runtime_preflight,
 )
-
 
 CANDIDATE = Path("configs/training/production-megatron-model.397b-35b.candidate.json")
 

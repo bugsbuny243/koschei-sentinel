@@ -15,7 +15,9 @@ from koschei_sentinel.cyber_sft_training import (
     load_cyber_sft_config,
 )
 from koschei_sentinel.cyber_sft_training_source import CyberSFTTrainingSourceBinding
-from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
+from koschei_sentinel.defense_reflex_gold_release_audit import (
+    audit_gold_defense_release,
+)
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.training import canonical_json
 

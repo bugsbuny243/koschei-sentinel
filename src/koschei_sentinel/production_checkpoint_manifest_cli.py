@@ -4,8 +4,12 @@ import argparse
 import json
 from pathlib import Path
 
-from koschei_sentinel.production_checkpoint_manifest import build_rank_checkpoint_manifest
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_checkpoint_manifest import (
+    build_rank_checkpoint_manifest,
+)
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 from koschei_sentinel.training import atomic_write
 
 

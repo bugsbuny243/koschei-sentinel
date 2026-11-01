@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
+from koschei_sentinel.production_mcore_distributed_runtime import (
+    MCoreDistributedRuntime,
+)
 
 
 def wrap_runtime_with_megatron_ddp(runtime: MCoreDistributedRuntime) -> MCoreDistributedRuntime:

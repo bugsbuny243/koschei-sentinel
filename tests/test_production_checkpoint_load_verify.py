@@ -4,10 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from koschei_sentinel.production_checkpoint_load_verify import verify_rank_checkpoint_load
-from koschei_sentinel.production_checkpoint_manifest import build_rank_checkpoint_manifest
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
-
+from koschei_sentinel.production_checkpoint_load_verify import (
+    verify_rank_checkpoint_load,
+)
+from koschei_sentinel.production_checkpoint_manifest import (
+    build_rank_checkpoint_manifest,
+)
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 
 CANDIDATE = Path("configs/training/production-megatron-model.397b-35b.candidate.json")
 

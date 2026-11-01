@@ -6,8 +6,12 @@ from typing import Literal
 from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
-from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
+from koschei_sentinel.production_mcore_distributed_runtime import (
+    MCoreDistributedRuntime,
+)
+from koschei_sentinel.production_mcore_native_checkpoint import (
+    initialize_mcore_native_parameters,
+)
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
 
 

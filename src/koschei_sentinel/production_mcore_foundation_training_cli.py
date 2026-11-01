@@ -4,12 +4,16 @@ import argparse
 import json
 
 from koschei_sentinel.production_foundation_data import FoundationDataConfig
-from koschei_sentinel.production_mcore_distributed_runtime import initialize_mcore_distributed_runtime
+from koschei_sentinel.production_mcore_distributed_runtime import (
+    initialize_mcore_distributed_runtime,
+)
 from koschei_sentinel.production_mcore_foundation_training import (
     FoundationTrainingConfig,
     run_foundation_training,
 )
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:

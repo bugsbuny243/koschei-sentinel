@@ -11,7 +11,9 @@ from koschei_sentinel.cyber_sft_candidate_snapshot import (
     snapshot_verified_cyber_sft_export,
 )
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
-from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
+from koschei_sentinel.defense_reflex_gold_release_audit import (
+    audit_gold_defense_release,
+)
 from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutEvaluationPolicy,
     GoldHoldoutInferenceManifest,

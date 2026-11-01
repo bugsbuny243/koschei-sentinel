@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -14,8 +14,7 @@ from koschei_sentinel.inference_contract import (
 from koschei_sentinel.inference_validation import FailClosedResponseValidator
 from koschei_sentinel.sentinel_runtime import SentinelRuntime
 
-
-NOW = datetime(2026, 9, 27, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 27, tzinfo=UTC)
 
 
 class FixtureEngine:

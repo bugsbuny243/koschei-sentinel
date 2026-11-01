@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 
 from koschei_sentinel.production_global_checkpoint import build_global_checkpoint_index
-from koschei_sentinel.production_megatron_model_spec import load_production_megatron_model_spec
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
+)
 from koschei_sentinel.training import atomic_write
 
 

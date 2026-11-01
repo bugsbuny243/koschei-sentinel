@@ -6,7 +6,10 @@ from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
-from koschei_sentinel.production_tensor_layout import TensorLayoutEntry, build_tensor_layout
+from koschei_sentinel.production_tensor_layout import (
+    TensorLayoutEntry,
+    build_tensor_layout,
+)
 
 
 class MetaFactoryResult(StrictModel):

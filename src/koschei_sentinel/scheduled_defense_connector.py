@@ -10,7 +10,9 @@ from koschei_sentinel.assured_defense_connector import (
     AssuredDefenseConnectorEnvelope,
     build_assured_connector_envelope,
 )
-from koschei_sentinel.assured_multi_incident_defense import AssuredMultiIncidentDefensePlan
+from koschei_sentinel.assured_multi_incident_defense import (
+    AssuredMultiIncidentDefensePlan,
+)
 from koschei_sentinel.defense_connector_contract import ProtectedScope
 from koschei_sentinel.defense_resource_scheduler import (
     DefenseResourceSchedule,

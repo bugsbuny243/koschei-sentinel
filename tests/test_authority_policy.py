@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -10,8 +10,7 @@ from koschei_sentinel.authority_policy import (
 )
 from koschei_sentinel.inference_contract import AuthorityEnvelope
 
-
-NOW = datetime(2026, 9, 26, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 26, tzinfo=UTC)
 
 
 def grant(gid, issuer, subject, scopes, **kwargs):

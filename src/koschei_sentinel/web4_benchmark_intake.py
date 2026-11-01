@@ -12,7 +12,9 @@ from pydantic import Field, model_validator
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.strict_json import require_json_value, strict_json_loads
 from koschei_sentinel.training import atomic_write, canonical_json
-from koschei_sentinel.web4_research_snapshot import verify_web4_research_snapshot_receipt
+from koschei_sentinel.web4_research_snapshot import (
+    verify_web4_research_snapshot_receipt,
+)
 
 _DIGEST = r"^[a-f0-9]{64}$"
 _SourceRef = Annotated[str, Field(min_length=3, max_length=256)]
