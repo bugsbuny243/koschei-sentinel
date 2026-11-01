@@ -283,6 +283,9 @@ def test_plan_endpoint_preserves_existing_routes_and_initializes_execution() -> 
         },
     )
     assert response.status_code == 200, response.text
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Sentinel-Execution-Mode"] == "simulation-only"
+    assert response.headers["X-Sentinel-Evidence-Trust"] == "caller-supplied"
     body = response.json()
     assert body["active_defense_plan"]["graph_id"] == "graph:v5"
     assert body["interception_plan"]["graph_id"] == "graph:v5"
@@ -297,6 +300,8 @@ def test_assured_plan_and_connector_api_are_fail_closed() -> None:
     payload, graph = _assured_api_payload()
     response = client.post("/v1/active-defense/assured-plan", json=payload)
     assert response.status_code == 200, response.text
+    assert response.headers["X-Sentinel-Execution-Mode"] == "simulation-only"
+    assert response.headers["X-Sentinel-Evidence-Trust"] == "caller-supplied"
     assured = AssuredActiveDefensePlan.model_validate(response.json())
     assert assured.assurance.active_independent_domain_count == 3
     assert assured.assurance.effective_mode is DefenseMode.SIEGE
@@ -320,6 +325,7 @@ def test_assured_plan_and_connector_api_are_fail_closed() -> None:
     }
     dry_run = client.post("/v1/active-defense/connector-envelope", json=request)
     assert dry_run.status_code == 200, dry_run.text
+    assert dry_run.headers["X-Sentinel-Production-Authorization"] == "not-granted"
     assert dry_run.json()["command"]["dry_run"] is True
     live_command = client.post(
         "/v1/active-defense/connector-envelope",
@@ -335,3 +341,21 @@ def test_assured_plan_and_connector_api_are_fail_closed() -> None:
     assert client.post(
         "/v1/active-defense/assured-plan", json=tampered
     ).status_code == 422
+
+
+def test_active_defense_api_limits_untrusted_graph_size(monkeypatch) -> None:
+    monkeypatch.setattr("koschei_sentinel.service._MAX_API_GRAPH_ENTITIES", 3)
+    response = client.post(
+        "/v1/active-defense/plan",
+        json={"graph": _graph().model_dump(mode="json")},
+    )
+    assert response.status_code == 422
+    assert "graph entity limit exceeded" in response.text
+
+
+def test_assured_api_limits_untrusted_registry_size(monkeypatch) -> None:
+    payload, _ = _assured_api_payload()
+    monkeypatch.setattr("koschei_sentinel.service._MAX_API_SOURCE_ENROLLMENTS", 2)
+    response = client.post("/v1/active-defense/assured-plan", json=payload)
+    assert response.status_code == 422
+    assert "source enrollment limit exceeded" in response.text
