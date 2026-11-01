@@ -1,7 +1,7 @@
-"""ASGI ingress body-size gate for unauthenticated simulation routes.
+"""Bound active-defense request bodies before FastAPI starts JSON parsing.
 
-Check declared and actual streamed byte counts before Pydantic JSON parsing.
-This is not a substitute for trusted reverse-proxy limits or rate limiting.
+Both declared and streamed inputs are checked; no more than the configured
+byte ceiling is buffered. This does not replace reverse-proxy request limits.
 """
 
 from __future__ import annotations
@@ -10,10 +10,6 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 _MAX_ACTIVE_DEFENSE_BODY_BYTES = 8 * 1024 * 1024
-
-
-class _BodyLimitExceeded(Exception):
-    """Internal control flow when the streamed request crosses its byte budget."""
 
 
 def _error_response(status: int, detail: str) -> JSONResponse:
@@ -28,7 +24,7 @@ def _error_response(status: int, detail: str) -> JSONResponse:
 
 
 class ActiveDefenseRequestBodyLimit:
-    """Reject oversize active-defense requests before the JSON parser runs."""
+    """Buffer at most one bounded request before passing it to the JSON parser."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -64,20 +60,37 @@ class ActiveDefenseRequestBodyLimit:
                 )
                 return
 
+        # Read before handing control to FastAPI: its request parser converts
+        # exceptions raised during receive() into a generic HTTP 400.
+        buffered: list[dict] = []
         total_bytes = 0
-
-        async def bounded_receive() -> dict:
-            nonlocal total_bytes
+        while True:
             message = await receive()
-            if message["type"] == "http.request":
-                total_bytes += len(message.get("body", b""))
-                if total_bytes > limit:
-                    raise _BodyLimitExceeded
-            return message
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                await _error_response(400, "invalid ASGI request body event")(
+                    scope, receive, send
+                )
+                return
+            total_bytes += len(message.get("body", b""))
+            if total_bytes > limit:
+                await _error_response(413, "active-defense request body limit exceeded")(
+                    scope, receive, send
+                )
+                return
+            buffered.append(message)
+            if not message.get("more_body", False):
+                break
 
-        try:
-            await self.app(scope, bounded_receive, send)
-        except _BodyLimitExceeded:
-            await _error_response(413, "active-defense request body limit exceeded")(
-                scope, receive, send
-            )
+        index = 0
+
+        async def replay_receive() -> dict:
+            nonlocal index
+            if index < len(buffered):
+                message = buffered[index]
+                index += 1
+                return message
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
