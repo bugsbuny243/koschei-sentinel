@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
-from pydantic import Field
+from fastapi import FastAPI, HTTPException, Response
+from pydantic import Field, model_validator
 
 from . import __version__
 from .active_defense_planner import ActiveDefensePlan, build_active_defense_plan
@@ -30,11 +30,36 @@ app = FastAPI(
     description="Evidence-grounded commentary boundary for Koschei security cases.",
 )
 
+# Limits apply to the public simulation endpoints, not the internal planning engine.
+_MAX_API_GRAPH_ENTITIES = 4096
+_MAX_API_GRAPH_RELATIONS = 16384
+_MAX_API_SOURCE_ENROLLMENTS = 4096
+_MAX_API_INTERCEPTION_STEPS = 128
+
+
+def _check_graph_budget(graph: CyberStateGraph) -> None:
+    if len(graph.entities) > _MAX_API_GRAPH_ENTITIES:
+        raise ValueError("active-defense API graph entity limit exceeded")
+    if len(graph.relations) > _MAX_API_GRAPH_RELATIONS:
+        raise ValueError("active-defense API graph relation limit exceeded")
+
+
+def _mark_simulation_response(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Sentinel-Execution-Mode"] = "simulation-only"
+    response.headers["X-Sentinel-Evidence-Trust"] = "caller-supplied"
+
+
 
 class ActiveDefensePlanRequest(StrictModel):
     graph: CyberStateGraph
-    critical_entity_ids: list[str] = Field(default_factory=list)
-    focus_entity_ids: list[str] | None = None
+    critical_entity_ids: list[str] = Field(default_factory=list, max_length=512)
+    focus_entity_ids: list[str] | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def enforce_request_budget(self) -> ActiveDefensePlanRequest:
+        _check_graph_budget(self.graph)
+        return self
 
 
 class ActiveDefensePlanResponse(StrictModel):
@@ -48,9 +73,16 @@ class AssuredActiveDefensePlanRequest(StrictModel):
     graph_receipt: PerceptionGraphReceipt
     perception_assurance: PerceptionAssuranceSummary
     registry: PerceptionSourceRegistry
-    critical_entity_ids: list[str] = Field(default_factory=list)
-    focus_entity_ids: list[str] | None = None
+    critical_entity_ids: list[str] = Field(default_factory=list, max_length=512)
+    focus_entity_ids: list[str] | None = Field(default=None, max_length=512)
     policy: ActiveDefenseAssurancePolicy | None = None
+
+    @model_validator(mode="after")
+    def enforce_request_budget(self) -> AssuredActiveDefensePlanRequest:
+        _check_graph_budget(self.graph)
+        if len(self.registry.enrollments) > _MAX_API_SOURCE_ENROLLMENTS:
+            raise ValueError("active-defense API source enrollment limit exceeded")
+        return self
 
 
 class AssuredConnectorEnvelopeRequest(StrictModel):
@@ -58,8 +90,14 @@ class AssuredConnectorEnvelopeRequest(StrictModel):
     assured_plan: AssuredActiveDefensePlan
     interception_plan: InterceptionPlan
     step_id: str
-    precondition_evidence_ids: list[str]
+    precondition_evidence_ids: list[str] = Field(min_length=1, max_length=256)
     dry_run: bool = True
+
+    @model_validator(mode="after")
+    def enforce_request_budget(self) -> AssuredConnectorEnvelopeRequest:
+        if len(self.interception_plan.steps) > _MAX_API_INTERCEPTION_STEPS:
+            raise ValueError("active-defense API interception step limit exceeded")
+        return self
 
 
 @app.get("/health")
@@ -79,8 +117,15 @@ def create_opinion(case: SecurityCase) -> CheckedOpinion:
     return CheckedOpinion(opinion=opinion, policy_violations=violations, accepted=not violations)
 
 
-@app.post("/v1/active-defense/plan", response_model=ActiveDefensePlanResponse)
-def create_active_defense_plan(request: ActiveDefensePlanRequest) -> ActiveDefensePlanResponse:
+@app.post(
+    "/v1/active-defense/plan",
+    response_model=ActiveDefensePlanResponse,
+    description="Pure simulation using caller-supplied cyber graph; no live defense execution.",
+)
+def create_active_defense_plan(
+    request: ActiveDefensePlanRequest, response: Response
+) -> ActiveDefensePlanResponse:
+    _mark_simulation_response(response)
     try:
         active = build_active_defense_plan(
             request.graph,
@@ -97,10 +142,18 @@ def create_active_defense_plan(request: ActiveDefensePlanRequest) -> ActiveDefen
     )
 
 
-@app.post("/v1/active-defense/assured-plan", response_model=AssuredActiveDefensePlan)
+@app.post(
+    "/v1/active-defense/assured-plan",
+    response_model=AssuredActiveDefensePlan,
+    description=(
+        "Validate caller-supplied receipt consistency and evidence domains. "
+        "Does not attest to source ownership or authenticate telemetry."
+    ),
+)
 def create_assured_active_defense_plan(
-    request: AssuredActiveDefensePlanRequest,
+    request: AssuredActiveDefensePlanRequest, response: Response
 ) -> AssuredActiveDefensePlan:
+    _mark_simulation_response(response)
     try:
         return build_assured_active_defense_plan(
             request.graph,
@@ -115,12 +168,22 @@ def create_assured_active_defense_plan(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@app.post("/v1/active-defense/connector-envelope", response_model=AssuredDefenseConnectorEnvelope)
+@app.post(
+    "/v1/active-defense/connector-envelope",
+    response_model=AssuredDefenseConnectorEnvelope,
+    description=(
+        "Generate a dry-run command envelope only. The legacy production_authorized "
+        "field is not a server-issued authorization or proof of source identity. "
+        "Live commands are always rejected."
+    ),
+)
 def create_assured_connector_envelope(
-    request: AssuredConnectorEnvelopeRequest,
+    request: AssuredConnectorEnvelopeRequest, response: Response
 ) -> AssuredDefenseConnectorEnvelope:
     # This unauthenticated API only creates dry-run artifacts; production commands
     # require a separate, authenticated authority and approval boundary.
+    _mark_simulation_response(response)
+    response.headers["X-Sentinel-Production-Authorization"] = "not-granted"
     if not request.dry_run:
         raise HTTPException(
             status_code=403,
