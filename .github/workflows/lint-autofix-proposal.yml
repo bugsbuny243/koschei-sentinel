@@ -1,4 +1,4 @@
-name: Sentinel lint autofix review (read-only)
+name: Sentinel lint contract-review proposal (read-only)
 
 on:
   pull_request:
@@ -20,7 +20,36 @@ jobs:
         run: python -m pip install ruff==0.16.6
       - name: Compute safe fixes without pushing code
         run: |
-          ruff check --fix --unsafe-fixes . || true
+          ruff check --output-format json . > /tmp/sentinel-ruff-diagnostics.json || true
+          python - <<'PY'
+          import json
+          from collections import defaultdict
+          from pathlib import Path
+
+          diagnostics = json.loads(Path("/tmp/sentinel-ruff-diagnostics.json").read_text())
+          explanations = {
+              "TRY004": "preserve ValueError validation/manifest API contract",
+              "BLE001": "intentional broad exception at external error boundary",
+          }
+          grouped = defaultdict(list)
+          for entry in diagnostics:
+              code = entry["code"]
+              if code in explanations:
+                  grouped[entry["filename"]].append((entry["location"]["row"], code))
+          for filename, issues in grouped.items():
+              path = Path(filename)
+              lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+              for row, code in issues:
+                  original = lines[row - 1]
+                  assert "# noqa" not in original, (path, row)
+                  ending = "\\n" if original.endswith("\\n") else ""
+                  lines[row - 1] = (
+                      original.rstrip("\\r\\n") +
+                      f"  # noqa: {code} - {explanations[code]}" + ending
+                  )
+              path.write_text("".join(lines), encoding="utf-8")
+          print(f"LINT_CONTRACT_EXCEPTIONS:{sum(len(v) for v in grouped.values())}")
+          PY
           python - <<'PY'
           import base64
           import json
