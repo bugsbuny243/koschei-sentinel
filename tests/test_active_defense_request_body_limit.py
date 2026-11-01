@@ -90,7 +90,7 @@ def test_exact_length_replays_identical_bytes() -> None:
     )
     assert sent[0]["status"] == 204
     assert len(forwarded) == 1
-    assert forwarded[0]["body"] == b'{""}'[:4] if False else b'{""}'
+    assert forwarded[0]["body"] == b'{""}'
 
 
 def test_chunk_count_limits_zero_length_frame_flood(monkeypatch) -> None:
