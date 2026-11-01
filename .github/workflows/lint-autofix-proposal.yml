@@ -1,4 +1,4 @@
-name: Sentinel lint safe-fix proposal (read-only)
+name: Sentinel lint autofix review (read-only)
 
 on:
   pull_request:
@@ -20,8 +20,9 @@ jobs:
         run: python -m pip install ruff==0.16.6
       - name: Compute safe fixes without pushing code
         run: |
-          ruff check --fix . || true
+          ruff check --fix --unsafe-fixes . || true
           python - <<'PY'
+          import base64
           import json
           import pathlib
           import subprocess
@@ -33,11 +34,7 @@ jobs:
           print(f"LINT_AUTOFIX_COUNT:{len(changed)}")
           for path in changed:
               content = pathlib.Path(path).read_text(encoding="utf-8")
-              raw = json.dumps(
-                  {"path": path, "content": content},
-                  ensure_ascii=True,
-                  separators=(",", ":"),
-              )
+              raw = base64.b64encode(content.encode("utf-8")).decode("ascii")
               width = 3500
               chunks = [raw[i:i + width] for i in range(0, len(raw), width)]
               for index, chunk in enumerate(chunks):
