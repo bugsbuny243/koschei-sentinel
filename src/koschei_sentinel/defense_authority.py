@@ -80,6 +80,15 @@ _SIEGE_ACTIONS = _COMBAT_ACTIONS + [
     DefenseActionType.TRIGGER_AIRGAP_ISOLATION,
 ]
 
+def action_permitted_in_mode(mode: DefenseMode, action: DefenseActionType) -> bool:
+    """Enforce the canonical mode ceiling independently from caller-supplied plans."""
+    return action in {
+        DefenseMode.GUARD: _GUARD_ACTIONS,
+        DefenseMode.COMBAT: _COMBAT_ACTIONS,
+        DefenseMode.SIEGE: _SIEGE_ACTIONS,
+    }[mode]
+
+
 
 def decide_defense_mode(assessment: AttackAssessment) -> DefenseDecision:
     rationale: list[str] = []
