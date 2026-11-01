@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from types import ModuleType, SimpleNamespace
+from typing import ClassVar
 
 from koschei_sentinel.cyber_model_access_preflight import audit_model_access
 from koschei_sentinel.cyber_sft_training import CyberSFTConfig
@@ -59,7 +60,7 @@ def _install_fake_modules(monkeypatch, *, resolved=None, gated=False, private=Fa
             return _FakeConfig()
 
     class AutoModelForCausalLM:
-        _model_mapping = {_FakeConfig: mapped}
+        _model_mapping: ClassVar[dict[type, type]] = {_FakeConfig: mapped}
 
     transformers.AutoConfig = AutoConfig
     transformers.AutoModelForCausalLM = AutoModelForCausalLM
