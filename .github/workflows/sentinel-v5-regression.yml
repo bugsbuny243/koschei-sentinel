@@ -12,6 +12,7 @@ on:
       - "src/koschei_sentinel/perception_adapter_profiles.py"
       - "src/koschei_sentinel/perception_adapter_cli.py"
       - "src/koschei_sentinel/service.py"
+      - "src/koschei_sentinel/request_body_limit.py"
       - "tests/test_active_defense_five_layers_and_api.py"
       - "tests/test_defense_connector_contract.py"
       - "tests/test_assured_defense_connector.py"
@@ -53,6 +54,7 @@ jobs:
           src/koschei_sentinel/perception_adapter_profiles.py
           src/koschei_sentinel/perception_adapter_cli.py
           src/koschei_sentinel/service.py
+          src/koschei_sentinel/request_body_limit.py
           tests/test_active_defense_five_layers_and_api.py
           tests/test_defense_connector_contract.py
           tests/test_assured_defense_connector.py
