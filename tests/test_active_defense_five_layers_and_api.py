@@ -359,3 +359,38 @@ def test_assured_api_limits_untrusted_registry_size(monkeypatch) -> None:
     response = client.post("/v1/active-defense/assured-plan", json=payload)
     assert response.status_code == 422
     assert "source enrollment limit exceeded" in response.text
+
+
+def test_active_defense_ingress_rejects_declared_oversize_body(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_BODY_BYTES", 128
+    )
+    response = client.post(
+        "/v1/active-defense/plan",
+        json={"graph": _graph().model_dump(mode="json")},
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "active-defense request body limit exceeded"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Sentinel-Execution-Mode"] == "simulation-only"
+
+
+def test_active_defense_ingress_rejects_undeclared_streaming_body(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_BODY_BYTES", 128
+    )
+    response = client.post(
+        "/v1/active-defense/plan",
+        content=iter([b'{"graph":"', b"x" * 150, b'"}']),
+        headers={"Content-Type": "application/json", "Transfer-Encoding": "chunked"},
+    )
+    assert response.status_code == 413
+    assert "body limit exceeded" in response.text
+
+
+def test_body_guard_does_not_change_legacy_opinions_route(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_BODY_BYTES", 128
+    )
+    response = client.post("/v1/opinions", json={"extra": "a" * 512})
+    assert response.status_code == 422
