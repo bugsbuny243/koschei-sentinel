@@ -8,9 +8,9 @@ from koschei_sentinel.perception_adapter_profiles import (
     generic_cicd_adapter,
     generic_cloud_iam_adapter,
     generic_endpoint_process_adapter,
-    generic_signer_wallet_adapter,
     generic_network_flowspec_adapter,
     generic_protocol_circuit_adapter,
+    generic_signer_wallet_adapter,
 )
 from koschei_sentinel.perception_adapter_sdk import (
     DeclarativeAdapterSpec,
