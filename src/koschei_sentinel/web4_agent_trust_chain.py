@@ -199,9 +199,8 @@ def _validate_map(
             violations.append(f"Agent Trust Chain source bypasses license review: {source_ref}")
         source_type = str(source.get("source_type", ""))
         revision_status = str(source.get("revision_status", ""))
-        if "INTERNET_DRAFT" in source_type or "INTERNET_DRAFT" in revision_status:
-            if source.get("authority_tier") == "T0_STANDARD":
-                violations.append(f"Internet-Draft elevated to standard: {source_ref}")
+        if ("INTERNET_DRAFT" in source_type or "INTERNET_DRAFT" in revision_status) and (source.get("authority_tier") == "T0_STANDARD"):
+            violations.append(f"Internet-Draft elevated to standard: {source_ref}")
         if source_type == "W3C_WORKING_DRAFT" and source.get("authority_tier") == "T0_STANDARD":
             violations.append(f"W3C Working Draft elevated to standard: {source_ref}")
 
