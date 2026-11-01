@@ -36,8 +36,10 @@ def attest_production_readiness(
     report: ConformanceReport,
     manifest: ProductionEvidenceManifest,
     evidence: ProductionEvidence,
-    thresholds: ProductionThresholds = ProductionThresholds(),
+    thresholds: ProductionThresholds | None = None,
 ) -> ProductionAttestation:
+    if thresholds is None:
+        thresholds = ProductionThresholds()
     failures: list[str] = []
     if manifest.conformance_report_digest != report.digest():
         failures.append("conformance digest mismatch")
