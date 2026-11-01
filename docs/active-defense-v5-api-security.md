@@ -48,6 +48,7 @@ For these HTTP endpoints only:
 | Control | Limit |
 | --- | ---: |
 | HTTP request body (declared or streamed) | 8 MiB |
+| HTTP body frame count (including empty frames) | 4,096 |
 | Graph entities | 4,096 |
 | Graph relations | 16,384 |
 | Requested critical IDs | 512 |
@@ -57,8 +58,14 @@ For these HTTP endpoints only:
 | Preconditions supplied to the envelope endpoint | 256 |
 
 The 8 MiB HTTP body-size gate runs in ASGI before the JSON/Pydantic parser.
-It rejects oversized declared `Content-Length` or streamed request bytes with
-HTTP 413, and rejects malformed or duplicate `Content-Length` with HTTP 400.
+It rejects oversized declared `Content-Length`, streamed request bytes, or
+more than 4,096 ASGI body frames with HTTP 413; it returns HTTP 400 for
+invalid or duplicate `Content-Length`, contradictory `Content-Length` and
+`Transfer-Encoding`, and declared/actual length mismatches. The middleware
+buffers at most 8 MiB into a single byte array and replays exactly the
+validated bytes to the parser; a premature client disconnect does not run
+the planner. Incoming frame count, not time, is capped: production ingress
+still needs connection and read timeouts.
 All other table limits are Pydantic post-parse limits. The gate applies only
 to `/v1/active-defense/` HTTP paths and does not modify legacy endpoints.
 A production reverse proxy still needs its own body limits, authentication,
