@@ -264,15 +264,14 @@ def _export_signed_inputs(
         )
 
         signature_destination.parent.mkdir(parents=True, exist_ok=True)
-        handle = tempfile.NamedTemporaryFile(
+        with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
             prefix=f".{signature_destination.name}.staging-",
             dir=signature_destination.parent,
             delete=False,
-        )
-        signature_temp = Path(handle.name)
-        with handle:
+        ) as handle:
+            signature_temp = Path(handle.name)
             handle.write(
                 json.dumps(proof.model_dump(mode="json"), indent=2, sort_keys=True)
                 + "\n"
