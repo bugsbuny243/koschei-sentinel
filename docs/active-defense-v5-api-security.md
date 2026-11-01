@@ -77,6 +77,12 @@ limiting, timeout limits, monitoring, and network isolation.
 6. A service-side body-size gate and request rate limits before parsing
    untrusted graphs, with abuse and load tests.
 
+A connector command's action must be authorized **twice**: by the supplied
+`ProtectedScope` and by the canonical `GUARD`/`COMBAT`/`SIEGE` ceiling
+from `defense_authority.action_permitted_in_mode`. Caller-supplied
+`DefenseDecision.permitted_actions` cannot elevate that ceiling. The
+assured-envelope validator also checks the action/mode combination.
+
 The V5 action enum and adapter profiles model **capabilities and evidence**,
 not provider-specific execution implementations.
 
