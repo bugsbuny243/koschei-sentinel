@@ -48,16 +48,16 @@ def test_scope_rejects_action_not_explicitly_permitted():
 
 
 def test_same_defense_intent_has_stable_idempotency_key():
-    kwargs = dict(
-        scope=_scope(),
-        graph_id="incident:1",
-        interception_step_id="intercept:1",
-        defense_mode=DefenseMode.COMBAT,
-        action=DefenseActionType.ISOLATE_ENDPOINT,
-        target_entity_id="device:prod",
-        precondition_evidence_ids=["evidence:1", "evidence:1"],
-        dry_run=True,
-    )
+    kwargs = {
+        "scope": _scope(),
+        "graph_id": "incident:1",
+        "interception_step_id": "intercept:1",
+        "defense_mode": DefenseMode.COMBAT,
+        "action": DefenseActionType.ISOLATE_ENDPOINT,
+        "target_entity_id": "device:prod",
+        "precondition_evidence_ids": ["evidence:1", "evidence:1"],
+        "dry_run": True,
+    }
     first = build_connector_command(**kwargs)
     second = build_connector_command(**kwargs)
 
