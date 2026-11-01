@@ -31,6 +31,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e '.[dev]'
+      - name: Compile all Python source and test modules
+        run: python -m compileall -q src tests notebooks
       - name: Run Sentinel V5 focused pytest
         run: >-
           pytest tests/test_active_defense_five_layers_and_api.py
