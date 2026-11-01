@@ -14,6 +14,7 @@ on:
       - "src/koschei_sentinel/service.py"
       - "src/koschei_sentinel/request_body_limit.py"
       - "tests/test_active_defense_five_layers_and_api.py"
+      - "tests/test_active_defense_request_body_limit.py"
       - "tests/test_defense_connector_contract.py"
       - "tests/test_assured_defense_connector.py"
       - ".github/workflows/sentinel-v5-regression.yml"
@@ -33,6 +34,7 @@ jobs:
       - name: Run Sentinel V5 focused pytest
         run: >-
           pytest tests/test_active_defense_five_layers_and_api.py
+          tests/test_active_defense_request_body_limit.py
           tests/test_defense_connector_contract.py
           tests/test_assured_defense_connector.py
       - name: Run standard-dependency suite excluding three PyTorch-only test modules
@@ -56,5 +58,6 @@ jobs:
           src/koschei_sentinel/service.py
           src/koschei_sentinel/request_body_limit.py
           tests/test_active_defense_five_layers_and_api.py
+          tests/test_active_defense_request_body_limit.py
           tests/test_defense_connector_contract.py
           tests/test_assured_defense_connector.py
