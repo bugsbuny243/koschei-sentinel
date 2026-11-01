@@ -261,7 +261,9 @@ def _active_relations(graph: CyberStateGraph) -> list[CyberRelation]:
 
 def _action_for_entity(entity: CyberEntity) -> DefenseActionType | None:
     return {
+        CyberEntityType.IDENTITY: DefenseActionType.TERMINATE_SESSION,
         CyberEntityType.CREDENTIAL: DefenseActionType.REVOKE_CREDENTIAL,
+        CyberEntityType.PROTOCOL: DefenseActionType.PAUSE_PROTOCOL_CONTRACT,
         CyberEntityType.DEVICE: DefenseActionType.ISOLATE_ENDPOINT,
         CyberEntityType.PROCESS: DefenseActionType.KILL_PROCESS,
         CyberEntityType.PIPELINE: DefenseActionType.PAUSE_PIPELINE,
