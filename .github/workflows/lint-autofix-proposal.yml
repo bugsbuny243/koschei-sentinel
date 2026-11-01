@@ -42,9 +42,9 @@ jobs:
               for row, code in issues:
                   original = lines[row - 1]
                   assert "# noqa" not in original, (path, row)
-                  ending = "\\n" if original.endswith("\\n") else ""
+                  ending = "\n" if original.endswith("\n") else ""
                   lines[row - 1] = (
-                      original.rstrip("\\r\\n") +
+                      original.rstrip("\r\n") +
                       f"  # noqa: {code} - {explanations[code]}" + ending
                   )
               path.write_text("".join(lines), encoding="utf-8")
