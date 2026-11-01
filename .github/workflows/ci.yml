@@ -222,9 +222,11 @@ jobs:
         run: python -m pip install -e '.[dev]'
       - name: Install CPU-only PyTorch
         run: python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - name: Install NumPy for torch.distributed object collectives
+        run: python -m pip install 'numpy>=1.26,<3'
       - name: Verify PyTorch CPU environment
         run: |
-          python -c 'import torch; assert not torch.cuda.is_available(); print("torch", torch.__version__)'
+          python -c 'import numpy, torch; assert not torch.cuda.is_available(); print("torch", torch.__version__, "numpy", numpy.__version__)'
       - name: Run three PyTorch-only regression modules
         run: >-
           pytest
