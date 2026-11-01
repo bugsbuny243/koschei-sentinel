@@ -78,6 +78,10 @@ _ACTIONS_BY_MODE = {
         DefenseActionType.PAUSE_PIPELINE,
         DefenseActionType.FREEZE_SIGNER,
         DefenseActionType.HOLD_TRANSACTION,
+        DefenseActionType.ISOLATE_MICROSEGMENT,
+        DefenseActionType.BGP_BLACKHOLE_ROUTE,
+        DefenseActionType.DIVERT_FLOWSPEC_SCRUBBING,
+        DefenseActionType.PAUSE_PROTOCOL_CONTRACT,
     ],
     DefenseMode.SIEGE: [
         DefenseActionType.OBSERVE,
@@ -91,7 +95,13 @@ _ACTIONS_BY_MODE = {
         DefenseActionType.PAUSE_PIPELINE,
         DefenseActionType.FREEZE_SIGNER,
         DefenseActionType.HOLD_TRANSACTION,
+        DefenseActionType.ISOLATE_MICROSEGMENT,
+        DefenseActionType.BGP_BLACKHOLE_ROUTE,
+        DefenseActionType.DIVERT_FLOWSPEC_SCRUBBING,
+        DefenseActionType.PAUSE_PROTOCOL_CONTRACT,
         DefenseActionType.ENABLE_EMERGENCY_POLICY,
+        DefenseActionType.LOCK_HSM_PARTITION,
+        DefenseActionType.TRIGGER_AIRGAP_ISOLATION,
     ],
 }
 _MODE_RANK = {
