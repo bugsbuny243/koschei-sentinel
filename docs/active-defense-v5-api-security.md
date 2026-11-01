@@ -47,6 +47,7 @@ For these HTTP endpoints only:
 
 | Control | Limit |
 | --- | ---: |
+| HTTP request body (declared or streamed) | 8 MiB |
 | Graph entities | 4,096 |
 | Graph relations | 16,384 |
 | Requested critical IDs | 512 |
@@ -55,9 +56,13 @@ For these HTTP endpoints only:
 | Interception steps supplied to the envelope endpoint | 128 |
 | Preconditions supplied to the envelope endpoint | 256 |
 
-These are Pydantic post-parse limits, **not an HTTP request-size limit**.
-A production ingress still needs body-size limits, authentication, rate
-limiting, timeout limits, monitoring, and network isolation.
+The 8 MiB HTTP body-size gate runs in ASGI before the JSON/Pydantic parser.
+It rejects oversized declared `Content-Length` or streamed request bytes with
+HTTP 413, and rejects malformed or duplicate `Content-Length` with HTTP 400.
+All other table limits are Pydantic post-parse limits. The gate applies only
+to `/v1/active-defense/` HTTP paths and does not modify legacy endpoints.
+A production reverse proxy still needs its own body limits, authentication,
+rate limiting, timeout limits, monitoring, and network isolation.
 
 ## Required production gates (not implemented)
 
@@ -74,8 +79,9 @@ limiting, timeout limits, monitoring, and network isolation.
    bounded blast radius, and post-action verification.
 5. Replay/audit trails and rollback or recovery procedures for each provider,
    including explicit handling of irreversible operations.
-6. A service-side body-size gate and request rate limits before parsing
-   untrusted graphs, with abuse and load tests.
+6. Deployment-level body-size gate, request rate limits, timeout ceilings,
+   and network abuse/load tests. The HTTP service has an initial pre-parse
+   8 MiB byte gate, but does not implement rate limits.
 
 A connector command's action must be authorized **twice**: by the supplied
 `ProtectedScope` and by the canonical `GUARD`/`COMBAT`/`SIEGE` ceiling
@@ -91,7 +97,8 @@ not provider-specific execution implementations.
 `tests/test_active_defense_five_layers_and_api.py` covers entity mappings,
 mode gates, deterministic adapter normalization, successful dry runs, rejection
 of live HTTP connector commands, tampered graph receipts, trust headers, and
-API request budgets. The V5 workflow also runs the standard-dependency test
+API request budgets, and both declared and streamed HTTP-body rejection.
+The V5 workflow also runs the standard-dependency test
 suite, excluding three PyTorch-specific MCore/checkpoint modules. That suite
 does **not** replace a full optional-dependencies training validation pass.
 
