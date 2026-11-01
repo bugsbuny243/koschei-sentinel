@@ -23,12 +23,15 @@ from .perception_assurance import PerceptionAssuranceSummary
 from .perception_graph_binding import PerceptionGraphReceipt
 from .perception_source_registry import PerceptionSourceRegistry
 from .policy import baseline_opinion, validate_opinion
+from .request_body_limit import ActiveDefenseRequestBodyLimit
 
 app = FastAPI(
     title="Koschei Sentinel",
     version=__version__,
     description="Evidence-grounded commentary boundary for Koschei security cases.",
 )
+
+app.add_middleware(ActiveDefenseRequestBodyLimit)
 
 # Limits apply to the public simulation endpoints, not the internal planning engine.
 _MAX_API_GRAPH_ENTITIES = 4096
@@ -48,7 +51,6 @@ def _mark_simulation_response(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Sentinel-Execution-Mode"] = "simulation-only"
     response.headers["X-Sentinel-Evidence-Trust"] = "caller-supplied"
-
 
 
 class ActiveDefensePlanRequest(StrictModel):
