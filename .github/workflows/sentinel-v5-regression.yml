@@ -5,12 +5,16 @@ on:
     paths:
       - "src/koschei_sentinel/attack_progression.py"
       - "src/koschei_sentinel/defense_authority.py"
+      - "src/koschei_sentinel/defense_connector_contract.py"
+      - "src/koschei_sentinel/assured_defense_connector.py"
       - "src/koschei_sentinel/assured_active_defense.py"
       - "src/koschei_sentinel/interception_planner.py"
       - "src/koschei_sentinel/perception_adapter_profiles.py"
       - "src/koschei_sentinel/perception_adapter_cli.py"
       - "src/koschei_sentinel/service.py"
       - "tests/test_active_defense_five_layers_and_api.py"
+      - "tests/test_defense_connector_contract.py"
+      - "tests/test_assured_defense_connector.py"
       - ".github/workflows/sentinel-v5-regression.yml"
 
 permissions:
@@ -26,7 +30,10 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -e '.[dev]'
       - name: Run Sentinel V5 focused pytest
-        run: pytest tests/test_active_defense_five_layers_and_api.py
+        run: >-
+          pytest tests/test_active_defense_five_layers_and_api.py
+          tests/test_defense_connector_contract.py
+          tests/test_assured_defense_connector.py
       - name: Run standard-dependency suite excluding three PyTorch-only test modules
         run: >-
           pytest
@@ -39,9 +46,13 @@ jobs:
           ruff check
           src/koschei_sentinel/attack_progression.py
           src/koschei_sentinel/defense_authority.py
+          src/koschei_sentinel/defense_connector_contract.py
+          src/koschei_sentinel/assured_defense_connector.py
           src/koschei_sentinel/assured_active_defense.py
           src/koschei_sentinel/interception_planner.py
           src/koschei_sentinel/perception_adapter_profiles.py
           src/koschei_sentinel/perception_adapter_cli.py
           src/koschei_sentinel/service.py
           tests/test_active_defense_five_layers_and_api.py
+          tests/test_defense_connector_contract.py
+          tests/test_assured_defense_connector.py
