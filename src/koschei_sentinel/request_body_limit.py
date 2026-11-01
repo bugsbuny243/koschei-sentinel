@@ -1,7 +1,7 @@
 """Bound active-defense request bodies before FastAPI starts JSON parsing.
 
-Both declared and streamed inputs are checked; no more than the configured
-byte ceiling is buffered. This does not replace reverse-proxy request limits.
+Both declared and streamed inputs are checked with a fixed byte and message
+budget. These safeguards do not replace trusted reverse-proxy ingress limits.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 _MAX_ACTIVE_DEFENSE_BODY_BYTES = 8 * 1024 * 1024
+_MAX_ACTIVE_DEFENSE_BODY_CHUNKS = 4096
 
 
 def _error_response(status: int, detail: str) -> JSONResponse:
@@ -24,7 +25,7 @@ def _error_response(status: int, detail: str) -> JSONResponse:
 
 
 class ActiveDefenseRequestBodyLimit:
-    """Buffer at most one bounded request before passing it to the JSON parser."""
+    """Read one bounded request before passing it to the JSON parser."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -37,22 +38,25 @@ class ActiveDefenseRequestBodyLimit:
             return
 
         limit = _MAX_ACTIVE_DEFENSE_BODY_BYTES
-        lengths = [
-            value
-            for key, value in scope.get("headers", [])
-            if key.lower() == b"content-length"
-        ]
+        headers = scope.get("headers", [])
+        lengths = [value for key, value in headers if key.lower() == b"content-length"]
         if len(lengths) > 1:
             await _error_response(400, "duplicate content-length headers")(scope, receive, send)
             return
+
+        declared_length: int | None = None
         if lengths:
-            try:
-                declared_length = int(lengths[0])
-            except ValueError:
-                await _error_response(400, "invalid content-length header")(scope, receive, send)
+            # RFC 9110 Content-Length consists of ASCII decimal digits only.
+            if not lengths[0] or not lengths[0].isdigit():
+                await _error_response(400, "invalid content-length header")(
+                    scope, receive, send
+                )
                 return
-            if declared_length < 0:
-                await _error_response(400, "invalid content-length header")(scope, receive, send)
+            declared_length = int(lengths[0])
+            if any(key.lower() == b"transfer-encoding" for key, _ in headers):
+                await _error_response(400, "conflicting request framing headers")(
+                    scope, receive, send
+                )
                 return
             if declared_length > limit:
                 await _error_response(413, "active-defense request body limit exceeded")(
@@ -60,10 +64,10 @@ class ActiveDefenseRequestBodyLimit:
                 )
                 return
 
-        # Read before handing control to FastAPI: its request parser converts
-        # exceptions raised during receive() into a generic HTTP 400.
-        buffered: list[dict] = []
-        total_bytes = 0
+        # Buffer as a single bytearray: a malicious stream with thousands of
+        # zero-length frames must not allocate a list of unlimited ASGI events.
+        body = bytearray()
+        chunks = 0
         while True:
             message = await receive()
             if message["type"] == "http.disconnect":
@@ -73,24 +77,41 @@ class ActiveDefenseRequestBodyLimit:
                     scope, receive, send
                 )
                 return
-            total_bytes += len(message.get("body", b""))
-            if total_bytes > limit:
+
+            chunks += 1
+            if chunks > _MAX_ACTIVE_DEFENSE_BODY_CHUNKS:
+                await _error_response(413, "active-defense request chunk limit exceeded")(
+                    scope, receive, send
+                )
+                return
+
+            fragment = message.get("body", b"")
+            if len(fragment) > limit - len(body):
                 await _error_response(413, "active-defense request body limit exceeded")(
                     scope, receive, send
                 )
                 return
-            buffered.append(message)
+            body.extend(fragment)
             if not message.get("more_body", False):
                 break
 
-        index = 0
+        if declared_length is not None and declared_length != len(body):
+            await _error_response(400, "content-length does not match request body")(
+                scope, receive, send
+            )
+            return
+
+        # FastAPI must see exactly the bytes already inspected. A single replay
+        # also avoids re-allocating per-chunk messages in downstream processing.
+        payload = bytes(body)
+        del body
+        replayed = False
 
         async def replay_receive() -> dict:
-            nonlocal index
-            if index < len(buffered):
-                message = buffered[index]
-                index += 1
-                return message
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": payload, "more_body": False}
             return await receive()
 
         await self.app(scope, replay_receive, send)
