@@ -10,7 +10,7 @@ from koschei_sentinel.strict_json import require_json_value, strict_json_loads
 
 def parse_timezone_timestamp(value: str, label: str) -> datetime:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError(f"{label} must be ISO-8601") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:

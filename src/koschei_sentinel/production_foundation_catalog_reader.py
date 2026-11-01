@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
+from typing import Self
 
 from koschei_sentinel.production_foundation_catalog import (
     FoundationCatalogCursor,
@@ -30,7 +31,7 @@ class FoundationCatalogReader:
             reader.close()
         self._readers.clear()
 
-    def __enter__(self) -> FoundationCatalogReader:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

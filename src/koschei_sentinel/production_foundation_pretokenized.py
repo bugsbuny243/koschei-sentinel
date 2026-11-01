@@ -7,7 +7,7 @@ import struct
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 from pydantic import Field
 
@@ -164,7 +164,7 @@ class PretokenizedFoundationReader:
         self._data_handle.close()
         self._index_handle.close()
 
-    def __enter__(self) -> PretokenizedFoundationReader:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

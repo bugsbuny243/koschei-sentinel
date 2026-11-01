@@ -68,15 +68,15 @@ def test_review_requires_evidence() -> None:
 
 
 def test_approved_verified_correction_can_be_training_authorized_deterministically() -> None:
-    kwargs = dict(
-        reviewer_id="reviewer:security",
-        decision=CorrectionReviewDecision.APPROVE,
-        corrected_interpretation="The evidence supports Combat mode and immediate credential revocation.",
-        corrected_steps=[_step()],
-        review_evidence_ids=["review:one", "review:two"],
-        outcome_verified=True,
-        authorize_for_training=True,
-    )
+    kwargs = {
+        "reviewer_id": "reviewer:security",
+        "decision": CorrectionReviewDecision.APPROVE,
+        "corrected_interpretation": "The evidence supports Combat mode and immediate credential revocation.",
+        "corrected_steps": [_step()],
+        "review_evidence_ids": ["review:one", "review:two"],
+        "outcome_verified": True,
+        "authorize_for_training": True,
+    }
     first = review_defense_reflex_candidate(_candidate(), **kwargs)
     second = review_defense_reflex_candidate(_candidate(), **kwargs)
 

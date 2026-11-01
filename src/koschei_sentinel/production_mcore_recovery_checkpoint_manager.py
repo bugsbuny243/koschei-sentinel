@@ -131,7 +131,7 @@ class RecoveryCheckpointManager:
         if dist is not None and dist.is_initialized():
             gathered: list[Any] = [None] * dist.get_world_size()
             dist.all_gather_object(gathered, sorted(local_ready))
-            ready = set.intersection(*(set(int(item) for item in rank_ready) for rank_ready in gathered))
+            ready = set.intersection(*({int(item) for item in rank_ready} for rank_ready in gathered))
         else:
             ready = local_ready
 

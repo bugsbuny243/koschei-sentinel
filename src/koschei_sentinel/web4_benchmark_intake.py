@@ -54,7 +54,7 @@ class Web4BenchmarkCaseProposal(StrictModel):
     @model_validator(mode="after")
     def proposal_is_safe_for_intake(self) -> Web4BenchmarkCaseProposal:
         try:
-            created_at = datetime.fromisoformat(self.created_at.replace("Z", "+00:00"))
+            created_at = datetime.fromisoformat(self.created_at)
         except ValueError as exc:
             raise ValueError("Web4 benchmark created_at must be ISO-8601") from exc
         if created_at.tzinfo is None or created_at.utcoffset() is None:
@@ -164,7 +164,7 @@ class Web4BenchmarkIntakePacket(StrictModel):
         if _sha256_canonical(unsigned) != observed:
             raise ValueError("Web4 benchmark intake packet self-hash does not verify")
         try:
-            created_at = datetime.fromisoformat(self.created_at.replace("Z", "+00:00"))
+            created_at = datetime.fromisoformat(self.created_at)
         except ValueError as exc:
             raise ValueError("Web4 benchmark created_at must be ISO-8601") from exc
         if created_at.tzinfo is None or created_at.utcoffset() is None:

@@ -32,10 +32,7 @@ def _seed64(global_seed: int, name: str) -> int:
 def _is_norm_parameter(name: str) -> bool:
     lowered = name.lower()
     return (
-        "layernorm" in lowered
-        or ".norm." in lowered
-        or lowered.endswith("norm.weight")
-        or lowered.endswith("layer_norm_weight")
+        "layernorm" in lowered or ".norm." in lowered or lowered.endswith(("norm.weight", "layer_norm_weight"))
     )
 
 

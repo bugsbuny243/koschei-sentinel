@@ -15,8 +15,8 @@ def report(count=50):
 
 
 def evidence(**overrides):
-    values = dict(clean_cases=10, adversarial_cases=10, ci_pass=True,
-        tenant_isolation_pass=True, recovery_pass=True, live_inference_pass=True)
+    values = {"clean_cases": 10, "adversarial_cases": 10, "ci_pass": True,
+        "tenant_isolation_pass": True, "recovery_pass": True, "live_inference_pass": True}
     values.update(overrides)
     return ProductionEvidence(**values)
 

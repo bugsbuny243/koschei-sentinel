@@ -305,7 +305,7 @@ def split_cyber_sft_examples(
     ordered = sorted(rows, key=lambda row: (_bucket(row.example_id, seed), row.example_id))
     if len(ordered) == 1 or validation_ratio == 0.0:
         return ordered, []
-    validation_count = max(1, int(round(len(ordered) * validation_ratio)))
+    validation_count = max(1, round(len(ordered) * validation_ratio))
     validation_count = min(validation_count, len(ordered) - 1)
     validation = ordered[:validation_count]
     training = ordered[validation_count:]

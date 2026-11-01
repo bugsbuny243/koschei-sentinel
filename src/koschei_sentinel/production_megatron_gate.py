@@ -55,7 +55,7 @@ def verify_production_megatron_gate(
     ProductionTargetProvenance,
 ]:
     config = load_production_megatron_config(config_path)
-    binding = load_production_target_binding(binding_path)
+    load_production_target_binding(binding_path)
 
     verified_binding, verification = verify_production_training_gate(
         binding_path=binding_path,

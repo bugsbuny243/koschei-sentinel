@@ -91,9 +91,7 @@ def _rank_owns(entry: TensorLayoutEntry, *, pp: int, tp: int, ep: int) -> bool:
         return False
     if not entry.replicated_across_tensor_parallel and tp >= entry.tensor_parallel_shards:
         return False
-    if not entry.replicated_across_expert_parallel and ep >= entry.expert_parallel_shards:
-        return False
-    return True
+    return not (not entry.replicated_across_expert_parallel and ep >= entry.expert_parallel_shards)
 
 
 def _initialization_for(
