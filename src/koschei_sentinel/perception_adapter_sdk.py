@@ -155,7 +155,7 @@ class DeclarativePerceptionAdapter:
             return self.spec.default_confidence
         value = event.fields.get(self.spec.confidence_field)
         if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise ValueError("configured confidence_field must contain a numeric value")
+            raise ValueError("configured confidence_field must contain a numeric value")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
         return float(value)
 
     def normalize(self, event: SanitizedTelemetryEvent) -> list[PerceptionObservation]:

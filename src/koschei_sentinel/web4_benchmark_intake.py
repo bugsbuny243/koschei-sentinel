@@ -214,7 +214,7 @@ def _load_json(path: Path, label: str) -> tuple[dict[str, object], str]:
     except ValueError as exc:
         raise ValueError(f"invalid {label} JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain one JSON object")
+        raise ValueError(f"{label} must contain one JSON object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     return payload, hashlib.sha256(raw).hexdigest()
 
 
@@ -234,7 +234,7 @@ def _load_source_registry(path: Path) -> tuple[dict[str, dict[str, object]], str
         except ValueError as exc:
             raise ValueError(f"invalid Web4 source row at line {line_number}") from exc
         if not isinstance(payload, dict):
-            raise ValueError(f"Web4 source row {line_number} must be a JSON object")
+            raise ValueError(f"Web4 source row {line_number} must be a JSON object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
         source_id = payload.get("source_id")
         if not isinstance(source_id, str) or not source_id:
             raise ValueError(f"Web4 source row {line_number} lacks source_id")

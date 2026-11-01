@@ -274,7 +274,7 @@ def read_neon_records(
             rows = cursor.fetchall()
     except ValueError:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001 - intentional broad exception at external error boundary
         raise RuntimeError(
             "Neon dataset read failed; provider details were intentionally suppressed"
         ) from None

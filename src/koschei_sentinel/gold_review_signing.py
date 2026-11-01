@@ -85,14 +85,14 @@ def reviewer_public_key_fingerprint(public_key: Ed25519PublicKey) -> str:
 def load_reviewer_private_key(path: str | Path) -> Ed25519PrivateKey:
     key = serialization.load_pem_private_key(Path(path).read_bytes(), password=None)
     if not isinstance(key, Ed25519PrivateKey):
-        raise ValueError("Gold reviewer private key must be unencrypted Ed25519 PEM")
+        raise ValueError("Gold reviewer private key must be unencrypted Ed25519 PEM")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     return key
 
 
 def load_reviewer_public_key(path: str | Path) -> Ed25519PublicKey:
     key = serialization.load_pem_public_key(Path(path).read_bytes())
     if not isinstance(key, Ed25519PublicKey):
-        raise ValueError("Gold reviewer public key must be Ed25519")
+        raise ValueError("Gold reviewer public key must be Ed25519")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     return key
 
 

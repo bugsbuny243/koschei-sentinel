@@ -81,7 +81,7 @@ def _load_json_object(path: Path, *, label: str) -> tuple[dict[str, object], byt
     except json.JSONDecodeError as exc:
         raise ValueError(f"{label} is not valid JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain a JSON object")
+        raise ValueError(f"{label} must contain a JSON object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     return payload, raw
 
 
@@ -264,7 +264,7 @@ def build_cyber_sft_run_attestation(
     resumed = resume_runtime.get("resumed")
     resume_checkpoint = resume_runtime.get("resume_checkpoint")
     if not isinstance(resumed, bool):
-        raise ValueError("resume-runtime.json resumed must be boolean")
+        raise ValueError("resume-runtime.json resumed must be boolean")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     if resume_checkpoint is not None and not isinstance(resume_checkpoint, str):
         raise ValueError("resume-runtime.json resume_checkpoint must be a string or null")
     if resumed != (resume_checkpoint is not None):

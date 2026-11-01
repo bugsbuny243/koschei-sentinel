@@ -31,11 +31,11 @@ def main(argv: list[str] | None = None) -> int:
         pairs = []
         for index, item in enumerate(payload):
             if not isinstance(item, dict):
-                raise ValueError(f"pairs[{index}] must be an object")
+                raise ValueError(f"pairs[{index}] must be an object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
             scenario_path = item.get("scenario")
             correction_path = item.get("correction")
             if not isinstance(scenario_path, str) or not isinstance(correction_path, str):
-                raise ValueError(f"pairs[{index}] requires scenario and correction paths")
+                raise ValueError(f"pairs[{index}] requires scenario and correction paths")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
             scenario = CyberRangeScenario.model_validate_json(
                 Path(scenario_path).read_text(encoding="utf-8")
             )

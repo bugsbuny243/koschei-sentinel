@@ -98,9 +98,9 @@ def parse_rustsec_advisory(path: str | Path) -> tuple[dict[str, object], str]:
         raise ValueError(f"RustSec advisory body is empty: {path}")
     advisory = metadata.get("advisory")
     if not isinstance(advisory, dict):
-        raise ValueError(f"RustSec advisory table missing: {path}")
+        raise ValueError(f"RustSec advisory table missing: {path}")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     if not isinstance(advisory.get("id"), str):
-        raise ValueError(f"RustSec advisory id missing: {path}")
+        raise ValueError(f"RustSec advisory id missing: {path}")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     return metadata, body
 
 
@@ -170,7 +170,7 @@ def _read_osv_records(path: Path) -> Iterable[tuple[str, dict[str, object]]]:
         if isinstance(payload, list):
             for index, record in enumerate(payload):
                 if not isinstance(record, dict):
-                    raise ValueError(f"OSV list row {index} is not an object")
+                    raise ValueError(f"OSV list row {index} is not an object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
                 yield f"{path.name}#{index}", record
         elif isinstance(payload, dict):
             yield path.name, payload

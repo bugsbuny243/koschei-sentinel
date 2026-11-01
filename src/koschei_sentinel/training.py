@@ -162,14 +162,14 @@ def plan_training(config: TrainingConfig, *, root: str | Path = ".") -> Training
         raise ValueError("training requires a materialized non-dry-run dataset release")
     reports = manifest.get("splits")
     if not isinstance(reports, dict):
-        raise ValueError("dataset quality manifest is missing split reports")
+        raise ValueError("dataset quality manifest is missing split reports")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
 
     splits: dict[str, TrainingSplit] = {}
     warnings: list[str] = []
     for split_name in _SPLIT_NAMES:
         report = reports.get(split_name)
         if not isinstance(report, dict):
-            raise ValueError(f"dataset manifest is missing {split_name} split")
+            raise ValueError(f"dataset manifest is missing {split_name} split")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
         relative_path = str(
             PurePosixPath(config.dataset_release) / f"{split_name}.jsonl"
         )
