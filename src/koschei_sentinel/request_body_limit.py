@@ -52,17 +52,24 @@ class ActiveDefenseRequestBodyLimit:
                     scope, receive, send
                 )
                 return
-            declared_length = int(lengths[0])
             if any(key.lower() == b"transfer-encoding" for key, _ in headers):
                 await _error_response(400, "conflicting request framing headers")(
                     scope, receive, send
                 )
                 return
-            if declared_length > limit:
+
+            # Compare decimal bytes before int(): Python caps conversions of
+            # very long decimal strings, which must not become an HTTP 500.
+            normalized = lengths[0].lstrip(b"0") or b"0"
+            maximum = str(limit).encode("ascii")
+            if len(normalized) > len(maximum) or (
+                len(normalized) == len(maximum) and normalized > maximum
+            ):
                 await _error_response(413, "active-defense request body limit exceeded")(
                     scope, receive, send
                 )
                 return
+            declared_length = int(normalized)
 
         # Buffer as a single bytearray: a malicious stream with thousands of
         # zero-length frames must not allocate a list of unlimited ASGI events.
