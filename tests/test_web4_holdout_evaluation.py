@@ -189,7 +189,7 @@ def _perfect_prediction_stack(tmp_path: Path):
 
 
 def test_inference_pack_excludes_answer_key_values(tmp_path: Path) -> None:
-    _, release, answer_dir = _build_signed_release(tmp_path)
+    _, release, _ = _build_signed_release(tmp_path)
     owner = Ed25519PrivateKey.generate()
     with pytest.raises(ValueError):
         build_web4_holdout_inference_pack(
