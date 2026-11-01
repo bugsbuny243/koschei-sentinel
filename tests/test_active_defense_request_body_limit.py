@@ -133,3 +133,21 @@ def test_legacy_routes_do_not_use_v5_body_budget(monkeypatch) -> None:
     sent, forwarded = _request([], _body_chunks(b"{}"), path="/v1/opinions")
     assert sent[0]["status"] == 204
     assert forwarded[0]["body"] == b"{}"
+
+
+def test_extremely_long_decimal_content_length_returns_413_not_500() -> None:
+    sent, forwarded = _request(
+        [(b"content-length", b"9" * 5000)],
+        [],
+    )
+    assert sent[0]["status"] == 413
+    assert forwarded == []
+
+
+def test_large_number_of_leading_zeroes_does_not_overflow() -> None:
+    sent, forwarded = _request(
+        [(b"content-length", b"0" * 5000 + b"2")],
+        _body_chunks(b"{}"),
+    )
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == b"{}"
