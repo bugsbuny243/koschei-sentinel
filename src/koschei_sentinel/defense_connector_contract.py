@@ -84,8 +84,9 @@ def command_idempotency_key(
     target_entity_id: str,
     scope_id: str,
 ) -> str:
-    payload = "|".join(
-        [graph_id, interception_step_id, action.value, target_entity_id, scope_id]
+    payload = (
+        f"{graph_id}|{interception_step_id}|{action.value}|"
+        f"{target_entity_id}|{scope_id}"
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
