@@ -17,6 +17,7 @@ def _request(
     path: str = "/v1/active-defense/plan",
     method: str = "POST",
     supply_content_type: bool = True,
+    per_frame_delay: float = 0.0,
 ) -> tuple[list[dict], list[dict]]:
     forwarded: list[dict] = []
     sent: list[dict] = []
@@ -28,6 +29,8 @@ def _request(
         await send({"type": "http.response.body", "body": b""})
 
     async def receive() -> dict:
+        if per_frame_delay:
+            await asyncio.sleep(per_frame_delay)
         try:
             return next(remaining)
         except StopIteration as exc:
@@ -298,3 +301,79 @@ def test_non_post_request_needs_no_json_content_type() -> None:
     )
     assert sent[0]["status"] == 204
     assert forwarded[0]["body"] == b""
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'{"a":"\\xff"}',
+        b'{"a":"\\xc0\\xaf"}',
+        b'{"a":"\\xe2"}',
+        b'{"a":"\\xff\\xfe"}',
+    ],
+)
+def test_rejects_invalid_or_incomplete_utf8_json(payload: bytes) -> None:
+    sent, forwarded = _request([], _body_chunks(payload))
+    assert sent[0]["status"] == 400
+    assert forwarded == []
+    assert (b"x-sentinel-production-authorization", b"not-granted") in sent[0]["headers"]
+
+
+def test_rejects_utf8_byte_order_mark() -> None:
+    sent, forwarded = _request([], _body_chunks(b"\\xef\\xbb\\xbf{}"))
+    assert sent[0]["status"] == 400
+    assert forwarded == []
+
+
+def test_rejects_utf16_like_raw_nul_json() -> None:
+    sent, forwarded = _request([], _body_chunks(b"{\\x00}\\x00"))
+    assert sent[0]["status"] == 400
+    assert forwarded == []
+
+
+def test_accepts_multibyte_utf8_split_between_frames() -> None:
+    payload = '{"name": "€"}'.encode("utf-8")
+    euro = payload.index(b"\\xe2")
+    sent, forwarded = _request(
+        [], _body_chunks(payload[:euro + 1], payload[euro + 1:euro + 2], payload[euro + 2:])
+    )
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == payload
+
+
+def test_escaped_json_nul_is_allowed_as_text() -> None:
+    payload = b'{"name":"\\\\u0000"}'
+    sent, forwarded = _request([], _body_chunks(payload))
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == payload
+
+
+def test_body_timeout_rejects_stalled_receive_before_planner(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_BODY_READ_SECONDS",
+        0.01,
+    )
+    sent, forwarded = _request([], _body_chunks(b"{}"), per_frame_delay=0.05)
+    assert sent[0]["status"] == 408
+    assert forwarded == []
+    assert (b"x-sentinel-execution-mode", b"simulation-only") in sent[0]["headers"]
+
+
+def test_total_body_timeout_rejects_slow_trickle(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_BODY_READ_SECONDS",
+        0.025,
+    )
+    sent, forwarded = _request(
+        [], _body_chunks(b"{", b'"', b'"', b":" , b"0", b"}"), per_frame_delay=0.01
+    )
+    assert sent[0]["status"] == 408
+    assert forwarded == []
+
+
+def test_non_post_requests_remain_utf8_agnostic() -> None:
+    sent, forwarded = _request(
+        [], _body_chunks(b"\\xff"), method="GET", supply_content_type=False
+    )
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == b"\\xff"
