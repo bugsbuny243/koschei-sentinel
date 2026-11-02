@@ -6,6 +6,9 @@ budget. These safeguards do not replace trusted reverse-proxy ingress limits.
 
 from __future__ import annotations
 
+import asyncio
+import codecs
+
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -15,6 +18,7 @@ _MAX_ACTIVE_DEFENSE_JSON_DEPTH = 64
 _MAX_ACTIVE_DEFENSE_JSON_STRUCTURE_TOKENS = 262144
 _MAX_ACTIVE_DEFENSE_HEADER_COUNT = 128
 _MAX_ACTIVE_DEFENSE_HEADER_BYTES = 16 * 1024
+_MAX_ACTIVE_DEFENSE_BODY_READ_SECONDS = 15
 
 
 def _supported_json_content_type(raw: bytes) -> bool:
@@ -187,39 +191,74 @@ class ActiveDefenseRequestBodyLimit:
         # zero-length frames must not allocate a list of unlimited ASGI events.
         body = bytearray()
         structure_budget = _JsonStructureBudget()
+        utf8_decoder = (
+            codecs.getincrementaldecoder("utf-8")(errors="strict")
+            if scope.get("method") == "POST"
+            else None
+        )
         chunks = 0
-        while True:
-            message = await receive()
-            if message["type"] == "http.disconnect":
-                return
-            if message["type"] != "http.request":
-                await _error_response(400, "invalid ASGI request body event")(
-                    scope, receive, simulation_send
-                )
-                return
+        try:
+            async with asyncio.timeout(_MAX_ACTIVE_DEFENSE_BODY_READ_SECONDS):
+            while True:
+                message = await receive()
+                if message["type"] == "http.disconnect":
+                    return
+                if message["type"] != "http.request":
+                    await _error_response(400, "invalid ASGI request body event")(
+                        scope, receive, simulation_send
+                    )
+                    return
 
-            chunks += 1
-            if chunks > _MAX_ACTIVE_DEFENSE_BODY_CHUNKS:
-                await _error_response(413, "active-defense request chunk limit exceeded")(
-                    scope, receive, simulation_send
-                )
-                return
+                chunks += 1
+                if chunks > _MAX_ACTIVE_DEFENSE_BODY_CHUNKS:
+                    await _error_response(413, "active-defense request chunk limit exceeded")(
+                        scope, receive, simulation_send
+                    )
+                    return
 
-            fragment = message.get("body", b"")
-            if len(fragment) > limit - len(body):
-                await _error_response(413, "active-defense request body limit exceeded")(
+                fragment = message.get("body", b"")
+                if len(fragment) > limit - len(body):
+                    await _error_response(413, "active-defense request body limit exceeded")(
+                        scope, receive, simulation_send
+                    )
+                    return
+                rejection = structure_budget.check_chunk(fragment)
+                if rejection is not None:
+                    await _error_response(413, rejection)(
+                        scope, receive, simulation_send
+                    )
+                    return
+                if utf8_decoder is not None:
+                    try:
+                        utf8_decoder.decode(fragment)
+                    except UnicodeDecodeError:
+                        await _error_response(400, "active-defense JSON body is not UTF-8")(
+                            scope, receive, simulation_send
+                        )
+                        return
+                body.extend(fragment)
+                if not message.get("more_body", False):
+                    break
+
+        except TimeoutError:
+            await _error_response(408, "active-defense request body read timeout")(
+                scope, receive, simulation_send
+            )
+            return
+
+        if utf8_decoder is not None:
+            try:
+                utf8_decoder.decode(b"", final=True)
+            except UnicodeDecodeError:
+                await _error_response(400, "active-defense JSON body is not UTF-8")(
                     scope, receive, simulation_send
                 )
                 return
-            rejection = structure_budget.check_chunk(fragment)
-            if rejection is not None:
-                await _error_response(413, rejection)(
+            if body.startswith(b"\xef\xbb\xbf"):
+                await _error_response(400, "active-defense JSON UTF-8 BOM is not permitted")(
                     scope, receive, simulation_send
                 )
                 return
-            body.extend(fragment)
-            if not message.get("more_body", False):
-                break
 
         if declared_length is not None and declared_length != len(body):
             await _error_response(400, "content-length does not match request body")(
