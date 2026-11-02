@@ -54,6 +54,8 @@ For these HTTP endpoints only:
 | --- | ---: |
 | HTTP request body (declared or streamed) | 8 MiB |
 | HTTP body frame count (including empty frames) | 4,096 |
+| JSON object/array nesting depth | 64 |
+| JSON structural punctuation tokens (openings, commas and colons) | 262,144 |
 | Graph entities | 4,096 |
 | Graph relations | 16,384 |
 | Requested critical IDs | 512 |
@@ -69,9 +71,15 @@ invalid or duplicate `Content-Length`, contradictory `Content-Length` and
 `Transfer-Encoding`, and declared/actual length mismatches. The middleware
 buffers at most 8 MiB into a single byte array and replays exactly the
 validated bytes to the parser; a premature client disconnect does not run
-the planner. Incoming frame count, not time, is capped: production ingress
-still needs connection and read timeouts.
-All other table limits are Pydantic post-parse limits. The gate applies only
+the planner. Before JSON parsing it also scans each incoming chunk for excessive
+nesting (over 64) or structural punctuation (over 262,144), returning HTTP
+413. The scanner is aware of JSON strings and backslash-escaped quotes across
+chunk boundaries; malformed JSON within those budgets remains FastAPI's
+validation responsibility. The scanner is a **resource budget**, not a second
+JSON parser, and cannot authenticate payload contents.
+Incoming frame count, not time, is capped: production ingress still needs
+connection and read timeouts.
+All remaining table limits are Pydantic post-parse limits. The gate applies only
 to `/v1/active-defense/` HTTP paths and does not modify legacy endpoints.
 A production reverse proxy still needs its own body limits, authentication,
 rate limiting, timeout limits, monitoring, and network isolation.
@@ -112,6 +120,9 @@ of live HTTP connector commands, tampered graph receipts, trust headers, and
 API request budgets, distinct simulation-only HTTP response projection, and
 trust headers on successful and unsuccessful handled responses. The ASGI tests
 also cover declared and streamed HTTP-body rejection.
+The focused ASGI regression suite tests deep and wide JSON rejection, exact
+boundary acceptance, quote/escape handling across streamed frames, and
+continued compatibility with legacy routes.
 The V5 workflow also runs the standard-dependency test
 suite, excluding three PyTorch-specific MCore/checkpoint modules. That suite
 does **not** replace a full optional-dependencies training validation pass.
