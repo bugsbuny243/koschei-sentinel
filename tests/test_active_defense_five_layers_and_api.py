@@ -496,3 +496,29 @@ def test_api_accepts_utf8_json_content_type_parameters() -> None:
     )
     assert response.status_code == 422  # Parsed JSON; graph is missing
     assert response.headers["X-Sentinel-Production-Authorization"] == "not-granted"
+
+
+def test_api_rejects_invalid_json_byte_encodings_with_trust_labels() -> None:
+    for payload in (
+        b'{"text":"\xff"}',
+        b"\xef\xbb\xbf{}",
+        b"{\x00}\x00",
+    ):
+        response = client.post(
+            "/v1/active-defense/plan",
+            content=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 400, response.text
+        assert response.headers["X-Sentinel-Execution-Mode"] == "simulation-only"
+        assert response.headers["X-Sentinel-Production-Authorization"] == "not-granted"
+
+
+def test_api_accepts_utf8_json_with_multibyte_text() -> None:
+    response = client.post(
+        "/v1/active-defense/plan",
+        content='{"extra":"€"}'.encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422  # Decoded JSON; graph is missing
+    assert response.headers["X-Sentinel-Evidence-Trust"] == "caller-supplied"
