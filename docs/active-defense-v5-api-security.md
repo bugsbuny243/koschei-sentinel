@@ -56,7 +56,12 @@ comma-separated or non-UTF-8 media types return HTTP **415**. Duplicate
 
 The pre-parser ASGI boundary also rejects more than 128 request header
 fields or more than 16 KiB in combined header-name/header-value bytes with
-HTTP **431**, before reading the request body. This is an application-level
+HTTP **431**, before reading the request body.
+JSON request bodies are validated as strict UTF-8 across ASGI chunks, including
+multibyte code points split between frames. Invalid or incomplete UTF-8,
+UTF-8 byte-order marks, and raw NUL bytes (which could conceal UTF-16 JSON)
+return HTTP **400**; escaped JSON text such as `\\u0000` is unaffected.
+Non-V5 routes are not subject to this additional encoding gate. This is an application-level
 backstop; the HTTP server/proxy must independently enforce limits on raw
 header framing. The JSON media-type requirement applies only to V5 `POST`
 requests; `GET` and legacy endpoints keep their existing handling.
@@ -68,6 +73,7 @@ For these HTTP endpoints only:
 | Control | Limit |
 | --- | ---: |
 | HTTP request body (declared or streamed) | 8 MiB |
+| Total HTTP request body read time (V5 ingress only) | 15 seconds |
 | HTTP body frame count (including empty frames) | 4,096 |
 | HTTP request header count | 128 |
 | HTTP request header name/value bytes combined | 16 KiB |
@@ -94,8 +100,12 @@ nesting (over 64) or structural punctuation (over 262,144), returning HTTP
 chunk boundaries; malformed JSON within those budgets remains FastAPI's
 validation responsibility. The scanner is a **resource budget**, not a second
 JSON parser, and cannot authenticate payload contents.
-Incoming frame count, not time, is capped: production ingress still needs
-connection and read timeouts.
+The V5 request-body receive loop also has a **15-second total wall-clock
+read deadline**, independent of byte/frame limits. A stalled or slowly
+trickling request is rejected with HTTP **408** before planning. Client
+disconnects continue to terminate processing without running the planner.
+This is not a comprehensive request/response deadline: reverse proxies and
+servers still need connection, header, body and overall request timeouts.
 All remaining table limits are Pydantic post-parse limits. The gate applies only
 to `/v1/active-defense/` HTTP paths and does not modify legacy endpoints.
 A production reverse proxy still needs its own body limits, authentication,
