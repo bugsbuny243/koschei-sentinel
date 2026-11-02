@@ -199,46 +199,46 @@ class ActiveDefenseRequestBodyLimit:
         chunks = 0
         try:
             async with asyncio.timeout(_MAX_ACTIVE_DEFENSE_BODY_READ_SECONDS):
-            while True:
-                message = await receive()
-                if message["type"] == "http.disconnect":
-                    return
-                if message["type"] != "http.request":
-                    await _error_response(400, "invalid ASGI request body event")(
-                        scope, receive, simulation_send
-                    )
-                    return
-
-                chunks += 1
-                if chunks > _MAX_ACTIVE_DEFENSE_BODY_CHUNKS:
-                    await _error_response(413, "active-defense request chunk limit exceeded")(
-                        scope, receive, simulation_send
-                    )
-                    return
-
-                fragment = message.get("body", b"")
-                if len(fragment) > limit - len(body):
-                    await _error_response(413, "active-defense request body limit exceeded")(
-                        scope, receive, simulation_send
-                    )
-                    return
-                rejection = structure_budget.check_chunk(fragment)
-                if rejection is not None:
-                    await _error_response(413, rejection)(
-                        scope, receive, simulation_send
-                    )
-                    return
-                if utf8_decoder is not None:
-                    try:
-                        utf8_decoder.decode(fragment)
-                    except UnicodeDecodeError:
-                        await _error_response(400, "active-defense JSON body is not UTF-8")(
+                while True:
+                    message = await receive()
+                    if message["type"] == "http.disconnect":
+                        return
+                    if message["type"] != "http.request":
+                        await _error_response(400, "invalid ASGI request body event")(
                             scope, receive, simulation_send
                         )
                         return
-                body.extend(fragment)
-                if not message.get("more_body", False):
-                    break
+
+                    chunks += 1
+                    if chunks > _MAX_ACTIVE_DEFENSE_BODY_CHUNKS:
+                        await _error_response(413, "active-defense request chunk limit exceeded")(
+                            scope, receive, simulation_send
+                        )
+                        return
+
+                    fragment = message.get("body", b"")
+                    if len(fragment) > limit - len(body):
+                        await _error_response(413, "active-defense request body limit exceeded")(
+                            scope, receive, simulation_send
+                        )
+                        return
+                    rejection = structure_budget.check_chunk(fragment)
+                    if rejection is not None:
+                        await _error_response(413, rejection)(
+                            scope, receive, simulation_send
+                        )
+                        return
+                    if utf8_decoder is not None:
+                        try:
+                            utf8_decoder.decode(fragment)
+                        except UnicodeDecodeError:
+                            await _error_response(400, "active-defense JSON body is not UTF-8")(
+                                scope, receive, simulation_send
+                            )
+                            return
+                    body.extend(fragment)
+                    if not message.get("more_body", False):
+                        break
 
         except TimeoutError:
             await _error_response(408, "active-defense request body read timeout")(
