@@ -229,6 +229,11 @@ class ActiveDefenseRequestBodyLimit:
                         )
                         return
                     if utf8_decoder is not None:
+                        if b"\\x00" in fragment:
+                            await _error_response(
+                                400, "active-defense JSON body contains a raw NUL byte"
+                            )(scope, receive, simulation_send)
+                            return
                         try:
                             utf8_decoder.decode(fragment)
                         except UnicodeDecodeError:
