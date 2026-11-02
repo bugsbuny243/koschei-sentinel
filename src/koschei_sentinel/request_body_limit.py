@@ -11,6 +11,52 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 _MAX_ACTIVE_DEFENSE_BODY_BYTES = 8 * 1024 * 1024
 _MAX_ACTIVE_DEFENSE_BODY_CHUNKS = 4096
+_MAX_ACTIVE_DEFENSE_JSON_DEPTH = 64
+_MAX_ACTIVE_DEFENSE_JSON_STRUCTURE_TOKENS = 262144
+
+
+class _JsonStructureBudget:
+    """Scan JSON punctuation before parsing; preserve string/escape state across chunks.
+
+    This is a resource budget, not a JSON validator. Malformed JSON is still
+    handled by FastAPI, while deeply nested or extremely wide inputs fail early.
+    """
+
+    def __init__(self) -> None:
+        self.depth = 0
+        self.tokens = 0
+        self.in_string = False
+        self.escaped = False
+
+    def check_chunk(self, chunk: bytes) -> str | None:
+        for char in chunk:
+            if self.in_string:
+                if self.escaped:
+                    self.escaped = False
+                elif char == 92:  # Backslash
+                    self.escaped = True
+                elif char == 34:  # Double quote
+                    self.in_string = False
+                continue
+
+            if char == 34:
+                self.in_string = True
+            elif char in (91, 123):  # [ or {
+                self.depth += 1
+                self.tokens += 1
+                if self.depth > _MAX_ACTIVE_DEFENSE_JSON_DEPTH:
+                    return "active-defense JSON nesting limit exceeded"
+            elif char in (93, 125):  # ] or }
+                if self.depth:
+                    self.depth -= 1
+            elif char in (44, 58):  # Comma or colon
+                self.tokens += 1
+
+            if self.tokens > _MAX_ACTIVE_DEFENSE_JSON_STRUCTURE_TOKENS:
+                return "active-defense JSON structure limit exceeded"
+        return None
+
+
 
 # Set on *all* handled V5 HTTP responses, including schema errors and denials.
 _SIMULATION_HEADERS = (
@@ -96,6 +142,7 @@ class ActiveDefenseRequestBodyLimit:
         # Buffer as a single bytearray: a malicious stream with thousands of
         # zero-length frames must not allocate a list of unlimited ASGI events.
         body = bytearray()
+        structure_budget = _JsonStructureBudget()
         chunks = 0
         while True:
             message = await receive()
@@ -117,6 +164,12 @@ class ActiveDefenseRequestBodyLimit:
             fragment = message.get("body", b"")
             if len(fragment) > limit - len(body):
                 await _error_response(413, "active-defense request body limit exceeded")(
+                    scope, receive, simulation_send
+                )
+                return
+            rejection = structure_budget.check_chunk(fragment)
+            if rejection is not None:
+                await _error_response(413, rejection)(
                     scope, receive, simulation_send
                 )
                 return
