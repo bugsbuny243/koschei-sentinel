@@ -13,6 +13,26 @@ _MAX_ACTIVE_DEFENSE_BODY_BYTES = 8 * 1024 * 1024
 _MAX_ACTIVE_DEFENSE_BODY_CHUNKS = 4096
 _MAX_ACTIVE_DEFENSE_JSON_DEPTH = 64
 _MAX_ACTIVE_DEFENSE_JSON_STRUCTURE_TOKENS = 262144
+_MAX_ACTIVE_DEFENSE_HEADER_COUNT = 128
+_MAX_ACTIVE_DEFENSE_HEADER_BYTES = 16 * 1024
+
+
+def _supported_json_content_type(raw: bytes) -> bool:
+    """Accept UTF-8 JSON media types, never ambiguous lists or charsets."""
+    parts = [part.strip().lower() for part in raw.split(b";")]
+    media_type = parts[0]
+    valid_media = media_type == b"application/json" or (
+        media_type.startswith(b"application/")
+        and media_type.endswith(b"+json")
+        and len(media_type) > len(b"application/+json")
+    )
+    if not valid_media:
+        return False
+    return len(parts) == 1 or (
+        len(parts) == 2 and parts[1] in (b"charset=utf-8", b'charset="utf-8"')
+    )
+
+
 
 
 class _JsonStructureBudget:
@@ -107,6 +127,30 @@ class ActiveDefenseRequestBodyLimit:
 
         limit = _MAX_ACTIVE_DEFENSE_BODY_BYTES
         headers = scope.get("headers", [])
+        if len(headers) > _MAX_ACTIVE_DEFENSE_HEADER_COUNT or (
+            sum(len(key) + len(value) for key, value in headers)
+            > _MAX_ACTIVE_DEFENSE_HEADER_BYTES
+        ):
+            await _error_response(431, "active-defense request header limit exceeded")(
+                scope, receive, simulation_send
+            )
+            return
+
+        if scope.get("method") == "POST":
+            content_types = [
+                value for key, value in headers if key.lower() == b"content-type"
+            ]
+            if len(content_types) > 1:
+                await _error_response(400, "duplicate content-type headers")(
+                    scope, receive, simulation_send
+                )
+                return
+            if not content_types or not _supported_json_content_type(content_types[0]):
+                await _error_response(415, "active-defense requires UTF-8 JSON content-type")(
+                    scope, receive, simulation_send
+                )
+                return
+
         lengths = [value for key, value in headers if key.lower() == b"content-length"]
         if len(lengths) > 1:
             await _error_response(400, "duplicate content-length headers")(scope, receive, simulation_send)
