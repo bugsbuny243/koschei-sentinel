@@ -327,11 +327,14 @@ def test_assured_plan_and_connector_api_are_fail_closed() -> None:
     assert dry_run.status_code == 200, dry_run.text
     assert dry_run.headers["X-Sentinel-Production-Authorization"] == "not-granted"
     assert dry_run.json()["command"]["dry_run"] is True
+    assert dry_run.json()["production_authorized"] is False
     live_command = client.post(
         "/v1/active-defense/connector-envelope",
         json={**request, "dry_run": False},
     )
     assert live_command.status_code == 403
+    assert live_command.headers["X-Sentinel-Production-Authorization"] == "not-granted"
+    assert live_command.headers["X-Sentinel-Evidence-Trust"] == "caller-supplied"
 
     tampered = dict(payload)
     tampered["graph_receipt"] = {
@@ -394,3 +397,40 @@ def test_body_guard_does_not_change_legacy_opinions_route(monkeypatch) -> None:
     )
     response = client.post("/v1/opinions", json={"extra": "a" * 512})
     assert response.status_code == 422
+
+
+def test_handled_api_errors_carry_nonproduction_trust_headers(monkeypatch) -> None:
+    responses = [
+        client.post("/v1/active-defense/plan", json={}),
+        client.post(
+            "/v1/active-defense/plan",
+            content=b"{",
+            headers={"Content-Type": "application/json"},
+        ),
+        client.get("/v1/active-defense/plan"),
+        client.get("/v1/active-defense/unknown"),
+    ]
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_BODY_BYTES", 10
+    )
+    responses.append(
+        client.post(
+            "/v1/active-defense/plan",
+            json={"graph": _graph().model_dump(mode="json")},
+        )
+    )
+    assert [response.status_code for response in responses] == [422, 422, 405, 404, 413]
+    expected = {
+        "cache-control": "no-store",
+        "x-sentinel-execution-mode": "simulation-only",
+        "x-sentinel-evidence-trust": "caller-supplied",
+        "x-sentinel-production-authorization": "not-granted",
+    }
+    for response in responses:
+        for header, value in expected.items():
+            assert response.headers[header] == value
+            assert sum(key.lower() == header.encode() for key, _ in response.headers.raw) == 1
+
+    legacy = client.post("/v1/opinions", json={})
+    assert legacy.status_code == 422
+    assert "X-Sentinel-Execution-Mode" not in legacy.headers
