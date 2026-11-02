@@ -15,6 +15,8 @@ def _request(
     messages: list[dict],
     *,
     path: str = "/v1/active-defense/plan",
+    method: str = "POST",
+    supply_content_type: bool = True,
 ) -> tuple[list[dict], list[dict]]:
     forwarded: list[dict] = []
     sent: list[dict] = []
@@ -34,7 +36,14 @@ def _request(
     async def send(message: dict) -> None:
         sent.append(message)
 
-    scope = {"type": "http", "path": path, "headers": headers}
+    if (
+        supply_content_type
+        and method == "POST"
+        and path.startswith("/v1/active-defense/")
+        and not any(key.lower() == b"content-type" for key, _ in headers)
+    ):
+        headers = [*headers, (b"content-type", b"application/json")]
+    scope = {"type": "http", "path": path, "method": method, "headers": headers}
     asyncio.run(ActiveDefenseRequestBodyLimit(downstream)(scope, receive, send))
     return sent, forwarded
 
@@ -202,3 +211,90 @@ def test_malformed_json_remains_the_downstream_parser_responsibility() -> None:
     sent, forwarded = _request([], _body_chunks(b'{"a":'))
     assert sent[0]["status"] == 204
     assert forwarded[0]["body"] == b'{"a":'
+
+
+def test_post_without_json_content_type_is_denied_without_body_reads() -> None:
+    sent, forwarded = _request([], [], supply_content_type=False)
+    assert sent[0]["status"] == 415
+    assert forwarded == []
+    assert (b"x-sentinel-production-authorization", b"not-granted") in sent[0]["headers"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        b"text/plain",
+        b"application/x-www-form-urlencoded",
+        b"application/json, text/plain",
+        b"application/json; charset=latin-1",
+        b"application/json; charset=utf-8; charset=utf-8",
+        b"application/+json",
+    ],
+)
+def test_unsupported_media_types_are_denied_without_parser(value: bytes) -> None:
+    sent, forwarded = _request([(b"content-type", value)], [])
+    assert sent[0]["status"] == 415
+    assert forwarded == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    [b"application/json", b"application/json; charset=UTF-8", b"application/vnd.sentinel+json"],
+)
+def test_json_media_types_are_accepted(value: bytes) -> None:
+    sent, forwarded = _request([(b"content-type", value)], _body_chunks(b"{}"))
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == b"{}"
+
+
+def test_duplicate_content_type_headers_are_rejected() -> None:
+    sent, forwarded = _request(
+        [
+            (b"content-type", b"application/json"),
+            (b"Content-Type", b"application/json"),
+        ],
+        [],
+    )
+    assert sent[0]["status"] == 400
+    assert forwarded == []
+
+
+def test_header_count_is_limited_before_reading_body(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_HEADER_COUNT", 2
+    )
+    headers = [(b"x-a", b"1"), (b"x-b", b"2")]
+    sent, forwarded = _request(headers, [])
+    assert sent[0]["status"] == 431
+    assert forwarded == []
+
+
+def test_header_byte_size_is_limited_before_reading_body(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_HEADER_BYTES", 40
+    )
+    sent, forwarded = _request([(b"x-long", b"x" * 50)], [])
+    assert sent[0]["status"] == 431
+    assert forwarded == []
+
+
+def test_exact_header_budget_is_accepted(monkeypatch) -> None:
+    headers = [(b"content-type", b"application/json"), (b"x-ok", b"yes")]
+    exact = sum(len(key) + len(value) for key, value in headers)
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_HEADER_COUNT", 2
+    )
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_HEADER_BYTES", exact
+    )
+    sent, forwarded = _request(headers, _body_chunks(b"{}"))
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == b"{}"
+
+
+def test_non_post_request_needs_no_json_content_type() -> None:
+    sent, forwarded = _request(
+        [], _body_chunks(b""), method="GET", supply_content_type=False
+    )
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == b""
