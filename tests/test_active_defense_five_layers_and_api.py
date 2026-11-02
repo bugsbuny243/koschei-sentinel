@@ -464,3 +464,35 @@ def test_api_rejects_overwide_json_before_framework_parsing(monkeypatch) -> None
     assert response.status_code == 413
     assert response.json()["detail"] == "active-defense JSON structure limit exceeded"
     assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_api_rejects_non_json_post_media_type_with_trust_labels() -> None:
+    for headers in (
+        {},
+        {"Content-Type": "text/plain"},
+        {"Content-Type": "application/x-www-form-urlencoded"},
+        {"Content-Type": "application/json; charset=latin-1"},
+    ):
+        response = client.post(
+            "/v1/active-defense/plan",
+            content=b'{"graph": {}}',
+            headers=headers,
+        )
+        assert response.status_code == 415, response.text
+        assert response.headers["X-Sentinel-Execution-Mode"] == "simulation-only"
+        assert response.headers["X-Sentinel-Production-Authorization"] == "not-granted"
+
+    legacy = client.post(
+        "/v1/opinions", content=b"{}", headers={"Content-Type": "text/plain"}
+    )
+    assert "X-Sentinel-Execution-Mode" not in legacy.headers
+
+
+def test_api_accepts_utf8_json_content_type_parameters() -> None:
+    response = client.post(
+        "/v1/active-defense/plan",
+        content=b"{}",
+        headers={"Content-Type": "application/json; charset=UTF-8"},
+    )
+    assert response.status_code == 422  # Parsed JSON; graph is missing
+    assert response.headers["X-Sentinel-Production-Authorization"] == "not-granted"
