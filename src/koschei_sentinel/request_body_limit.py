@@ -12,6 +12,15 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 _MAX_ACTIVE_DEFENSE_BODY_BYTES = 8 * 1024 * 1024
 _MAX_ACTIVE_DEFENSE_BODY_CHUNKS = 4096
 
+# Set on *all* handled V5 HTTP responses, including schema errors and denials.
+_SIMULATION_HEADERS = (
+    (b"cache-control", b"no-store"),
+    (b"x-sentinel-execution-mode", b"simulation-only"),
+    (b"x-sentinel-evidence-trust", b"caller-supplied"),
+    (b"x-sentinel-production-authorization", b"not-granted"),
+)
+_SIMULATION_HEADER_NAMES = frozenset(key for key, _ in _SIMULATION_HEADERS)
+
 
 def _error_response(status: int, detail: str) -> JSONResponse:
     return JSONResponse(
@@ -37,11 +46,24 @@ class ActiveDefenseRequestBodyLimit:
             await self.app(scope, receive, send)
             return
 
+        async def simulation_send(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                headers = [
+                    (key, value)
+                    for key, value in message.get("headers", [])
+                    if key.lower() not in _SIMULATION_HEADER_NAMES
+                ]
+                message = {
+                    **message,
+                    "headers": [*headers, *_SIMULATION_HEADERS],
+                }
+            await send(message)
+
         limit = _MAX_ACTIVE_DEFENSE_BODY_BYTES
         headers = scope.get("headers", [])
         lengths = [value for key, value in headers if key.lower() == b"content-length"]
         if len(lengths) > 1:
-            await _error_response(400, "duplicate content-length headers")(scope, receive, send)
+            await _error_response(400, "duplicate content-length headers")(scope, receive, simulation_send)
             return
 
         declared_length: int | None = None
@@ -121,4 +143,4 @@ class ActiveDefenseRequestBodyLimit:
                 return {"type": "http.request", "body": payload, "more_body": False}
             return await receive()
 
-        await self.app(scope, replay_receive, send)
+        await self.app(scope, replay_receive, simulation_send)
