@@ -332,7 +332,7 @@ def test_rejects_utf16_like_raw_nul_json() -> None:
 
 
 def test_accepts_multibyte_utf8_split_between_frames() -> None:
-    payload = '{"name": "€"}'.encode("utf-8")
+    payload = '{"name": "€"}'.encode()
     euro = payload.index(b"\xe2")
     sent, forwarded = _request(
         [],
