@@ -71,12 +71,12 @@ class ActiveDefenseRequestBodyLimit:
             # RFC 9110 Content-Length consists of ASCII decimal digits only.
             if not lengths[0] or not lengths[0].isdigit():
                 await _error_response(400, "invalid content-length header")(
-                    scope, receive, send
+                    scope, receive, simulation_send
                 )
                 return
             if any(key.lower() == b"transfer-encoding" for key, _ in headers):
                 await _error_response(400, "conflicting request framing headers")(
-                    scope, receive, send
+                    scope, receive, simulation_send
                 )
                 return
 
@@ -88,7 +88,7 @@ class ActiveDefenseRequestBodyLimit:
                 len(normalized) == len(maximum) and normalized > maximum
             ):
                 await _error_response(413, "active-defense request body limit exceeded")(
-                    scope, receive, send
+                    scope, receive, simulation_send
                 )
                 return
             declared_length = int(normalized)
@@ -103,21 +103,21 @@ class ActiveDefenseRequestBodyLimit:
                 return
             if message["type"] != "http.request":
                 await _error_response(400, "invalid ASGI request body event")(
-                    scope, receive, send
+                    scope, receive, simulation_send
                 )
                 return
 
             chunks += 1
             if chunks > _MAX_ACTIVE_DEFENSE_BODY_CHUNKS:
                 await _error_response(413, "active-defense request chunk limit exceeded")(
-                    scope, receive, send
+                    scope, receive, simulation_send
                 )
                 return
 
             fragment = message.get("body", b"")
             if len(fragment) > limit - len(body):
                 await _error_response(413, "active-defense request body limit exceeded")(
-                    scope, receive, send
+                    scope, receive, simulation_send
                 )
                 return
             body.extend(fragment)
@@ -126,7 +126,7 @@ class ActiveDefenseRequestBodyLimit:
 
         if declared_length is not None and declared_length != len(body):
             await _error_response(400, "content-length does not match request body")(
-                scope, receive, send
+                scope, receive, simulation_send
             )
             return
 
