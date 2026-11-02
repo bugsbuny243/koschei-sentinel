@@ -434,3 +434,33 @@ def test_handled_api_errors_carry_nonproduction_trust_headers(monkeypatch) -> No
     legacy = client.post("/v1/opinions", json={})
     assert legacy.status_code == 422
     assert "X-Sentinel-Execution-Mode" not in legacy.headers
+
+
+def test_api_rejects_deep_json_before_framework_parsing(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_JSON_DEPTH", 4
+    )
+    response = client.post(
+        "/v1/active-defense/plan",
+        content=b"[" * 5 + b"0" + b"]" * 5,
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "active-defense JSON nesting limit exceeded"
+    assert response.headers["X-Sentinel-Execution-Mode"] == "simulation-only"
+    assert response.headers["X-Sentinel-Production-Authorization"] == "not-granted"
+
+
+def test_api_rejects_overwide_json_before_framework_parsing(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_JSON_STRUCTURE_TOKENS",
+        3,
+    )
+    response = client.post(
+        "/v1/active-defense/plan",
+        content=b"[0,1,2,3,4]",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "active-defense JSON structure limit exceeded"
+    assert response.headers["Cache-Control"] == "no-store"
