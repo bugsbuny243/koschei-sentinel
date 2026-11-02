@@ -517,7 +517,7 @@ def test_api_rejects_invalid_json_byte_encodings_with_trust_labels() -> None:
 def test_api_accepts_utf8_json_with_multibyte_text() -> None:
     response = client.post(
         "/v1/active-defense/plan",
-        content='{"extra":"€"}'.encode("utf-8"),
+        content='{"extra":"€"}'.encode(),
         headers={"Content-Type": "application/json"},
     )
     assert response.status_code == 422  # Decoded JSON; graph is missing
