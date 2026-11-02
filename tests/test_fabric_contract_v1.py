@@ -1,4 +1,6 @@
+import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -43,3 +45,17 @@ def test_active_default_mode_fails_closed() -> None:
     unsafe = replace(fabric_component_v1(), defaultMode="active")
     with pytest.raises(ValueError, match="observe/shadow"):
         require_safe_fabric_contract_v1(unsafe)
+
+
+def test_fabric_contract_matches_repository_manifest() -> None:
+    manifest_path = Path(__file__).resolve().parents[1] / "fabric" / "component.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    component = fabric_component_v1()
+    assert manifest["component"] == component.component
+    assert manifest["repository"] == component.repository
+    assert manifest["role"] == component.role
+    assert manifest["defaultMode"] == component.defaultMode
+    fields = ("id", "domain", "status", "backend", "frontend", "telemetry")
+    assert [{field: item[field] for field in fields} for item in manifest["capabilities"]] == [
+        {field: getattr(item, field) for field in fields} for item in component.capabilities
+    ]

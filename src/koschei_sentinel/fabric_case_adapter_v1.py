@@ -14,6 +14,14 @@ from dataclasses import asdict, dataclass
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _INTERPRETATION_STATES = frozenset({"AVAILABLE", "UNAVAILABLE", "INVALID", "TIMEOUT", "NOT_REQUESTED"})
 _MAPPING_STATES = frozenset({"VERIFIED", "PARTIAL", "UNVERIFIED"})
+_MAX_SUPPORTING_EVIDENCE_IDS = 256
+_MAX_EVIDENCE_ID_LENGTH = 160
+_MAX_UNCERTAINTY_ENTRIES = 128
+_MAX_UNCERTAINTY_LENGTH = 2000
+_MAX_MODEL_REF_LENGTH = 512
+_MAX_NATIVE_SCHEMA_LENGTH = 256
+_MAX_NATIVE_REF_LENGTH = 1024
+_MAX_ADAPTER_VERSION_LENGTH = 128
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +62,25 @@ def build_sentinel_fabric_projection_v1(
         raise ValueError("uncertainty entries must be non-empty")
     if not native_ref.strip() or not native_schema.strip() or not adapter_version.strip():
         raise ValueError("native schema/ref and adapter version are required")
+    # Bounds mirror fabric.security-case-envelope.v1 so a projection the adapter
+    # accepts is never rejected by the Web3 coordinator's schema.
+    if len(supporting_evidence_ids) > _MAX_SUPPORTING_EVIDENCE_IDS:
+        raise ValueError(f"at most {_MAX_SUPPORTING_EVIDENCE_IDS} supporting evidence IDs are allowed")
+    if any(len(item) > _MAX_EVIDENCE_ID_LENGTH for item in supporting_evidence_ids):
+        raise ValueError(f"supporting evidence IDs must be at most {_MAX_EVIDENCE_ID_LENGTH} characters")
+    if len(uncertainty) > _MAX_UNCERTAINTY_ENTRIES:
+        raise ValueError(f"at most {_MAX_UNCERTAINTY_ENTRIES} uncertainty entries are allowed")
+    if any(len(item) > _MAX_UNCERTAINTY_LENGTH for item in uncertainty):
+        raise ValueError(f"uncertainty entries must be at most {_MAX_UNCERTAINTY_LENGTH} characters")
+    for value, field, limit in (
+        (native_ref, "native_ref", _MAX_NATIVE_REF_LENGTH),
+        (native_schema, "native_schema", _MAX_NATIVE_SCHEMA_LENGTH),
+        (adapter_version, "adapter_version", _MAX_ADAPTER_VERSION_LENGTH),
+    ):
+        if len(value) > limit:
+            raise ValueError(f"{field} must be at most {limit} characters")
+    if model_ref is not None and len(model_ref) > _MAX_MODEL_REF_LENGTH:
+        raise ValueError(f"model_ref must be at most {_MAX_MODEL_REF_LENGTH} characters")
 
     native_digest = _require_sha256(native_digest_sha256, "native_digest_sha256")
     checkpoint_digest = None

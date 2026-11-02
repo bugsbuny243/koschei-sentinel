@@ -54,7 +54,7 @@ def fabric_component_v1() -> FabricComponentV1:
             FabricCapabilityV1(
                 id="sentinel-evaluation-and-provenance",
                 domain="core",
-                status="stable",
+                status="experimental",
                 backend="existing",
                 frontend="planned",
                 telemetry="existing",
