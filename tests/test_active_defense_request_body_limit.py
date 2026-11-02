@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
@@ -151,3 +152,53 @@ def test_large_number_of_leading_zeroes_does_not_overflow() -> None:
     )
     assert sent[0]["status"] == 204
     assert forwarded[0]["body"] == b"{}"
+
+
+def test_excessive_json_nesting_is_rejected_before_downstream() -> None:
+    sent, forwarded = _request([], _body_chunks(b"[" * 65 + b"0" + b"]" * 65))
+    assert sent[0]["status"] == 413
+    assert forwarded == []
+
+
+def test_nesting_limit_accepts_exact_boundary(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_JSON_DEPTH", 3
+    )
+    payload = b'{"a":[{"b":0}]}'
+    sent, forwarded = _request([], _body_chunks(payload[:5], payload[5:]))
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == payload
+
+
+def test_large_json_array_is_bounded_by_structure_tokens(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_JSON_STRUCTURE_TOKENS",
+        4,
+    )
+    sent, forwarded = _request([], _body_chunks(b"[0,1,", b"2,3,4]"))
+    assert sent[0]["status"] == 413
+    assert forwarded == []
+
+
+def test_json_syntax_in_quoted_value_is_not_counted_across_frames(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_JSON_DEPTH", 2
+    )
+    monkeypatch.setattr(
+        "koschei_sentinel.request_body_limit._MAX_ACTIVE_DEFENSE_JSON_STRUCTURE_TOKENS",
+        2,
+    )
+    payload = json.dumps(
+        {"text": 'quoted " [{{{{{ ,,,,, ::::: ]}}}}} characters'},
+        separators=(",", ":"),
+    ).encode()
+    split = payload.index(b'\\"') + 1  # Separate an escape from its quoted byte
+    sent, forwarded = _request([], _body_chunks(payload[:split], payload[split:]))
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == payload
+
+
+def test_malformed_json_remains_the_downstream_parser_responsibility() -> None:
+    sent, forwarded = _request([], _body_chunks(b'{"a":'))
+    assert sent[0]["status"] == 204
+    assert forwarded[0]["body"] == b'{"a":'
