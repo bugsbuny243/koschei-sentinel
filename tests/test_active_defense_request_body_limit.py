@@ -306,10 +306,10 @@ def test_non_post_request_needs_no_json_content_type() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        b'{"a":"\\xff"}',
-        b'{"a":"\\xc0\\xaf"}',
-        b'{"a":"\\xe2"}',
-        b'{"a":"\\xff\\xfe"}',
+        b'{"a":"\xff"}',
+        b'{"a":"\xc0\xaf"}',
+        b'{"a":"\xe2"}',
+        b'{"a":"\xff\xfe"}',
     ],
 )
 def test_rejects_invalid_or_incomplete_utf8_json(payload: bytes) -> None:
@@ -320,29 +320,30 @@ def test_rejects_invalid_or_incomplete_utf8_json(payload: bytes) -> None:
 
 
 def test_rejects_utf8_byte_order_mark() -> None:
-    sent, forwarded = _request([], _body_chunks(b"\\xef\\xbb\\xbf{}"))
+    sent, forwarded = _request([], _body_chunks(b"\xef\xbb\xbf{}"))
     assert sent[0]["status"] == 400
     assert forwarded == []
 
 
 def test_rejects_utf16_like_raw_nul_json() -> None:
-    sent, forwarded = _request([], _body_chunks(b"{\\x00}\\x00"))
+    sent, forwarded = _request([], _body_chunks(b"{\x00}\x00"))
     assert sent[0]["status"] == 400
     assert forwarded == []
 
 
 def test_accepts_multibyte_utf8_split_between_frames() -> None:
     payload = '{"name": "€"}'.encode("utf-8")
-    euro = payload.index(b"\\xe2")
+    euro = payload.index(b"\xe2")
     sent, forwarded = _request(
-        [], _body_chunks(payload[:euro + 1], payload[euro + 1:euro + 2], payload[euro + 2:])
+        [],
+        _body_chunks(payload[: euro + 1], payload[euro + 1 : euro + 2], payload[euro + 2 :]),
     )
     assert sent[0]["status"] == 204
     assert forwarded[0]["body"] == payload
 
 
 def test_escaped_json_nul_is_allowed_as_text() -> None:
-    payload = b'{"name":"\\\\u0000"}'
+    payload = b'{"name":"\\u0000"}'
     sent, forwarded = _request([], _body_chunks(payload))
     assert sent[0]["status"] == 204
     assert forwarded[0]["body"] == payload
@@ -365,7 +366,9 @@ def test_total_body_timeout_rejects_slow_trickle(monkeypatch) -> None:
         0.025,
     )
     sent, forwarded = _request(
-        [], _body_chunks(b"{", b'"', b'"', b":" , b"0", b"}"), per_frame_delay=0.01
+        [],
+        _body_chunks(b"{", b'"', b'"', b":", b"0", b"}"),
+        per_frame_delay=0.01,
     )
     assert sent[0]["status"] == 408
     assert forwarded == []
@@ -373,7 +376,7 @@ def test_total_body_timeout_rejects_slow_trickle(monkeypatch) -> None:
 
 def test_non_post_requests_remain_utf8_agnostic() -> None:
     sent, forwarded = _request(
-        [], _body_chunks(b"\\xff"), method="GET", supply_content_type=False
+        [], _body_chunks(b"\xff"), method="GET", supply_content_type=False
     )
     assert sent[0]["status"] == 204
-    assert forwarded[0]["body"] == b"\\xff"
+    assert forwarded[0]["body"] == b"\xff"
