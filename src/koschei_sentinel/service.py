@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import Field, model_validator
 
@@ -84,6 +86,18 @@ class AssuredActiveDefensePlanRequest(StrictModel):
         _check_graph_budget(self.graph)
         if len(self.registry.enrollments) > _MAX_API_SOURCE_ENROLLMENTS:
             raise ValueError("active-defense API source enrollment limit exceeded")
+        return self
+
+
+class SimulatedAssuredConnectorEnvelope(AssuredDefenseConnectorEnvelope):
+    """HTTP projection: internally valid assurance never grants live execution."""
+
+    production_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_dry_run(self) -> SimulatedAssuredConnectorEnvelope:
+        if not self.command.dry_run:
+            raise ValueError("HTTP connector envelopes must be simulation-only")
         return self
 
 
@@ -172,16 +186,16 @@ def create_assured_active_defense_plan(
 
 @app.post(
     "/v1/active-defense/connector-envelope",
-    response_model=AssuredDefenseConnectorEnvelope,
+    response_model=SimulatedAssuredConnectorEnvelope,
     description=(
         "Generate a dry-run command envelope only. The legacy production_authorized "
-        "field is not a server-issued authorization or proof of source identity. "
+        "field is overridden to false on HTTP responses; it is not server-granted. "
         "Live commands are always rejected."
     ),
 )
 def create_assured_connector_envelope(
     request: AssuredConnectorEnvelopeRequest, response: Response
-) -> AssuredDefenseConnectorEnvelope:
+) -> SimulatedAssuredConnectorEnvelope:
     # This unauthenticated API only creates dry-run artifacts; production commands
     # require a separate, authenticated authority and approval boundary.
     _mark_simulation_response(response)
@@ -192,13 +206,16 @@ def create_assured_connector_envelope(
             detail="production connector commands require an authenticated authorization boundary",
         )
     try:
-        return build_assured_connector_envelope(
+        internal = build_assured_connector_envelope(
             scope=request.scope,
             assured_plan=request.assured_plan,
             interception_plan=request.interception_plan,
             step_id=request.step_id,
             precondition_evidence_ids=request.precondition_evidence_ids,
             dry_run=True,
+        )
+        return SimulatedAssuredConnectorEnvelope.model_validate(
+            {**internal.model_dump(mode="json"), "production_authorized": False}
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
