@@ -26,7 +26,7 @@ this HTTP boundary. Even an apparently high-assurance plan must therefore be
 treated as untrusted simulation output.
 
 Every handled HTTP response under the V5 route prefix (including 400, 403,
-404, 405, 413, 422, and successful responses) is marked with:
+404, 405, 413, 415, 422, 431, and successful responses) is marked with:
 - `Cache-Control: no-store`
 - `X-Sentinel-Execution-Mode: simulation-only`
 - `X-Sentinel-Evidence-Trust: caller-supplied`
@@ -46,6 +46,21 @@ This HTTP response grants **no** execution permission, signed provenance, or
 operator approval. The legacy internal field must never be treated as a
 bearer token or server-issued production authorization.
 
+## Request media types and headers
+
+V5 `POST` endpoints require one unambiguous JSON `Content-Type` header:
+`application/json` or a vendor media type ending in `+json`, optionally
+with a single `charset=UTF-8` parameter. Missing, form-encoded, text,
+comma-separated or non-UTF-8 media types return HTTP **415**. Duplicate
+`Content-Type` headers return HTTP **400**.
+
+The pre-parser ASGI boundary also rejects more than 128 request header
+fields or more than 16 KiB in combined header-name/header-value bytes with
+HTTP **431**, before reading the request body. This is an application-level
+backstop; the HTTP server/proxy must independently enforce limits on raw
+header framing. The JSON media-type requirement applies only to V5 `POST`
+requests; `GET` and legacy endpoints keep their existing handling.
+
 ## Resource controls
 
 For these HTTP endpoints only:
@@ -54,6 +69,8 @@ For these HTTP endpoints only:
 | --- | ---: |
 | HTTP request body (declared or streamed) | 8 MiB |
 | HTTP body frame count (including empty frames) | 4,096 |
+| HTTP request header count | 128 |
+| HTTP request header name/value bytes combined | 16 KiB |
 | JSON object/array nesting depth | 64 |
 | JSON structural punctuation tokens (openings, commas and colons) | 262,144 |
 | Graph entities | 4,096 |
@@ -121,8 +138,9 @@ API request budgets, distinct simulation-only HTTP response projection, and
 trust headers on successful and unsuccessful handled responses. The ASGI tests
 also cover declared and streamed HTTP-body rejection.
 The focused ASGI regression suite tests deep and wide JSON rejection, exact
-boundary acceptance, quote/escape handling across streamed frames, and
-continued compatibility with legacy routes.
+boundary acceptance, quote/escape handling across streamed frames, duplicate
+and missing JSON content types, invalid media types, excessive header counts
+and bytes, and continued compatibility with legacy routes.
 The V5 workflow also runs the standard-dependency test
 suite, excluding three PyTorch-specific MCore/checkpoint modules. That suite
 does **not** replace a full optional-dependencies training validation pass.
