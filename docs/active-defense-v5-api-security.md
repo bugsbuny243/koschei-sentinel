@@ -25,21 +25,26 @@ receipts, and scope are provided by the caller and **not authenticated** at
 this HTTP boundary. Even an apparently high-assurance plan must therefore be
 treated as untrusted simulation output.
 
-A successful response sets:
+Every handled HTTP response under the V5 route prefix (including 400, 403,
+404, 405, 413, 422, and successful responses) is marked with:
 - `Cache-Control: no-store`
 - `X-Sentinel-Execution-Mode: simulation-only`
 - `X-Sentinel-Evidence-Trust: caller-supplied`
+- `X-Sentinel-Production-Authorization: not-granted`
 
-The connector-envelope route also sets
-`X-Sentinel-Production-Authorization: not-granted`.
+These headers do not establish provenance or authorization. The ingress
+middleware applies them centrally, including to FastAPI validation responses.
+Failures generated outside the ASGI application by an upstream proxy or
+load balancer are outside this guarantee.
 
-**Important schema caveat:** The existing
+**Legacy schema compatibility and HTTP projection:** Internal
 `AssuredDefenseConnectorEnvelope.production_authorized: Literal[True]`
-is preserved for compatibility with the internal connector contract. When it
-appears in a dry-run HTTP response, it does **not** represent server-granted
-authority, signed provenance, an operator approval, or permission to execute
-anything in production. Clients must inspect `command.dry_run` and the
-HTTP trust boundary; do not interpret that legacy field as a bearer token.
+remains unchanged for existing in-process connector contracts. The HTTP
+connector-envelope endpoint returns a separate simulation-only projection:
+`production_authorized: false`, and its `command.dry_run` must be `true`.
+This HTTP response grants **no** execution permission, signed provenance, or
+operator approval. The legacy internal field must never be treated as a
+bearer token or server-issued production authorization.
 
 ## Resource controls
 
@@ -104,11 +109,16 @@ not provider-specific execution implementations.
 `tests/test_active_defense_five_layers_and_api.py` covers entity mappings,
 mode gates, deterministic adapter normalization, successful dry runs, rejection
 of live HTTP connector commands, tampered graph receipts, trust headers, and
-API request budgets, and both declared and streamed HTTP-body rejection.
+API request budgets, distinct simulation-only HTTP response projection, and
+trust headers on successful and unsuccessful handled responses. The ASGI tests
+also cover declared and streamed HTTP-body rejection.
 The V5 workflow also runs the standard-dependency test
 suite, excluding three PyTorch-specific MCore/checkpoint modules. That suite
 does **not** replace a full optional-dependencies training validation pass.
 
-The baseline repository-wide Ruff gate includes unrelated pre-existing lint
-issues. The V5 workflow validates changed Python files separately; these
-checks must not be represented as a clean repository-wide lint result.
+The main `ci` workflow runs a clean repository-wide `ruff check .`
+and the standard-dependency suite. Its separate CPU-only PyTorch job runs the
+three previously excluded checkpoint modules with NumPy installed. The
+`Sentinel Production CPU Gates` workflow also exercises a real two-process
+Gloo smoke in an isolated CI environment. These results do not constitute
+live execution or production approval.
