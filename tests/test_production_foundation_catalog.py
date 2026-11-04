@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from koschei_sentinel.production_foundation_catalog import (
     FoundationCatalogCursor,
-    FoundationDatasetCatalog,
     FoundationCatalogShard,
+    FoundationDatasetCatalog,
     _catalog_digest_payload,
 )
-from koschei_sentinel.production_foundation_catalog_reader import take_distributed_catalog_sequences
-from koschei_sentinel.production_foundation_worker_prefetch import FoundationWorkerPrefetch
+from koschei_sentinel.production_foundation_worker_prefetch import (
+    FoundationWorkerPrefetch,
+)
 
 
 def _catalog(tmp_path):

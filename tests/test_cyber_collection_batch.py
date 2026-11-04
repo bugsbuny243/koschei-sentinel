@@ -3,7 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 
-from koschei_sentinel.cyber_collection_batch import CollectionBatchSpec, seal_collection_batch
+from koschei_sentinel.cyber_collection_batch import (
+    CollectionBatchSpec,
+    seal_collection_batch,
+)
 
 
 def _write_jsonl(path, rows):

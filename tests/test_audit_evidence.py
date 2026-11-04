@@ -1,7 +1,11 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from koschei_sentinel.audit_evidence import build_authorization_audit
-from koschei_sentinel.authority_policy import CapabilityGrant, DelegationChain, PolicyDecision
+from koschei_sentinel.authority_policy import (
+    CapabilityGrant,
+    DelegationChain,
+    PolicyDecision,
+)
 from koschei_sentinel.inference_contract import (
     AuthorityEnvelope,
     EvidenceRef,
@@ -9,8 +13,7 @@ from koschei_sentinel.inference_contract import (
     RiskClass,
 )
 
-
-NOW = datetime(2026, 9, 26, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 26, tzinfo=UTC)
 
 
 def test_authorization_audit_is_deterministic_and_evidence_bound():

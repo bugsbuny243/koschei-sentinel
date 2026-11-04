@@ -44,7 +44,7 @@ class ProductionModelSourceIntake(StrictModel):
     intake_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def source_is_pinned_and_non_placeholder(self) -> "ProductionModelSourceIntake":
+    def source_is_pinned_and_non_placeholder(self) -> ProductionModelSourceIntake:
         if self.model_revision == _ZERO or self.source_revision == _ZERO:
             raise ValueError("production model source revisions cannot be zero placeholders")
         for field_name in (

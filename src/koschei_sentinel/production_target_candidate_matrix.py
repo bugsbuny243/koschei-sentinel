@@ -38,7 +38,7 @@ class ProductionTargetCandidate(StrictModel):
     evidence: list[str] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def fit_is_derived_not_claimed(self) -> "ProductionTargetCandidate":
+    def fit_is_derived_not_claimed(self) -> ProductionTargetCandidate:
         total_match = abs(self.total_parameters_billion - _TARGET_TOTAL_B) <= _TOLERANCE_B
         active_match = abs(self.active_parameters_billion - _TARGET_ACTIVE_B) <= _TOLERANCE_B
         exact_match = total_match and active_match
@@ -78,7 +78,7 @@ class ProductionTargetCandidateMatrix(StrictModel):
     candidates: list[ProductionTargetCandidate] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def decision_is_fail_closed(self) -> "ProductionTargetCandidateMatrix":
+    def decision_is_fail_closed(self) -> ProductionTargetCandidateMatrix:
         refs = [candidate.model_ref for candidate in self.candidates]
         if len(refs) != len(set(refs)):
             raise ValueError("candidate matrix contains duplicate model_ref entries")

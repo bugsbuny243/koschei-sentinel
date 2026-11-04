@@ -8,7 +8,9 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.production_foundation_pretokenized import PretokenizedFoundationReader
+from koschei_sentinel.production_foundation_pretokenized import (
+    PretokenizedFoundationReader,
+)
 
 
 class FoundationCatalogShard(StrictModel):
@@ -30,7 +32,7 @@ class FoundationDatasetCatalog(StrictModel):
     catalog_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def coherent(self) -> "FoundationDatasetCatalog":
+    def coherent(self) -> FoundationDatasetCatalog:
         if self.total_sequences != sum(shard.sequence_count for shard in self.shards):
             raise ValueError("catalog total_sequences mismatch")
         if any(shard.sequence_length != self.sequence_length for shard in self.shards):

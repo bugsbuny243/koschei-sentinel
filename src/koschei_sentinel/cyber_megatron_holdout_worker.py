@@ -831,13 +831,13 @@ def _replay_raw_results(
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid SWIFT result JSON at line {line_number}") from exc
         if not isinstance(payload, dict):
-            raise ValueError(f"SWIFT result at line {line_number} is not an object")
+            raise ValueError(f"SWIFT result at line {line_number} is not an object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
         messages = payload.get("messages")
         response = payload.get("response")
         if not isinstance(messages, list) or not messages:
             raise ValueError(f"SWIFT result at line {line_number} has no messages list")
         if not isinstance(response, str):
-            raise ValueError(f"SWIFT result at line {line_number} has no text response")
+            raise ValueError(f"SWIFT result at line {line_number} has no text response")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
         if not all(isinstance(row, dict) for row in messages):
             raise ValueError(f"SWIFT result at line {line_number} has malformed messages")
         assistant = messages[-1]

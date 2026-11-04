@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 
 from koschei_sentinel.assured_active_defense import ActiveDefenseAssurancePolicy
-from koschei_sentinel.assured_multi_incident_defense import AssuredMultiIncidentDefensePlan
+from koschei_sentinel.assured_multi_incident_defense import (
+    AssuredMultiIncidentDefensePlan,
+)
 from koschei_sentinel.cyber_state_graph import CyberStateGraph
 from koschei_sentinel.defense_resource_scheduler import DefenseResourceSchedule
 from koschei_sentinel.defense_wave_execution import DefenseWaveExecution

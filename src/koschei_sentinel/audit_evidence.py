@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
-from typing import Any, Mapping
+from datetime import UTC, datetime
+from typing import Any
 
 from .authority_policy import DelegationChain, PolicyDecision
 from .inference_contract import InferenceRequest
@@ -63,7 +64,7 @@ def build_authorization_audit(
     if request.authority is None:
         raise ValueError("authorization audit requires an authority envelope")
 
-    issued_at = issued_at or datetime.now(timezone.utc)
+    issued_at = issued_at or datetime.now(UTC)
     authority = request.authority
 
     chain_payload = {
@@ -97,5 +98,5 @@ def build_authorization_audit(
         chain_depth=decision.chain_depth,
         delegation_digest=_canonical_digest(chain_payload),
         evidence_digests=tuple(sorted(item.digest for item in request.evidence)),
-        issued_at=issued_at.astimezone(timezone.utc).isoformat(),
+        issued_at=issued_at.astimezone(UTC).isoformat(),
     )

@@ -45,7 +45,7 @@ def audit_model_access(config: CyberSFTConfig) -> CyberModelAccessPreflight:
 
     try:
         info = model_info(config.base_model, revision=config.base_revision)
-    except Exception as exc:  # Hub raises several HTTP/revision-specific exception classes.
+    except Exception as exc:  # Hub raises several HTTP/revision-specific exception classes.  # noqa: BLE001 - intentional broad exception at external error boundary
         blockers.append(f"Hugging Face model/revision is not accessible: {exc}")
     else:
         resolved_revision = getattr(info, "sha", None)
@@ -92,7 +92,7 @@ def audit_model_access(config: CyberSFTConfig) -> CyberModelAccessPreflight:
             model_type = getattr(hf_config, "model_type", None)
             mapped_class = AutoModelForCausalLM._model_mapping[type(hf_config)]
             causal_lm_class = mapped_class.__name__
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - intentional broad exception at external error boundary
             blockers.append(f"Transformers causal-LM config mapping failed: {exc}")
         else:
             if model_type != "qwen3_5":

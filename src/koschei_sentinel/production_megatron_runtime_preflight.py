@@ -7,7 +7,9 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.production_megatron_launch_plan import ProductionMegatronLaunchPlan
+from koschei_sentinel.production_megatron_launch_plan import (
+    ProductionMegatronLaunchPlan,
+)
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
 
 
@@ -48,7 +50,7 @@ class MegatronRuntimePreflight(StrictModel):
     preflight_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def verify_integrity_and_no_authority(self) -> "MegatronRuntimePreflight":
+    def verify_integrity_and_no_authority(self) -> MegatronRuntimePreflight:
         payload = self.model_dump(mode="json", exclude={"preflight_sha256"})
         if self.preflight_sha256 != _digest(payload):
             raise ValueError("production Megatron runtime-preflight self-hash mismatch")

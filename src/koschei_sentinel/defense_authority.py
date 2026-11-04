@@ -26,6 +26,12 @@ class DefenseActionType(StrEnum):
     PAUSE_PIPELINE = "PAUSE_PIPELINE"
     FREEZE_SIGNER = "FREEZE_SIGNER"
     HOLD_TRANSACTION = "HOLD_TRANSACTION"
+    ISOLATE_MICROSEGMENT = "ISOLATE_MICROSEGMENT"
+    BGP_BLACKHOLE_ROUTE = "BGP_BLACKHOLE_ROUTE"
+    DIVERT_FLOWSPEC_SCRUBBING = "DIVERT_FLOWSPEC_SCRUBBING"
+    PAUSE_PROTOCOL_CONTRACT = "PAUSE_PROTOCOL_CONTRACT"
+    LOCK_HSM_PARTITION = "LOCK_HSM_PARTITION"
+    TRIGGER_AIRGAP_ISOLATION = "TRIGGER_AIRGAP_ISOLATION"
     ENABLE_EMERGENCY_POLICY = "ENABLE_EMERGENCY_POLICY"
 
 
@@ -62,9 +68,26 @@ _COMBAT_ACTIONS = _GUARD_ACTIONS + [
     DefenseActionType.PAUSE_PIPELINE,
     DefenseActionType.FREEZE_SIGNER,
     DefenseActionType.HOLD_TRANSACTION,
+    DefenseActionType.ISOLATE_MICROSEGMENT,
+    DefenseActionType.BGP_BLACKHOLE_ROUTE,
+    DefenseActionType.DIVERT_FLOWSPEC_SCRUBBING,
+    DefenseActionType.PAUSE_PROTOCOL_CONTRACT,
 ]
 
-_SIEGE_ACTIONS = _COMBAT_ACTIONS + [DefenseActionType.ENABLE_EMERGENCY_POLICY]
+_SIEGE_ACTIONS = _COMBAT_ACTIONS + [
+    DefenseActionType.ENABLE_EMERGENCY_POLICY,
+    DefenseActionType.LOCK_HSM_PARTITION,
+    DefenseActionType.TRIGGER_AIRGAP_ISOLATION,
+]
+
+def action_permitted_in_mode(mode: DefenseMode, action: DefenseActionType) -> bool:
+    """Enforce the canonical mode ceiling independently from caller-supplied plans."""
+    return action in {
+        DefenseMode.GUARD: _GUARD_ACTIONS,
+        DefenseMode.COMBAT: _COMBAT_ACTIONS,
+        DefenseMode.SIEGE: _SIEGE_ACTIONS,
+    }[mode]
+
 
 
 def decide_defense_mode(assessment: AttackAssessment) -> DefenseDecision:

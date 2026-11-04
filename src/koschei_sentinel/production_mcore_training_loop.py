@@ -8,9 +8,15 @@ from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
-from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
-from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
-from koschei_sentinel.production_mcore_optimizer_smoke import build_mcore_distributed_optimizer
+from koschei_sentinel.production_mcore_distributed_runtime import (
+    MCoreDistributedRuntime,
+)
+from koschei_sentinel.production_mcore_native_checkpoint import (
+    initialize_mcore_native_parameters,
+)
+from koschei_sentinel.production_mcore_optimizer_smoke import (
+    build_mcore_distributed_optimizer,
+)
 from koschei_sentinel.production_mcore_smoke import run_mcore_forward_backward_smoke
 from koschei_sentinel.production_mcore_training_checkpoint import (
     MCoreTrainingState,
@@ -36,7 +42,7 @@ class MCoreTrainingLoopConfig(StrictModel):
     checkpoint_every_steps: int = Field(gt=0)
 
     @model_validator(mode="after")
-    def validate_schedule(self) -> "MCoreTrainingLoopConfig":
+    def validate_schedule(self) -> MCoreTrainingLoopConfig:
         if self.min_learning_rate > self.learning_rate:
             raise ValueError("min_learning_rate cannot exceed learning_rate")
         if self.warmup_steps >= self.max_steps:

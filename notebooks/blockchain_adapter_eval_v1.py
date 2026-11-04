@@ -16,10 +16,10 @@ import importlib.util
 import json
 import math
 import os
-from collections import Counter, defaultdict
-from pathlib import Path
 import subprocess
 import sys
+from collections import Counter, defaultdict
+from pathlib import Path
 
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 

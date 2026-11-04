@@ -4,25 +4,63 @@ import time
 from functools import partial
 from pathlib import Path
 from typing import Literal
+
 from pydantic import Field
+
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.production_foundation_catalog import FoundationCatalogCursor, load_foundation_catalog
+from koschei_sentinel.production_foundation_catalog import (
+    FoundationCatalogCursor,
+    load_foundation_catalog,
+)
 from koschei_sentinel.production_foundation_prefetch import FoundationDoubleBuffer
-from koschei_sentinel.production_foundation_worker_prefetch import FoundationWorkerPrefetch
+from koschei_sentinel.production_foundation_worker_prefetch import (
+    FoundationWorkerPrefetch,
+)
 from koschei_sentinel.production_mcore_activation_probe import MCoreActivationProbe
 from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointConfig
 from koschei_sentinel.production_mcore_ddp import wrap_runtime_with_megatron_ddp
 from koschei_sentinel.production_mcore_distributed_commit import save_and_commit_state
-from koschei_sentinel.production_mcore_moe_metrics_probe import clear_native_moe_metrics, read_native_moe_losses
-from koschei_sentinel.production_mcore_native_checkpoint import initialize_mcore_native_parameters
-from koschei_sentinel.production_mcore_optimizer_smoke import build_mcore_distributed_optimizer
-from koschei_sentinel.production_mcore_recovery import RecoveryLedger, RecoveryPolicy, build_recovery_decision, distributed_recovery_consensus, fingerprint_batch
-from koschei_sentinel.production_mcore_recovery_checkpoint_manager import RecoveryCheckpointManager
-from koschei_sentinel.production_mcore_resume_bundle import attach_catalog_resume_state, restore_catalog_resume_bundle
+from koschei_sentinel.production_mcore_moe_metrics_probe import (
+    clear_native_moe_metrics,
+    read_native_moe_losses,
+)
+from koschei_sentinel.production_mcore_native_checkpoint import (
+    initialize_mcore_native_parameters,
+)
+from koschei_sentinel.production_mcore_optimizer_smoke import (
+    build_mcore_distributed_optimizer,
+)
+from koschei_sentinel.production_mcore_recovery import (
+    RecoveryLedger,
+    RecoveryPolicy,
+    build_recovery_decision,
+    distributed_recovery_consensus,
+    fingerprint_batch,
+)
+from koschei_sentinel.production_mcore_recovery_checkpoint_manager import (
+    RecoveryCheckpointManager,
+)
+from koschei_sentinel.production_mcore_resume_bundle import (
+    attach_catalog_resume_state,
+    restore_catalog_resume_bundle,
+)
 from koschei_sentinel.production_mcore_router_probe import MCoreRouterProbe
-from koschei_sentinel.production_mcore_stability_telemetry import MCoreStabilityStepTelemetry, StabilityThresholds, collect_mcore_stability_telemetry
-from koschei_sentinel.production_mcore_training_checkpoint import MCoreTrainingState, load_mcore_training_checkpoint, save_mcore_training_checkpoint
-from koschei_sentinel.production_mcore_training_trends import TrainingTrendSnapshot, TrainingTrendThresholds, TrainingTrendTracker
+from koschei_sentinel.production_mcore_stability_telemetry import (
+    MCoreStabilityStepTelemetry,
+    StabilityThresholds,
+    collect_mcore_stability_telemetry,
+)
+from koschei_sentinel.production_mcore_training_checkpoint import (
+    MCoreTrainingState,
+    load_mcore_training_checkpoint,
+    save_mcore_training_checkpoint,
+)
+from koschei_sentinel.production_mcore_training_trends import (
+    TrainingTrendSnapshot,
+    TrainingTrendThresholds,
+    TrainingTrendTracker,
+)
+
 
 class CatalogTrainingConfig(StrictModel):
     schema_version: Literal["sentinel.catalog-training-config.v1"]="sentinel.catalog-training-config.v1"; max_steps:int=Field(gt=0); microbatches_per_step:int=Field(gt=0); learning_rate:float=Field(gt=0); weight_decay:float=Field(ge=0); clip_grad:float=Field(gt=0); global_seed:int=Field(ge=0,lt=2**63); checkpoint_every_steps:int=Field(gt=0); prefetch_workers:int=Field(gt=0); prefetch_depth:int=Field(ge=2)
@@ -116,7 +154,7 @@ def run_catalog_training(runtime,spec,config,*,catalog_path,checkpoint_root,resu
                     lm_loss=_run_prefetched_batches(ddp,spec,buffer); model.finish_grad_sync(); native=read_native_moe_losses(); ok,grad_norm=_optimizer_step_result(optimizer.step());
                     if not ok:blockers.append("optimizer_step_failed")
                     torch.cuda.synchronize(runtime.local_rank); elapsed=max(time.perf_counter()-started,1e-9); rs=router.snapshot(); act=activation.snapshot(); local_tokens=catalog.sequence_length*config.microbatches_per_step; global_tokens=local_tokens*dp_size; stability=collect_mcore_stability_telemetry(model=model,global_step=completed+1,local_tokens=local_tokens,global_tokens=global_tokens,elapsed_seconds=elapsed,grad_norm=grad_norm,thresholds=config.stability_thresholds,local_rank=runtime.local_rank,aux_loss=native.aux_loss,z_loss=native.z_loss,router_layers=[(x.module_name,x.tokens_per_expert) for x in rs.layers]); trend=trend_tracker.preview(global_step=completed+1,lm_loss=lm_loss,grad_norm=grad_norm,max_activation_rms=act.max_rms,max_activation_abs=act.max_abs,worst_router_utilization_fraction=stability.worst_router_utilization_fraction); blockers+=stability.blockers+trend.blockers
-                except Exception as exc: local_exception=exc; blockers.append(f"rank_exception:{type(exc).__name__}")
+                except Exception as exc: local_exception=exc; blockers.append(f"rank_exception:{type(exc).__name__}")  # noqa: BLE001 - intentional broad exception at external error boundary
                 unstable,reasons=distributed_recovery_consensus(blockers,device=device)
                 if unstable:
                     decision=build_recovery_decision(globally_unstable=True,batch_fingerprint=fp,current_learning_rate=lr,policy=config.recovery_policy,ledger=ledger,reason_codes=reasons)

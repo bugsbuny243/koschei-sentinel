@@ -7,7 +7,12 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from koschei_sentinel.agentic_security_eval_contract import Config, Seed, Seeds, load_and_validate
+from koschei_sentinel.agentic_security_eval_contract import (
+    Config,
+    Seed,
+    Seeds,
+    load_and_validate,
+)
 from koschei_sentinel.models import StrictModel
 
 Mode = Literal["positive", "hard_negative", "ambiguous", "abstention"]
@@ -74,7 +79,7 @@ class GeneratedBundle(StrictModel):
     cases: list[GeneratedCase] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def count_matches_payload(self) -> "GeneratedBundle":
+    def count_matches_payload(self) -> GeneratedBundle:
         if self.total_cases != len(self.cases):
             raise ValueError("total_cases does not match generated case count")
         return self

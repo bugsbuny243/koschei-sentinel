@@ -36,7 +36,7 @@ class ProductionMegatronTopology(StrictModel):
         return self.tensor_model_parallel_size * self.pipeline_model_parallel_size * self.context_parallel_size
 
     @model_validator(mode="after")
-    def topology_is_coherent(self) -> "ProductionMegatronTopology":
+    def topology_is_coherent(self) -> ProductionMegatronTopology:
         if self.world_size % self.model_parallel_size:
             raise ValueError("world size must be divisible by TP * PP * CP")
         data_parallel = self.world_size // self.model_parallel_size
@@ -66,7 +66,7 @@ class ProductionMegatronConfig(StrictModel):
     production_topology_verification_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def config_is_safe(self) -> "ProductionMegatronConfig":
+    def config_is_safe(self) -> ProductionMegatronConfig:
         for name, value in (("corpus_dir", self.corpus_dir), ("validation_corpus_dir", self.validation_corpus_dir), ("dataset_dir", self.dataset_dir), ("output_dir", self.output_dir)):
             _relative_path(value, name)
         if self.corpus_dir == self.validation_corpus_dir:

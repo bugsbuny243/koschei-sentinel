@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointConfig, MCoreAsyncCheckpointQueue
+from koschei_sentinel.production_mcore_async_checkpoint import (
+    AsyncCheckpointConfig,
+    MCoreAsyncCheckpointQueue,
+)
 from koschei_sentinel.production_mcore_checkpoint_retention import (
     RecoveryCheckpointEntry,
     RecoveryCheckpointIndex,
@@ -74,7 +77,7 @@ class RecoveryCheckpointManager:
                     raise RuntimeError("recovery checkpoint proposals diverged across ranks")
                 first["commit_generation"] = self._next_commit_generation()
                 payload[0] = {"ok": True, "entry": first}
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - intentional broad exception at external error boundary
                 payload[0] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         dist.broadcast_object_list(payload, src=0)
         result = payload[0]
@@ -106,7 +109,7 @@ class RecoveryCheckpointManager:
                 agreed = RecoveryCheckpointEntry.model_validate(first)
                 self.index, removed = record_recovery_checkpoint(self.root, self.index, agreed)
                 payload[0] = {"ok": True, "removed": removed}
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - intentional broad exception at external error boundary
                 payload[0] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
         dist.broadcast_object_list(payload, src=0)
@@ -128,7 +131,7 @@ class RecoveryCheckpointManager:
         if dist is not None and dist.is_initialized():
             gathered: list[Any] = [None] * dist.get_world_size()
             dist.all_gather_object(gathered, sorted(local_ready))
-            ready = set.intersection(*(set(int(item) for item in rank_ready) for rank_ready in gathered))
+            ready = set.intersection(*({int(item) for item in rank_ready} for rank_ready in gathered))
         else:
             ready = local_ready
 

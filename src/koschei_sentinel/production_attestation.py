@@ -5,8 +5,16 @@ import json
 from dataclasses import asdict, dataclass
 
 from .conformance import ConformanceReport
-from .production_evidence import ProductionEvidenceManifest, REQUIRED_PRODUCTION_ARTIFACTS
-from .production_gate import ProductionEvidence, ProductionGateResult, ProductionThresholds, evaluate_production_readiness
+from .production_evidence import (
+    REQUIRED_PRODUCTION_ARTIFACTS,
+    ProductionEvidenceManifest,
+)
+from .production_gate import (
+    ProductionEvidence,
+    ProductionGateResult,
+    ProductionThresholds,
+    evaluate_production_readiness,
+)
 
 
 @dataclass(frozen=True)
@@ -28,8 +36,10 @@ def attest_production_readiness(
     report: ConformanceReport,
     manifest: ProductionEvidenceManifest,
     evidence: ProductionEvidence,
-    thresholds: ProductionThresholds = ProductionThresholds(),
+    thresholds: ProductionThresholds | None = None,
 ) -> ProductionAttestation:
+    if thresholds is None:
+        thresholds = ProductionThresholds()
     failures: list[str] = []
     if manifest.conformance_report_digest != report.digest():
         failures.append("conformance digest mismatch")

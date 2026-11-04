@@ -6,7 +6,10 @@ from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
-from koschei_sentinel.production_tensor_layout import TensorLayoutEntry, build_tensor_layout
+from koschei_sentinel.production_tensor_layout import (
+    TensorLayoutEntry,
+    build_tensor_layout,
+)
 
 
 class MetaFactoryResult(StrictModel):
@@ -33,9 +36,7 @@ def _owned_by_rank(
         return False
     if not entry.replicated_across_tensor_parallel and tensor_rank >= entry.tensor_parallel_shards:
         return False
-    if not entry.replicated_across_expert_parallel and expert_rank >= entry.expert_parallel_shards:
-        return False
-    return True
+    return not (not entry.replicated_across_expert_parallel and expert_rank >= entry.expert_parallel_shards)
 
 
 def instantiate_meta_rank(

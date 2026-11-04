@@ -149,3 +149,26 @@ def test_connector_rejects_unknown_interception_step() -> None:
             precondition_evidence_ids=["evidence:one", "evidence:two"],
             dry_run=False,
         )
+
+
+def test_forged_combat_plan_cannot_authorize_siege_hardware_action() -> None:
+    assured = _assured_plan(2)
+    action = DefenseActionType.LOCK_HSM_PARTITION
+    assured.active_defense_plan.progression.defensive_cut_points[0].action = action
+    assured.active_defense_plan.authorized_cut_points[0].action = action
+    assured.active_defense_plan.decision.permitted_actions = [action]
+    interception = build_interception_plan(assured.active_defense_plan)
+    scope = ProtectedScope(
+        scope_id="scope:forged",
+        entity_ids=["device:prod"],
+        permitted_actions=[action],
+    )
+    with pytest.raises(ValueError, match="not permitted by the selected defense mode"):
+        build_assured_connector_envelope(
+            scope=scope,
+            assured_plan=assured,
+            interception_plan=interception,
+            step_id=interception.steps[0].step_id,
+            precondition_evidence_ids=["evidence:fake-approval"],
+            dry_run=True,
+        )

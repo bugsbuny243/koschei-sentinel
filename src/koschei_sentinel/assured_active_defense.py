@@ -4,7 +4,10 @@ from typing import Literal
 
 from pydantic import Field
 
-from koschei_sentinel.active_defense_planner import ActiveDefensePlan, build_active_defense_plan
+from koschei_sentinel.active_defense_planner import (
+    ActiveDefensePlan,
+    build_active_defense_plan,
+)
 from koschei_sentinel.cyber_state_graph import CyberStateGraph, EvidenceStatus
 from koschei_sentinel.defense_authority import (
     DefenseActionType,
@@ -78,6 +81,10 @@ _ACTIONS_BY_MODE = {
         DefenseActionType.PAUSE_PIPELINE,
         DefenseActionType.FREEZE_SIGNER,
         DefenseActionType.HOLD_TRANSACTION,
+        DefenseActionType.ISOLATE_MICROSEGMENT,
+        DefenseActionType.BGP_BLACKHOLE_ROUTE,
+        DefenseActionType.DIVERT_FLOWSPEC_SCRUBBING,
+        DefenseActionType.PAUSE_PROTOCOL_CONTRACT,
     ],
     DefenseMode.SIEGE: [
         DefenseActionType.OBSERVE,
@@ -91,7 +98,13 @@ _ACTIONS_BY_MODE = {
         DefenseActionType.PAUSE_PIPELINE,
         DefenseActionType.FREEZE_SIGNER,
         DefenseActionType.HOLD_TRANSACTION,
+        DefenseActionType.ISOLATE_MICROSEGMENT,
+        DefenseActionType.BGP_BLACKHOLE_ROUTE,
+        DefenseActionType.DIVERT_FLOWSPEC_SCRUBBING,
+        DefenseActionType.PAUSE_PROTOCOL_CONTRACT,
         DefenseActionType.ENABLE_EMERGENCY_POLICY,
+        DefenseActionType.LOCK_HSM_PARTITION,
+        DefenseActionType.TRIGGER_AIRGAP_ISOLATION,
     ],
 }
 _MODE_RANK = {

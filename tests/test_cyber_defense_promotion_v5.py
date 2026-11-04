@@ -12,7 +12,10 @@ from koschei_sentinel.cyber_megatron_training import (
     QWEN35_397B_MODEL,
     QWEN35_397B_REVISION,
 )
-from koschei_sentinel.cyber_training_bundle import CyberTrainingBundle, CyberTrainingStage
+from koschei_sentinel.cyber_training_bundle import (
+    CyberTrainingBundle,
+    CyberTrainingStage,
+)
 from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutEvaluationPolicy,
     GoldHoldoutEvaluationReport,

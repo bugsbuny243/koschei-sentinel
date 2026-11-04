@@ -4,8 +4,14 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from koschei_sentinel.active_defense_planner import ActiveDefensePlan, build_active_defense_plan
-from koschei_sentinel.attack_progression import AttackComponentReport, analyze_attack_progression
+from koschei_sentinel.active_defense_planner import (
+    ActiveDefensePlan,
+    build_active_defense_plan,
+)
+from koschei_sentinel.attack_progression import (
+    AttackComponentReport,
+    analyze_attack_progression,
+)
 from koschei_sentinel.cyber_state_graph import CyberStateGraph
 from koschei_sentinel.defense_authority import DefenseMode
 from koschei_sentinel.models import StrictModel

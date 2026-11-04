@@ -6,7 +6,9 @@ from typing import Literal
 
 from pydantic import Field
 
-from koschei_sentinel.assured_multi_incident_defense import AssuredMultiIncidentDefensePlan
+from koschei_sentinel.assured_multi_incident_defense import (
+    AssuredMultiIncidentDefensePlan,
+)
 from koschei_sentinel.attack_world_lines import AttackWorldLineTimeline
 from koschei_sentinel.defense_resource_scheduler import (
     DefenseSchedulerState,

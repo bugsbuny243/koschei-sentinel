@@ -31,7 +31,7 @@ class UsageEvent:
 class UsageRate:
     input_per_1000: Decimal
     output_per_1000: Decimal
-    tool_per_unit: Decimal = Decimal("0")
+    tool_per_unit: Decimal = Decimal(0)
 
     def __post_init__(self) -> None:
         if min(self.input_per_1000, self.output_per_1000, self.tool_per_unit) < 0:

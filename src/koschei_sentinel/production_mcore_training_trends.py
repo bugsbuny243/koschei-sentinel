@@ -35,7 +35,7 @@ class TrainingTrendState(StrictModel):
     router_utilization: list[float] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def coherent(self) -> "TrainingTrendState":
+    def coherent(self) -> TrainingTrendState:
         for values in (self.losses, self.grad_norms, self.activation_rms, self.router_utilization):
             if len(values) > self.history_window:
                 raise ValueError("trend history exceeds configured window")
@@ -95,7 +95,7 @@ class TrainingTrendTracker:
         cls,
         thresholds: TrainingTrendThresholds,
         state: TrainingTrendState,
-    ) -> "TrainingTrendTracker":
+    ) -> TrainingTrendTracker:
         if state.history_window != thresholds.history_window:
             raise ValueError("trend history window does not match current thresholds")
         tracker = cls(thresholds)

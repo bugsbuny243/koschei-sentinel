@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from koschei_sentinel.production_foundation_data import PackedFoundationSequence

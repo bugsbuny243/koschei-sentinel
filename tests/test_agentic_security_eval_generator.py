@@ -1,10 +1,13 @@
 from collections import Counter
 from pathlib import Path
 
-from pydantic import ValidationError
 import pytest
+from pydantic import ValidationError
 
-from koschei_sentinel.agentic_security_eval_generator import GeneratedCase, generate_from_paths
+from koschei_sentinel.agentic_security_eval_generator import (
+    GeneratedCase,
+    generate_from_paths,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/training/agentic-security-protocol-state-evals.v1.json"

@@ -240,9 +240,8 @@ def verify_web4_holdout_evaluation_decision(
         if getattr(decision, field_name) != expected:
             raise ValueError(f"Web4 evaluation decision {field_name} binding differs from evidence")
 
-    if decision.decision is Web4EvaluationDecision.ACCEPT:
-        if not evidence.passed or not evidence.complete_case_accounting:
-            raise ValueError("accepted Web4 evaluation decision requires passing complete evidence")
+    if (decision.decision is Web4EvaluationDecision.ACCEPT) and (not evidence.passed or not evidence.complete_case_accounting):
+        raise ValueError("accepted Web4 evaluation decision requires passing complete evidence")
 
     try:
         signature = base64.b64decode(decision.owner_signature_base64, validate=True)

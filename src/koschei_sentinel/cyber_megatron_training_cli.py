@@ -11,7 +11,9 @@ from koschei_sentinel.cyber_megatron_training import (
     materialize_cyber_megatron_dataset,
     plan_cyber_megatron_sft,
 )
-from koschei_sentinel.production_target_training_gate import verify_production_training_gate
+from koschei_sentinel.production_target_training_gate import (
+    verify_production_training_gate,
+)
 from koschei_sentinel.training import atomic_write
 
 

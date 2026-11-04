@@ -9,7 +9,10 @@ from pydantic import Field, model_validator
 
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
-from koschei_sentinel.production_tensor_layout import TensorLayoutEntry, build_tensor_layout
+from koschei_sentinel.production_tensor_layout import (
+    TensorLayoutEntry,
+    build_tensor_layout,
+)
 
 _DIGEST = r"^[a-f0-9]{64}$"
 
@@ -41,7 +44,7 @@ class TensorInitializationRecord(StrictModel):
     recipe_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def initialization_parameters_are_coherent(self) -> "TensorInitializationRecord":
+    def initialization_parameters_are_coherent(self) -> TensorInitializationRecord:
         if self.initialization == "normal":
             if self.mean is None or self.std is None:
                 raise ValueError("normal initialization requires mean and std")
@@ -72,7 +75,7 @@ class RankCheckpointManifest(StrictModel):
     manifest_sha256: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def verify_manifest(self) -> "RankCheckpointManifest":
+    def verify_manifest(self) -> RankCheckpointManifest:
         if self.tensor_count != len(self.tensors):
             raise ValueError("tensor_count disagrees with tensors")
         if self.local_elements != sum(item.local_elements for item in self.tensors):
@@ -88,9 +91,7 @@ def _rank_owns(entry: TensorLayoutEntry, *, pp: int, tp: int, ep: int) -> bool:
         return False
     if not entry.replicated_across_tensor_parallel and tp >= entry.tensor_parallel_shards:
         return False
-    if not entry.replicated_across_expert_parallel and ep >= entry.expert_parallel_shards:
-        return False
-    return True
+    return not (not entry.replicated_across_expert_parallel and ep >= entry.expert_parallel_shards)
 
 
 def _initialization_for(

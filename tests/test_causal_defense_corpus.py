@@ -1,7 +1,11 @@
 import pytest
 
 from koschei_sentinel.causal_defense_corpus import build_causal_defense_example
-from koschei_sentinel.cyber_range import CyberRangeScenario, ScenarioTruth, run_cyber_range_scenario
+from koschei_sentinel.cyber_range import (
+    CyberRangeScenario,
+    ScenarioTruth,
+    run_cyber_range_scenario,
+)
 from koschei_sentinel.cyber_state_graph import (
     CyberEntity,
     CyberEntityType,

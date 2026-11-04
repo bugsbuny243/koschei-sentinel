@@ -3,12 +3,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from koschei_sentinel.production_mcore_distributed_runtime import MCoreDistributedRuntime
+from koschei_sentinel.production_mcore_distributed_runtime import (
+    MCoreDistributedRuntime,
+)
 from koschei_sentinel.production_mcore_optimizer_smoke import (
     MCoreOptimizerSmokeResult,
     build_mcore_distributed_optimizer,
 )
-
 
 D0 = "0" * 64
 D1 = "1" * 64

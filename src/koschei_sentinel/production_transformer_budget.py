@@ -29,7 +29,7 @@ class TransformerBudgetSpec(StrictModel):
     status: Literal["research_candidate"] = "research_candidate"
 
     @model_validator(mode="after")
-    def validate_router(self) -> "TransformerBudgetSpec":
+    def validate_router(self) -> TransformerBudgetSpec:
         if self.experts_per_token >= self.num_experts:
             raise ValueError("experts_per_token must be smaller than num_experts")
         return self

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
+from typing import Self
 
 from koschei_sentinel.production_foundation_catalog import (
     FoundationCatalogCursor,
@@ -10,7 +11,9 @@ from koschei_sentinel.production_foundation_catalog import (
     locate_catalog_sequence,
 )
 from koschei_sentinel.production_foundation_data import PackedFoundationSequence
-from koschei_sentinel.production_foundation_pretokenized import PretokenizedFoundationReader
+from koschei_sentinel.production_foundation_pretokenized import (
+    PretokenizedFoundationReader,
+)
 
 
 class FoundationCatalogReader:
@@ -28,7 +31,7 @@ class FoundationCatalogReader:
             reader.close()
         self._readers.clear()
 
-    def __enter__(self) -> "FoundationCatalogReader":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

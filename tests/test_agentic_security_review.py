@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
-from koschei_sentinel.agentic_security_eval_generator import GeneratedBundle, GeneratedCase
+from koschei_sentinel.agentic_security_eval_generator import (
+    GeneratedBundle,
+    GeneratedCase,
+)
 from koschei_sentinel.agentic_security_review import (
     ReviewBundle,
     ReviewRecord,
@@ -90,7 +94,7 @@ def test_review_record_self_hash_tamper_is_rejected() -> None:
 
 def test_accepted_cannot_be_marked_gold() -> None:
     source = _source()
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         ReviewBundle(
             source_benchmark_schema=source.schema_version,
             source_benchmark_sha256=generated_bundle_digest(source),

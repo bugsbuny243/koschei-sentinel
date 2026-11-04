@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from koschei_sentinel.production_megatron_model_spec import ProductionMegatronModelSpec
-from koschei_sentinel.production_megatron_runtime_adapter import instantiate_megatron_core_model
+from koschei_sentinel.production_megatron_runtime_adapter import (
+    instantiate_megatron_core_model,
+)
 
 
 @dataclass(frozen=True)

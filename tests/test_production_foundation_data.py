@@ -5,7 +5,6 @@ import pytest
 import koschei_sentinel.production_foundation_data as foundation
 from koschei_sentinel.production_foundation_data import (
     FoundationDataConfig,
-    FoundationSamplerState,
     iter_packed_foundation_sequences,
     take_distributed_foundation_sequences,
 )
@@ -33,12 +32,7 @@ def _config(path: Path) -> FoundationDataConfig:
 
 def _write_corpus(path: Path) -> None:
     path.write_text(
-        '\n'.join([
-            '{"id":"a","text":"alpha"}',
-            '{"id":"b","text":"beta"}',
-            '{"id":"c","text":"gamma"}',
-            '{"id":"d","text":"delta"}',
-        ]) + '\n',
+        '{"id":"a","text":"alpha"}\n{"id":"b","text":"beta"}\n{"id":"c","text":"gamma"}\n{"id":"d","text":"delta"}' + '\n',
         encoding="utf-8",
     )
 

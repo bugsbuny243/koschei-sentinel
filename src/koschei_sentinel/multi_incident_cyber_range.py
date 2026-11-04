@@ -198,9 +198,8 @@ def _matches_expected_transition(
             continue
         if transition.transition_type is not expected.transition_type:
             continue
-        if expected.protected_anchor_id is not None:
-            if expected.protected_anchor_id not in transition.shared_protected_anchor_ids:
-                continue
+        if (expected.protected_anchor_id is not None) and (expected.protected_anchor_id not in transition.shared_protected_anchor_ids):
+            continue
         return True
     return False
 

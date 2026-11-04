@@ -19,6 +19,12 @@ class InterceptionUrgency(StrEnum):
 _ACTION_PRIORITY: dict[DefenseActionType, int] = {
     DefenseActionType.HOLD_TRANSACTION: 100,
     DefenseActionType.FREEZE_SIGNER: 95,
+    DefenseActionType.PAUSE_PROTOCOL_CONTRACT: 97,
+    DefenseActionType.LOCK_HSM_PARTITION: 96,
+    DefenseActionType.TRIGGER_AIRGAP_ISOLATION: 94,
+    DefenseActionType.ISOLATE_MICROSEGMENT: 78,
+    DefenseActionType.BGP_BLACKHOLE_ROUTE: 74,
+    DefenseActionType.DIVERT_FLOWSPEC_SCRUBBING: 73,
     DefenseActionType.PAUSE_PIPELINE: 90,
     DefenseActionType.REVOKE_CREDENTIAL: 85,
     DefenseActionType.TERMINATE_SESSION: 80,
@@ -34,6 +40,9 @@ _ACTION_PRIORITY: dict[DefenseActionType, int] = {
 _IMPACT_EDGE_ACTIONS = {
     DefenseActionType.HOLD_TRANSACTION,
     DefenseActionType.FREEZE_SIGNER,
+    DefenseActionType.PAUSE_PROTOCOL_CONTRACT,
+    DefenseActionType.LOCK_HSM_PARTITION,
+    DefenseActionType.TRIGGER_AIRGAP_ISOLATION,
 }
 
 
@@ -75,6 +84,12 @@ def _objective(action: DefenseActionType) -> str:
     return {
         DefenseActionType.HOLD_TRANSACTION: "prevent a pending hostile state transition",
         DefenseActionType.FREEZE_SIGNER: "remove signing authority from the active hostile path",
+        DefenseActionType.PAUSE_PROTOCOL_CONTRACT: "pause a compromised smart contract by approved protocol policy",
+        DefenseActionType.LOCK_HSM_PARTITION: "lock an authorized hardware signing partition",
+        DefenseActionType.TRIGGER_AIRGAP_ISOLATION: "trigger authorized physical network isolation",
+        DefenseActionType.ISOLATE_MICROSEGMENT: "isolate the affected zero-trust microsegment",
+        DefenseActionType.BGP_BLACKHOLE_ROUTE: "blackhole an approved hostile traffic destination",
+        DefenseActionType.DIVERT_FLOWSPEC_SCRUBBING: "divert hostile traffic for network scrubbing",
         DefenseActionType.PAUSE_PIPELINE: "stop compromised build or release propagation",
         DefenseActionType.REVOKE_CREDENTIAL: "invalidate attacker-held authorization material",
         DefenseActionType.TERMINATE_SESSION: "cut the active authenticated attacker session",
@@ -129,12 +144,12 @@ def build_interception_plan(plan: ActiveDefensePlan) -> InterceptionPlan:
 
     rationale = [
         "only cut points already authorized by the selected defense mode are eligible",
-        "when impact is predicted, signer and pending-transaction controls are sequenced before broader graph cuts",
+        "when impact is predicted, critical transaction, signer, protocol, and hardware controls are sequenced before broader graph cuts",
         "otherwise steps are ranked by graph-level interruption effect with action priority as a tie-breaker",
         "every containment step requires post-action verification before the incident is considered contained",
     ]
     if predicted_impact:
-        rationale.append("predicted impact raises urgency for signer and transaction controls")
+        rationale.append("predicted impact raises urgency for transaction, signer, protocol, and hardware controls")
     if not steps:
         rationale.append("no higher-impact containment step is authorized in the current defense mode")
 

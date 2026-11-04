@@ -7,7 +7,9 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from koschei_sentinel.assured_multi_incident_defense import AssuredMultiIncidentDefensePlan
+from koschei_sentinel.assured_multi_incident_defense import (
+    AssuredMultiIncidentDefensePlan,
+)
 from koschei_sentinel.defense_authority import DefenseActionType, DefenseMode
 from koschei_sentinel.interception_planner import (
     InterceptionUrgency,

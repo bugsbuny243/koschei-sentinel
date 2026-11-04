@@ -1,15 +1,31 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from koschei_sentinel.authority_policy import CapabilityGrant, DelegationChain
-from koschei_sentinel.cybersecurity_core import AnalysisMode, SecurityArtifact, SecurityCase, SecurityDomain, SecurityFinding
+from koschei_sentinel.cybersecurity_core import (
+    AnalysisMode,
+    SecurityArtifact,
+    SecurityCase,
+    SecurityDomain,
+    SecurityFinding,
+)
 from koschei_sentinel.defensive_recovery import DefensiveRecoveryCoordinator
-from koschei_sentinel.defensive_response import DefensiveAction, DefensiveActionRequest, DefensivePolicy, DefensiveResponsePlane
+from koschei_sentinel.defensive_response import (
+    DefensiveAction,
+    DefensiveActionRequest,
+    DefensivePolicy,
+    DefensiveResponsePlane,
+)
 from koschei_sentinel.defensive_runtime import DefensiveSentinelRuntime
-from koschei_sentinel.inference_contract import AuthorityEnvelope, EvidenceBinding, InferenceResponse, RiskClass
+from koschei_sentinel.inference_contract import (
+    AuthorityEnvelope,
+    EvidenceBinding,
+    InferenceResponse,
+    RiskClass,
+)
 from koschei_sentinel.inference_validation import FailClosedResponseValidator
 from koschei_sentinel.sentinel_runtime import SentinelRuntime
 
-NOW = datetime(2026, 9, 27, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 27, tzinfo=UTC)
 
 class Engine:
     engine_id = "fixture"

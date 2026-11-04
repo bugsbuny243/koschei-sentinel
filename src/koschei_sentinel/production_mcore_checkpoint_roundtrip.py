@@ -7,7 +7,9 @@ from typing import Any, Literal
 from pydantic import Field
 
 from koschei_sentinel.models import StrictModel
-from koschei_sentinel.production_mcore_native_checkpoint import save_mcore_native_checkpoint
+from koschei_sentinel.production_mcore_native_checkpoint import (
+    save_mcore_native_checkpoint,
+)
 from koschei_sentinel.production_mcore_native_load import load_mcore_native_checkpoint
 
 

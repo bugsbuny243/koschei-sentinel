@@ -112,3 +112,57 @@ def generic_signer_wallet_adapter() -> DeclarativePerceptionAdapter:
             default_confidence=1.0,
         )
     )
+
+
+def generic_network_flowspec_adapter() -> DeclarativePerceptionAdapter:
+    """Normalize sanitized network/BGP observations without performing route changes."""
+    return DeclarativePerceptionAdapter(
+        DeclarativeAdapterSpec(
+            descriptor=PerceptionAdapterDescriptor(
+                adapter_id="generic.network-flowspec",
+                vendor="generic",
+                product="network-flowspec",
+                adapter_version="1",
+                supported_source_types=[TelemetrySourceType.NETWORK],
+            ),
+            source=EntityMappingSpec(
+                id_field="network_endpoint_id",
+                entity_type=CyberEntityType.NETWORK_ENDPOINT,
+                label_fields={"prefix": "source_prefix", "asn": "source_asn"},
+            ),
+            target=EntityMappingSpec(
+                id_field="destination_endpoint_id",
+                entity_type=CyberEntityType.NETWORK_ENDPOINT,
+                label_fields={"prefix": "destination_prefix", "asn": "destination_asn"},
+            ),
+            relation_type="routes_to",
+            default_confidence=1.0,
+        )
+    )
+
+
+def generic_protocol_circuit_adapter() -> DeclarativePerceptionAdapter:
+    """Normalize sanitized protocol anomalies without initiating on-chain operations."""
+    return DeclarativePerceptionAdapter(
+        DeclarativeAdapterSpec(
+            descriptor=PerceptionAdapterDescriptor(
+                adapter_id="generic.protocol-circuit",
+                vendor="generic",
+                product="protocol-circuit",
+                adapter_version="1",
+                supported_source_types=[TelemetrySourceType.BLOCKCHAIN],
+            ),
+            source=EntityMappingSpec(
+                id_field="protocol_id",
+                entity_type=CyberEntityType.PROTOCOL,
+                label_fields={"chain_id": "chain_id", "contract_address": "contract_address"},
+            ),
+            target=EntityMappingSpec(
+                id_field="transaction_id",
+                entity_type=CyberEntityType.TRANSACTION,
+                label_fields={"chain_id": "chain_id", "tx_kind": "tx_kind"},
+            ),
+            relation_type="interacts_with_transaction",
+            default_confidence=1.0,
+        )
+    )

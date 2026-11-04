@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
-from koschei_sentinel.production_mcore_async_checkpoint import AsyncCheckpointScheduleResult
-from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointEntry
-from koschei_sentinel.production_mcore_recovery_checkpoint_manager import RecoveryCheckpointManager
+from koschei_sentinel.production_mcore_async_checkpoint import (
+    AsyncCheckpointScheduleResult,
+)
+from koschei_sentinel.production_mcore_checkpoint_retention import (
+    RecoveryCheckpointEntry,
+)
+from koschei_sentinel.production_mcore_recovery_checkpoint_manager import (
+    RecoveryCheckpointManager,
+)
 
 
 def test_schedule_result_preserves_backpressure_finalizations():
@@ -51,7 +58,7 @@ def test_committed_last_good_prefers_newer_generation_at_same_step(tmp_path: Pat
     newer = RecoveryCheckpointEntry(global_step=8, commit_generation=11, checkpoint_dir=(tmp_path / "skip").as_posix(), kind="skip", durable=True)
 
     class Index:
-        entries = [older, newer]
+        entries: ClassVar[list[RecoveryCheckpointEntry]] = [older, newer]
         latest = newer
 
     manager.index = Index()
@@ -66,7 +73,7 @@ def test_next_generation_accounts_for_pending_async_entry(tmp_path: Path):
     pending = RecoveryCheckpointEntry(global_step=5, commit_generation=22, checkpoint_dir=(tmp_path / "pending").as_posix(), kind="recovery", durable=False)
 
     class Index:
-        entries = [committed]
+        entries: ClassVar[list[RecoveryCheckpointEntry]] = [committed]
         latest = committed
 
     manager.index = Index()
@@ -104,7 +111,10 @@ def _manager_for_publication(tmp_path: Path):
 
 def test_publication_rejects_divergent_rank_metadata(tmp_path: Path, monkeypatch):
     import torch.distributed as dist
-    from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointIndex
+
+    from koschei_sentinel.production_mcore_checkpoint_retention import (
+        RecoveryCheckpointIndex,
+    )
 
     manager = _manager_for_publication(tmp_path)
     manager.index = RecoveryCheckpointIndex(keep_recovery_slots=2, entries=[])
@@ -124,8 +134,11 @@ def test_publication_rejects_divergent_rank_metadata(tmp_path: Path, monkeypatch
 
 def test_publication_propagates_rank_zero_failure(tmp_path: Path, monkeypatch):
     import torch.distributed as dist
+
     import koschei_sentinel.production_mcore_recovery_checkpoint_manager as module
-    from koschei_sentinel.production_mcore_checkpoint_retention import RecoveryCheckpointIndex
+    from koschei_sentinel.production_mcore_checkpoint_retention import (
+        RecoveryCheckpointIndex,
+    )
 
     manager = _manager_for_publication(tmp_path)
     manager.index = RecoveryCheckpointIndex(keep_recovery_slots=2, entries=[])
@@ -164,7 +177,7 @@ def test_agree_entry_assigns_generation_and_preserves_logical_identity(tmp_path:
     committed = RecoveryCheckpointEntry(global_step=3, commit_generation=7, checkpoint_dir=(tmp_path / "committed").as_posix(), kind="recovery", durable=False)
 
     class Index:
-        entries = [committed]
+        entries: ClassVar[list[RecoveryCheckpointEntry]] = [committed]
         latest = committed
 
     manager.index = Index()
@@ -190,7 +203,7 @@ def test_agree_entry_rejects_divergent_logical_identity(tmp_path: Path, monkeypa
     manager = _manager_for_publication(tmp_path)
 
     class Index:
-        entries = []
+        entries: ClassVar[list[RecoveryCheckpointEntry]] = []
         latest = None
 
     manager.index = Index()

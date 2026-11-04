@@ -85,7 +85,7 @@ def _load_json(path: Path, label: str) -> tuple[dict[str, object], str]:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"invalid {label} JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain one JSON object")
+        raise ValueError(f"{label} must contain one JSON object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     return payload, hashlib.sha256(raw).hexdigest()
 
 
@@ -104,7 +104,7 @@ def _load_jsonl(path: Path, label: str) -> tuple[list[dict[str, object]], str]:
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid {label} row at line {line_number}") from exc
         if not isinstance(row, dict):
-            raise ValueError(f"{label} row {line_number} must be a JSON object")
+            raise ValueError(f"{label} row {line_number} must be a JSON object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
         rows.append(row)
     if not rows:
         raise ValueError(f"{label} is empty")
@@ -199,9 +199,8 @@ def _validate_map(
             violations.append(f"Agent Trust Chain source bypasses license review: {source_ref}")
         source_type = str(source.get("source_type", ""))
         revision_status = str(source.get("revision_status", ""))
-        if "INTERNET_DRAFT" in source_type or "INTERNET_DRAFT" in revision_status:
-            if source.get("authority_tier") == "T0_STANDARD":
-                violations.append(f"Internet-Draft elevated to standard: {source_ref}")
+        if ("INTERNET_DRAFT" in source_type or "INTERNET_DRAFT" in revision_status) and (source.get("authority_tier") == "T0_STANDARD"):
+            violations.append(f"Internet-Draft elevated to standard: {source_ref}")
         if source_type == "W3C_WORKING_DRAFT" and source.get("authority_tier") == "T0_STANDARD":
             violations.append(f"W3C Working Draft elevated to standard: {source_ref}")
 

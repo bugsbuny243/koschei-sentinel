@@ -6,7 +6,11 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from koschei_sentinel.defense_authority import DefenseActionType, DefenseMode
+from koschei_sentinel.defense_authority import (
+    DefenseActionType,
+    DefenseMode,
+    action_permitted_in_mode,
+)
 from koschei_sentinel.models import StrictModel
 
 
@@ -80,8 +84,9 @@ def command_idempotency_key(
     target_entity_id: str,
     scope_id: str,
 ) -> str:
-    payload = "|".join(
-        [graph_id, interception_step_id, action.value, target_entity_id, scope_id]
+    payload = (
+        f"{graph_id}|{interception_step_id}|{action.value}|"
+        f"{target_entity_id}|{scope_id}"
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -101,6 +106,8 @@ def build_connector_command(
         raise ValueError("defense target is outside the authorized protected scope")
     if action not in set(scope.permitted_actions):
         raise ValueError("defense action is not permitted by the protected scope")
+    if not action_permitted_in_mode(defense_mode, action):
+        raise ValueError("defense action is not permitted by the selected defense mode")
     if not precondition_evidence_ids:
         raise ValueError("connector command requires precondition evidence")
 

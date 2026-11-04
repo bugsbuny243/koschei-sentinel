@@ -1,12 +1,11 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from koschei_sentinel.defensive_recovery import DefensiveRecoveryCoordinator
 from koschei_sentinel.defensive_response import DefensiveAction, DefensiveActionRequest
 
-
-NOW = datetime(2026, 9, 27, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 27, tzinfo=UTC)
 
 
 class Recovery:

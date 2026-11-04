@@ -38,7 +38,7 @@ class Generation(StrictModel):
     require_cross_layer_causal_case: Literal[True]
 
     @model_validator(mode="after")
-    def all_modes_once(self) -> "Generation":
+    def all_modes_once(self) -> Generation:
         if set(self.modes) != {"positive", "hard_negative", "ambiguous", "abstention"}:
             raise ValueError("generation modes must contain all four supported modes")
         return self
@@ -58,7 +58,7 @@ class Config(StrictModel):
     generation: Generation
 
     @model_validator(mode="after")
-    def fail_closed_contract(self) -> "Config":
+    def fail_closed_contract(self) -> Config:
         if abs(sum(self.scoring.values()) - 1.0) > 1e-9 or any(v <= 0 for v in self.scoring.values()):
             raise ValueError("scoring weights must be positive and sum to 1.0")
         ids = [family.id for family in self.families]
@@ -82,7 +82,7 @@ class Seed(StrictModel):
     must_abstain_from: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def abstention_has_boundary(self) -> "Seed":
+    def abstention_has_boundary(self) -> Seed:
         if self.mode == "abstention" and not self.must_abstain_from:
             raise ValueError("abstention seed must define must_abstain_from")
         return self

@@ -1,6 +1,10 @@
 import pytest
 
-from koschei_sentinel.effect_evidence import EffectAgreement, ObservedEffect, require_verified_effect
+from koschei_sentinel.effect_evidence import (
+    EffectAgreement,
+    ObservedEffect,
+    require_verified_effect,
+)
 
 
 def effect(state):

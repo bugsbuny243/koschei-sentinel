@@ -11,7 +11,9 @@ from koschei_sentinel.cyber_sft_candidate_snapshot import (
     snapshot_verified_cyber_sft_export,
 )
 from koschei_sentinel.cyber_sft_export_verify import verify_cyber_sft_export
-from koschei_sentinel.defense_reflex_gold_release_audit import audit_gold_defense_release
+from koschei_sentinel.defense_reflex_gold_release_audit import (
+    audit_gold_defense_release,
+)
 from koschei_sentinel.gold_holdout_evaluation import (
     GoldHoldoutEvaluationPolicy,
     GoldHoldoutInferenceManifest,
@@ -262,15 +264,14 @@ def _export_signed_inputs(
         )
 
         signature_destination.parent.mkdir(parents=True, exist_ok=True)
-        handle = tempfile.NamedTemporaryFile(
+        with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
             prefix=f".{signature_destination.name}.staging-",
             dir=signature_destination.parent,
             delete=False,
-        )
-        signature_temp = Path(handle.name)
-        with handle:
+        ) as handle:
+            signature_temp = Path(handle.name)
             handle.write(
                 json.dumps(proof.model_dump(mode="json"), indent=2, sort_keys=True)
                 + "\n"

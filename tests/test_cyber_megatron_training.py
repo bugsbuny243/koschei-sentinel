@@ -570,9 +570,8 @@ def test_checked_in_config_is_the_only_active_397b_target() -> None:
     gold = load_cyber_megatron_config(
         "configs/training/cyber-sft.qwen3.5-397b-a17b.gold.example.json"
     )
-    plan = json.loads(
-        open("configs/training/cyber-foundation-v3.plan.json", encoding="utf-8").read()
-    )
+    with open("configs/training/cyber-foundation-v3.plan.json", encoding="utf-8") as handle:
+        plan = json.load(handle)
 
     assert config.model == QWEN35_397B_MODEL
     assert config.model_revision == QWEN35_397B_REVISION

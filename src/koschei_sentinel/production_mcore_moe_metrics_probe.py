@@ -38,7 +38,7 @@ def clear_native_moe_metrics() -> bool:
     tracker = get_moe_metrics_tracker()
     clear = getattr(tracker, "clear", None)
     if not callable(clear):
-        raise RuntimeError("installed MCore MoE tracker lacks documented clear() API")
+        raise RuntimeError("installed MCore MoE tracker lacks documented clear() API")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     clear()
     return True
 

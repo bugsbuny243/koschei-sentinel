@@ -1,9 +1,9 @@
 import pytest
 
 from koschei_sentinel.production_evidence import (
+    REQUIRED_PRODUCTION_ARTIFACTS,
     EvidenceArtifact,
     ProductionEvidenceManifest,
-    REQUIRED_PRODUCTION_ARTIFACTS,
 )
 
 

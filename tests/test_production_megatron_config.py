@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from koschei_sentinel.production_megatron_config import ProductionMegatronConfig, ProductionMegatronTopology
+from koschei_sentinel.production_megatron_config import (
+    ProductionMegatronConfig,
+    ProductionMegatronTopology,
+)
 
 
 def _topology() -> ProductionMegatronTopology:
@@ -19,19 +22,19 @@ def _topology() -> ProductionMegatronTopology:
 
 
 def _config(**overrides):
-    payload = dict(
-        run_id="sentinel-prod-397b-35b-001",
-        model_ref="koschei/sentinel-397b-35b",
-        model_revision="a" * 64,
-        trainer_adapter_version="4.5.2",
-        corpus_dir="build/prod/train",
-        validation_corpus_dir="build/prod/validation",
-        dataset_dir="build/prod/dataset",
-        output_dir="build/prod/output",
-        topology=_topology(),
-        production_target_binding_sha256="b" * 64,
-        production_topology_verification_sha256="c" * 64,
-    )
+    payload = {
+        "run_id": "sentinel-prod-397b-35b-001",
+        "model_ref": "koschei/sentinel-397b-35b",
+        "model_revision": "a" * 64,
+        "trainer_adapter_version": "4.5.2",
+        "corpus_dir": "build/prod/train",
+        "validation_corpus_dir": "build/prod/validation",
+        "dataset_dir": "build/prod/dataset",
+        "output_dir": "build/prod/output",
+        "topology": _topology(),
+        "production_target_binding_sha256": "b" * 64,
+        "production_topology_verification_sha256": "c" * 64,
+    }
     payload.update(overrides)
     return ProductionMegatronConfig(**payload)
 

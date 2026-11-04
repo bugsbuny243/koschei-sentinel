@@ -12,7 +12,9 @@ from pydantic import Field, model_validator
 from koschei_sentinel.models import StrictModel
 from koschei_sentinel.strict_json import require_json_value, strict_json_loads
 from koschei_sentinel.training import atomic_write, canonical_json
-from koschei_sentinel.web4_research_snapshot import verify_web4_research_snapshot_receipt
+from koschei_sentinel.web4_research_snapshot import (
+    verify_web4_research_snapshot_receipt,
+)
 
 _DIGEST = r"^[a-f0-9]{64}$"
 _SourceRef = Annotated[str, Field(min_length=3, max_length=256)]
@@ -52,7 +54,7 @@ class Web4BenchmarkCaseProposal(StrictModel):
     @model_validator(mode="after")
     def proposal_is_safe_for_intake(self) -> Web4BenchmarkCaseProposal:
         try:
-            created_at = datetime.fromisoformat(self.created_at.replace("Z", "+00:00"))
+            created_at = datetime.fromisoformat(self.created_at)
         except ValueError as exc:
             raise ValueError("Web4 benchmark created_at must be ISO-8601") from exc
         if created_at.tzinfo is None or created_at.utcoffset() is None:
@@ -162,7 +164,7 @@ class Web4BenchmarkIntakePacket(StrictModel):
         if _sha256_canonical(unsigned) != observed:
             raise ValueError("Web4 benchmark intake packet self-hash does not verify")
         try:
-            created_at = datetime.fromisoformat(self.created_at.replace("Z", "+00:00"))
+            created_at = datetime.fromisoformat(self.created_at)
         except ValueError as exc:
             raise ValueError("Web4 benchmark created_at must be ISO-8601") from exc
         if created_at.tzinfo is None or created_at.utcoffset() is None:
@@ -212,7 +214,7 @@ def _load_json(path: Path, label: str) -> tuple[dict[str, object], str]:
     except ValueError as exc:
         raise ValueError(f"invalid {label} JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{label} must contain one JSON object")
+        raise ValueError(f"{label} must contain one JSON object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
     return payload, hashlib.sha256(raw).hexdigest()
 
 
@@ -232,7 +234,7 @@ def _load_source_registry(path: Path) -> tuple[dict[str, dict[str, object]], str
         except ValueError as exc:
             raise ValueError(f"invalid Web4 source row at line {line_number}") from exc
         if not isinstance(payload, dict):
-            raise ValueError(f"Web4 source row {line_number} must be a JSON object")
+            raise ValueError(f"Web4 source row {line_number} must be a JSON object")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
         source_id = payload.get("source_id")
         if not isinstance(source_id, str) or not source_id:
             raise ValueError(f"Web4 source row {line_number} lacks source_id")

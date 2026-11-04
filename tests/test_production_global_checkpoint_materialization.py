@@ -40,7 +40,8 @@ def _tiny_index(tmp_path: Path) -> GlobalCheckpointIndex:
         "loadable_checkpoint": False,
         "execution_authorized": False,
     }
-    import hashlib, json
+    import hashlib
+    import json
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     payload["index_sha256"] = hashlib.sha256(encoded).hexdigest()
     return GlobalCheckpointIndex.model_validate(payload)

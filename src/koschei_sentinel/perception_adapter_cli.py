@@ -8,6 +8,8 @@ from koschei_sentinel.perception_adapter_profiles import (
     generic_cicd_adapter,
     generic_cloud_iam_adapter,
     generic_endpoint_process_adapter,
+    generic_network_flowspec_adapter,
+    generic_protocol_circuit_adapter,
     generic_signer_wallet_adapter,
 )
 from koschei_sentinel.perception_adapter_sdk import (
@@ -22,6 +24,8 @@ _PROFILE_FACTORIES = {
     "generic.cloud-iam": generic_cloud_iam_adapter,
     "generic.cicd": generic_cicd_adapter,
     "generic.signer-wallet": generic_signer_wallet_adapter,
+    "generic.network-flowspec": generic_network_flowspec_adapter,
+    "generic.protocol-circuit": generic_protocol_circuit_adapter,
 }
 
 

@@ -11,7 +11,7 @@ from koschei_sentinel.assured_active_defense import (
     ActiveDefenseAssuranceReceipt,
     AssuredActiveDefensePlan,
 )
-from koschei_sentinel.defense_authority import DefenseMode
+from koschei_sentinel.defense_authority import DefenseMode, action_permitted_in_mode
 from koschei_sentinel.defense_connector_contract import (
     DefenseConnectorCommand,
     ProtectedScope,
@@ -65,6 +65,8 @@ class AssuredDefenseConnectorEnvelope(StrictModel):
             raise ValueError("connector command graph differs from interception plan")
         if self.command.defense_mode is not self.assurance_receipt.effective_mode:
             raise ValueError("connector command defense mode differs from assurance mode")
+        if not action_permitted_in_mode(self.command.defense_mode, self.command.action):
+            raise ValueError("connector command action is not permitted by its defense mode")
         if self.interception_plan.defense_mode is not self.command.defense_mode:
             raise ValueError("connector command defense mode differs from interception plan")
 
