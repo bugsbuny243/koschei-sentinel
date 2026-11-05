@@ -227,9 +227,10 @@ jobs:
       - name: Verify PyTorch CPU environment
         run: |
           python -c 'import numpy, torch; assert not torch.cuda.is_available(); print("torch", torch.__version__, "numpy", numpy.__version__)'
-      - name: Run three PyTorch-only regression modules
+      - name: Run PyTorch checkpoint and distributed-regression modules
         run: >-
           pytest
           tests/test_production_mcore_recovery_gloo_smoke.py
           tests/test_production_checkpoint_manifest.py
           tests/test_production_mcore_async_checkpoint_contract.py
+          tests/test_production_checkpoint_load_verify.py
