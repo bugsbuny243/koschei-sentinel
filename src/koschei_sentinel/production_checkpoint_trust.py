@@ -27,7 +27,7 @@ from koschei_sentinel.production_target_provenance import (
 )
 
 _DIGEST = r"^[a-f0-9]{64}$"
-_SIGNATURE_CONTEXT = b"koschei-sentinel-approved-rank-checkpoint-v1\\0"
+_SIGNATURE_CONTEXT = b"koschei-sentinel-approved-rank-checkpoint-v1\0"
 
 
 def _canonical_digest(payload: object) -> str:
