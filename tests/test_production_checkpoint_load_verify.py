@@ -20,11 +20,6 @@ from koschei_sentinel.production_checkpoint_lineage import (
     ProductionTrainingLineage,
     verify_production_checkpoint_lineage,
 )
-from koschei_sentinel.production_mcore_training_checkpoint import MCoreTrainingState
-from koschei_sentinel.production_mcore_training_loop import (
-    MCoreTrainingLoopResult,
-    MCoreTrainingStepResult,
-)
 from koschei_sentinel.production_checkpoint_load_verify import (
     verify_rank_checkpoint_load,
 )
@@ -35,6 +30,11 @@ from koschei_sentinel.production_checkpoint_trust import (
     ApprovedRankCheckpointReceipt,
     checkpoint_approval_signature_message,
     verify_approved_rank_checkpoint_load,
+)
+from koschei_sentinel.production_mcore_training_checkpoint import MCoreTrainingState
+from koschei_sentinel.production_mcore_training_loop import (
+    MCoreTrainingLoopResult,
+    MCoreTrainingStepResult,
 )
 from koschei_sentinel.production_megatron_model_spec import (
     load_production_megatron_model_spec,
