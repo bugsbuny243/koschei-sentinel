@@ -42,6 +42,36 @@ binding, provenance and public key together does **not** create trusted
 approval. A signed receipt is not proof of a successful training run,
 independent model evaluation, permitted deployment or market release.
 
+## Signed training and HOLDOUT lineage (non-deployment)
+
+The separate `production_checkpoint_lineage.verify_production_checkpoint_lineage`
+audit connects the approved **397B/35B** checkpoint identity to two
+domain-separated, Ed25519-signed claims:
+
+- an operator-signed training-run record binding the run ID, dataset manifest
+  digest, final training state digest, training-loop result digest, model identity
+  and the exact owner-approved checkpoint receipt;
+- an independently signed HOLDOUT record binding the same checkpoint, the
+  training attestation, the evaluation dataset/policy digests, and a
+  `GoldHoldoutEvaluationReport` with at least **50 distinct, accounted-for cases**.
+
+The evaluator key must be independently authenticated and **different from
+both the checkpoint owner's and the training operator's keys**. All three
+public keys must come from trusted sources, not from the claims being checked.
+The audit verifies each signed digest, report consistency and identity match,
+then invokes the already approved checkpoint byte verifier.
+
+**Important limits:** The existing `GoldHoldoutEvaluationEvidence` contract
+is adapter-oriented and is deliberately **not** treated as the independent
+397B/35B model's evaluation. This new audit checks signatures and
+cross-document correspondence, not the factual truth of an issuer's claims,
+training execution, independent inference, benchmark quality, data
+independence, or model readiness. Synthetic fixtures only prove fail-closed
+contracts. Do not interpret `signed_lineage_claims_verified` as a model
+performance or promotion gate: all execution and deployment flags remain false.
+Actual training run receipts, benchmark execution provenance and independently
+verified reviewer inputs must be provided by separate trusted systems.
+
 ## Threat model and limitations
 
 A checkpoint is serialized input, not trusted program code. Neither path
