@@ -43,16 +43,16 @@ def _unsigned(value: StrictModel, signature_field: str) -> dict[str, object]:
 
 
 def _verify_signature(
-    attestation: StrictModel,
+    attestation: ProductionTrainingLineage | IndependentHoldoutLineage,
     *,
     signature_field: str,
     signature_domain: bytes,
     signer: Ed25519PublicKey,
 ) -> None:
-    claimed_digest = getattr(attestation, "attestation_sha256")
+    claimed_digest = attestation.attestation_sha256
     if _digest(_unsigned(attestation, signature_field)) != claimed_digest:
         raise ValueError("lineage attestation self-hash mismatch")
-    if getattr(attestation, "signer_key_fingerprint") != owner_key_fingerprint(signer):
+    if attestation.signer_key_fingerprint != owner_key_fingerprint(signer):
         raise ValueError("lineage attestation signer fingerprint mismatch")
     try:
         signature = base64.b64decode(
