@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import os
+import re
+import stat
 from pathlib import Path
 from typing import Literal
 
@@ -26,26 +30,74 @@ class RankCheckpointLoadVerification(StrictModel):
     execution_authorized: Literal[False] = False
 
 
+def _hash_open_file(handle) -> tuple[str, int]:
+    handle.seek(0)
+    digest = hashlib.sha256()
+    size = 0
+    for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+        digest.update(chunk)
+        size += len(chunk)
+    return digest.hexdigest(), size
+
+
 def verify_rank_checkpoint_load(
     manifest: RankCheckpointManifest,
     *,
     checkpoint_path: str | Path,
+    expected_file_sha256: str | None = None,
+    expected_file_size_bytes: int | None = None,
 ) -> RankCheckpointLoadVerification:
+    """Validate tensor metadata; optional artifact pin is checked before loading.
+
+    Passing only a digest does not establish who approved it. The signed
+    checkpoint intake verifies the trust root before invoking this function.
+    """
+    if (expected_file_sha256 is None) != (expected_file_size_bytes is None):
+        raise ValueError("checkpoint artifact hash and byte size must be supplied together")
+    if expected_file_sha256 is not None and re.fullmatch(
+        r"[a-f0-9]{64}", expected_file_sha256
+    ) is None:
+        raise ValueError("checkpoint artifact SHA-256 must be lowercase hex")
+    if expected_file_size_bytes is not None and (
+        type(expected_file_size_bytes) is not int or expected_file_size_bytes <= 0
+    ):
+        raise ValueError("checkpoint artifact size must be a positive integer")
+
     try:
         import torch
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("PyTorch is required for checkpoint load verification") from exc
 
     path = Path(checkpoint_path)
-    if not path.is_file():
-        raise ValueError(f"checkpoint shard does not exist: {path}")
-
-    # Inspect tensor metadata without allowing arbitrary Python object unpickling.
-    # Meta tensors do not authenticate the checkpoint or prevent resource exhaustion.
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        payload = torch.load(path, map_location="meta", weights_only=True)
-    except Exception as exc:
-        raise ValueError(f"unable to load checkpoint shard metadata: {path}") from exc
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError(f"checkpoint shard cannot be opened safely: {path}") from exc
+
+    with os.fdopen(descriptor, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise ValueError("checkpoint shard must be a regular file")
+        if expected_file_sha256 is not None:
+            observed_digest, observed_bytes = _hash_open_file(handle)
+            if observed_bytes != expected_file_size_bytes:
+                raise ValueError("checkpoint artifact byte size mismatch")
+            if observed_digest != expected_file_sha256:
+                raise ValueError("checkpoint artifact SHA-256 mismatch")
+            handle.seek(0)
+
+        # Inspect tensor metadata without allowing arbitrary Python object unpickling.
+        # Meta tensors do not authenticate the checkpoint or prevent resource exhaustion.
+        try:
+            payload = torch.load(handle, map_location="meta", weights_only=True)
+        except Exception as exc:
+            raise ValueError(f"unable to load checkpoint shard metadata: {path}") from exc
+
+        if expected_file_sha256 is not None:
+            # Detect in-place replacement or mutation during metadata inspection.
+            observed_digest, observed_bytes = _hash_open_file(handle)
+            if observed_bytes != expected_file_size_bytes or observed_digest != expected_file_sha256:
+                raise ValueError("checkpoint artifact changed during metadata inspection")
 
     if not isinstance(payload, dict):
         raise ValueError("checkpoint shard payload must be a mapping")  # noqa: TRY004 - preserve ValueError validation/manifest API contract
