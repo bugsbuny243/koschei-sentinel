@@ -409,6 +409,15 @@ def lineage_case(approved_case):
             case_id=f"synthetic-case-{i:03d}",
             scenario_id=f"synthetic-scenario-{i:03d}",
             structural_exact=True,
+            expected_steps=1,
+            predicted_steps=1,
+            mode_matches=1,
+            action_matches=1,
+            target_matches=1,
+            evidence_selection_matches=1,
+            grounded_evidence_steps=1,
+            grounded_target_steps=1,
+            outcome_verification_steps=1,
             violations=[],
         )
         for i in range(50)
