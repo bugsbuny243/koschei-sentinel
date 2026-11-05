@@ -9,6 +9,22 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from koschei_sentinel.gold_holdout_evaluation import (
+    GoldHoldoutCaseResult,
+    GoldHoldoutEvaluationReport,
+)
+from koschei_sentinel.production_checkpoint_lineage import (
+    _HOLDOUT_DOMAIN,
+    _TRAINING_DOMAIN,
+    IndependentHoldoutLineage,
+    ProductionTrainingLineage,
+    verify_production_checkpoint_lineage,
+)
+from koschei_sentinel.production_mcore_training_checkpoint import MCoreTrainingState
+from koschei_sentinel.production_mcore_training_loop import (
+    MCoreTrainingLoopResult,
+    MCoreTrainingStepResult,
+)
 from koschei_sentinel.production_checkpoint_load_verify import (
     verify_rank_checkpoint_load,
 )
@@ -337,3 +353,208 @@ def test_artifact_pin_arguments_must_be_complete(approved_case) -> None:
         verify_rank_checkpoint_load(
             manifest, checkpoint_path=path, expected_file_sha256="a" * 64
         )
+
+
+@pytest.fixture(scope="module")
+def lineage_case(approved_case):
+    _, _, approval, binding, _, _ = approved_case
+    operator_key = Ed25519PrivateKey.generate()
+    reviewer_key = Ed25519PrivateKey.generate()
+    training_state = MCoreTrainingState(
+        global_step=5,
+        consumed_microbatches=10,
+        learning_rate=0.001,
+        global_seed=39735,
+    )
+    training_loop = MCoreTrainingLoopResult(
+        start_step=0,
+        final_step=5,
+        resumed_from_checkpoint=False,
+        step_results=[
+            MCoreTrainingStepResult(
+                global_step=5,
+                consumed_microbatches=10,
+                learning_rate=0.001,
+                grad_norm=0.5,
+            )
+        ],
+        final_checkpoint_dir="synthetic/checkpoint-5",
+    )
+    training_payload = {
+        "schema_version": "sentinel.production-training-lineage.v1",
+        "model_ref": binding.model_ref,
+        "model_revision": binding.model_revision,
+        "checkpoint_approval_sha256": approval.receipt_sha256,
+        "checkpoint_file_sha256": approval.checkpoint_file_sha256,
+        "training_run_id": "synthetic-run-005",
+        "training_state_sha256": _canonical_digest(training_state.model_dump(mode="json")),
+        "training_loop_sha256": _canonical_digest(training_loop.model_dump(mode="json")),
+        "dataset_manifest_sha256": "b" * 64,
+        "final_step": 5,
+        "signer_key_fingerprint": owner_key_fingerprint(operator_key.public_key()),
+    }
+    training_sha = _canonical_digest(training_payload)
+    training_lineage = ProductionTrainingLineage.model_validate(
+        {
+            **training_payload,
+            "attestation_sha256": training_sha,
+            "operator_signature_b64": base64.b64encode(
+                operator_key.sign(_TRAINING_DOMAIN + training_sha.encode("ascii"))
+            ).decode("ascii"),
+        }
+    )
+
+    results = [
+        GoldHoldoutCaseResult(
+            case_id=f"synthetic-case-{i:03d}",
+            scenario_id=f"synthetic-scenario-{i:03d}",
+            structural_exact=True,
+            violations=[],
+        )
+        for i in range(50)
+    ]
+    report_payload = {
+        "schema_version": "sentinel.gold-holdout-evaluation-report.v2",
+        "model_ref": binding.model_ref,
+        "model_revision": binding.model_revision,
+        "adapter_digest": "c" * 64,
+        "case_count": 50,
+        "prediction_count": 50,
+        "missing_case_ids": [],
+        "extra_case_ids": [],
+        "structural_exact_cases": 50,
+        "structural_exact_rate": 1.0,
+        "compared_steps": 50,
+        "predicted_steps": 50,
+        "mode_accuracy": 1.0,
+        "action_accuracy": 1.0,
+        "target_accuracy": 1.0,
+        "evidence_selection_accuracy": 1.0,
+        "evidence_grounding_rate": 1.0,
+        "target_grounding_rate": 1.0,
+        "outcome_verification_rate": 1.0,
+        "case_results": [case.model_dump(mode="json") for case in results],
+        "passed": True,
+        "violations": [],
+    }
+    holdout_report = GoldHoldoutEvaluationReport.model_validate(
+        {**report_payload, "report_sha256": _canonical_digest(report_payload)}
+    )
+    holdout_payload = {
+        "schema_version": "sentinel.independent-holdout-lineage.v1",
+        "model_ref": binding.model_ref,
+        "model_revision": binding.model_revision,
+        "checkpoint_approval_sha256": approval.receipt_sha256,
+        "checkpoint_file_sha256": approval.checkpoint_file_sha256,
+        "training_attestation_sha256": training_lineage.attestation_sha256,
+        "holdout_report_sha256": holdout_report.report_sha256,
+        "evaluation_dataset_sha256": "d" * 64,
+        "evaluation_policy_sha256": "e" * 64,
+        "case_count": 50,
+        "signer_key_fingerprint": owner_key_fingerprint(reviewer_key.public_key()),
+    }
+    holdout_sha = _canonical_digest(holdout_payload)
+    holdout_lineage = IndependentHoldoutLineage.model_validate(
+        {
+            **holdout_payload,
+            "attestation_sha256": holdout_sha,
+            "reviewer_signature_b64": base64.b64encode(
+                reviewer_key.sign(_HOLDOUT_DOMAIN + holdout_sha.encode("ascii"))
+            ).decode("ascii"),
+        }
+    )
+    return {
+        "approved_case": approved_case,
+        "training_state": training_state,
+        "training_loop": training_loop,
+        "training_lineage": training_lineage,
+        "training_operator_key": operator_key.public_key(),
+        "holdout_report": holdout_report,
+        "holdout_lineage": holdout_lineage,
+        "reviewer_key": reviewer_key.public_key(),
+    }
+
+
+def _verify_lineage(case, **overrides):
+    manifest, path, approval, binding, provenance, owner_key = case["approved_case"]
+    args = {
+        "checkpoint_path": str(path),
+        "approved_receipt": approval,
+        "binding": binding,
+        "provenance": provenance,
+        "trusted_owner_key": owner_key,
+        "training_state": case["training_state"],
+        "training_loop": case["training_loop"],
+        "training_lineage": case["training_lineage"],
+        "trusted_training_operator_key": case["training_operator_key"],
+        "holdout_report": case["holdout_report"],
+        "holdout_lineage": case["holdout_lineage"],
+        "trusted_reviewer_key": case["reviewer_key"],
+    }
+    args.update(overrides)
+    return verify_production_checkpoint_lineage(manifest, **args)
+
+
+def test_checkpoint_lineage_verifies_signed_claims_only(lineage_case) -> None:
+    report = _verify_lineage(lineage_case)
+    assert report.status == "signed_lineage_claims_verified"
+    assert report.training_run_id == "synthetic-run-005"
+    assert report.training_execution_independently_verified is False
+    assert report.holdout_execution_independently_verified is False
+    assert report.production_deployment_authorized is False
+
+
+def test_checkpoint_lineage_rejects_owner_as_independent_reviewer(lineage_case) -> None:
+    owner = lineage_case["approved_case"][-1]
+    with pytest.raises(ValueError, match="independent trust root"):
+        _verify_lineage(lineage_case, trusted_reviewer_key=owner)
+
+
+def test_checkpoint_lineage_rejects_altered_training_run(lineage_case) -> None:
+    original = lineage_case["training_lineage"]
+    tampered = original.model_copy(update={"training_run_id": "fabricated-run"})
+    with pytest.raises(ValueError, match="attestation self-hash"):
+        _verify_lineage(lineage_case, training_lineage=tampered)
+
+
+def test_checkpoint_lineage_rejects_holdout_other_checkpoint(lineage_case) -> None:
+    original = lineage_case["holdout_lineage"]
+    tampered = original.model_copy(update={"checkpoint_file_sha256": "f" * 64})
+    with pytest.raises(ValueError, match="checkpoint file digest mismatch"):
+        _verify_lineage(lineage_case, holdout_lineage=tampered)
+
+
+def test_checkpoint_lineage_rejects_unbound_holdout_training(lineage_case) -> None:
+    original = lineage_case["holdout_lineage"]
+    tampered = original.model_copy(update={"training_attestation_sha256": "f" * 64})
+    with pytest.raises(ValueError, match="self-hash mismatch"):
+        _verify_lineage(lineage_case, holdout_lineage=tampered)
+
+
+def test_checkpoint_lineage_rejects_tampered_holdout_report(lineage_case) -> None:
+    original = lineage_case["holdout_report"]
+    tampered = original.model_copy(update={"passed": False})
+    with pytest.raises(ValueError, match="report self-hash mismatch"):
+        _verify_lineage(lineage_case, holdout_report=tampered)
+
+
+def test_checkpoint_lineage_rejects_fake_qwen_model_binding(lineage_case) -> None:
+    original = lineage_case["training_lineage"]
+    tampered = original.model_copy(update={"model_ref": "Qwen/Qwen3.5-397B-A17B"})
+    with pytest.raises(ValueError, match="lineage model identity"):
+        _verify_lineage(lineage_case, training_lineage=tampered)
+
+
+def test_checkpoint_lineage_rejects_training_step_mismatch(lineage_case) -> None:
+    training = lineage_case["training_state"].model_copy(update={"global_step": 4})
+    with pytest.raises(ValueError, match="final step"):
+        _verify_lineage(lineage_case, training_state=training)
+
+
+def test_checkpoint_lineage_rejects_reviewer_signature_replay(lineage_case) -> None:
+    original = lineage_case["holdout_lineage"]
+    tampered = original.model_copy(
+        update={"reviewer_signature_b64": lineage_case["training_lineage"].operator_signature_b64}
+    )
+    with pytest.raises(ValueError, match="signature verification failed"):
+        _verify_lineage(lineage_case, holdout_lineage=tampered)
