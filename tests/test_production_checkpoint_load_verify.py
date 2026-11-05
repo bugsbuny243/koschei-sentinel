@@ -51,7 +51,7 @@ def test_rank_checkpoint_load_verifies_meta_shapes(tmp_path: Path) -> None:
         expert_rank=0,
     )
     state_dict = {
-        item.name: torch.empty(item.shard_shape, dtype=torch.bfloat16)
+        item.name: torch.empty(item.shard_shape, dtype=torch.bfloat16, device="meta")
         for item in manifest.tensors
     }
     path = tmp_path / "rank.pt"
@@ -146,7 +146,7 @@ def approved_case(tmp_path_factory):
     )
     path = root / "approved-rank.pt"
     state_dict = {
-        item.name: torch.empty(item.shard_shape, dtype=torch.bfloat16)
+        item.name: torch.empty(item.shard_shape, dtype=torch.bfloat16, device="meta")
         for item in manifest.tensors
     }
     torch.save(
