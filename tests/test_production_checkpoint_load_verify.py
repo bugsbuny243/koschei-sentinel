@@ -17,6 +17,11 @@ from koschei_sentinel.production_megatron_model_spec import (
 CANDIDATE = Path("configs/training/production-megatron-model.397b-35b.candidate.json")
 
 
+class _UnsupportedCheckpointEntry:
+    """An ordinary Python object that the tensor-only loader must reject."""
+
+
+
 def test_rank_checkpoint_load_verifies_meta_shapes(tmp_path: Path) -> None:
     torch = pytest.importorskip("torch")
     spec = load_production_megatron_model_spec(CANDIDATE)
@@ -74,4 +79,34 @@ def test_rank_checkpoint_load_rejects_manifest_mismatch(tmp_path: Path) -> None:
         path,
     )
     with pytest.raises(ValueError, match="manifest digest mismatch"):
+        verify_rank_checkpoint_load(manifest, checkpoint_path=path)
+
+def test_rank_checkpoint_load_rejects_unallowlisted_python_objects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    torch = pytest.importorskip("torch")
+    # The explicit weights_only flag must not be weakened by this environment setting.
+    monkeypatch.setenv("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+    spec = load_production_megatron_model_spec(CANDIDATE)
+    manifest = build_rank_checkpoint_manifest(
+        spec,
+        pipeline_rank=0,
+        tensor_rank=0,
+        expert_rank=0,
+    )
+    path = tmp_path / "unexpected-object.pt"
+    torch.save(
+        {
+            "schema_version": "sentinel.rank-weight-checkpoint.v1",
+            "manifest_sha256": manifest.manifest_sha256,
+            "pipeline_rank": 0,
+            "tensor_rank": 0,
+            "expert_rank": 0,
+            "dtype": "bfloat16",
+            "state_dict": {"unexpected": _UnsupportedCheckpointEntry()},
+        },
+        path,
+    )
+
+    with pytest.raises(ValueError, match="unable to load checkpoint shard metadata"):
         verify_rank_checkpoint_load(manifest, checkpoint_path=path)
