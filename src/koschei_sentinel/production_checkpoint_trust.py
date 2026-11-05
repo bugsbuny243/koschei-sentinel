@@ -101,6 +101,11 @@ def verify_approved_rank_checkpoint_load(
     The caller must supply a pinned, independently trusted owner public key.
     This function verifies metadata only and never grants execution authority.
     """
+    unsigned_receipt = receipt.model_dump(
+        mode="json", exclude={"receipt_sha256", "owner_signature_b64"}
+    )
+    if receipt.receipt_sha256 != _canonical_digest(unsigned_receipt):
+        raise ValueError("checkpoint approval receipt self-hash mismatch")
     require_verified_production_target_binding(target_binding)
     verify_production_target_provenance(
         target_provenance, target_binding, trusted_owner_public_key
