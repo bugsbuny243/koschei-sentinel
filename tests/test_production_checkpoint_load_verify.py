@@ -12,10 +12,16 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from koschei_sentinel.production_checkpoint_load_verify import (
     verify_rank_checkpoint_load,
 )
+from koschei_sentinel.production_checkpoint_manifest import (
+    build_rank_checkpoint_manifest,
+)
 from koschei_sentinel.production_checkpoint_trust import (
     ApprovedRankCheckpointReceipt,
     checkpoint_approval_signature_message,
     verify_approved_rank_checkpoint_load,
+)
+from koschei_sentinel.production_megatron_model_spec import (
+    load_production_megatron_model_spec,
 )
 from koschei_sentinel.production_model_source import ProductionModelSourceIntake
 from koschei_sentinel.production_target_binding import ProductionTargetBinding
@@ -25,12 +31,6 @@ from koschei_sentinel.production_target_provenance import (
 )
 from koschei_sentinel.production_target_provenance_authoring import (
     build_signed_production_target_provenance,
-)
-from koschei_sentinel.production_checkpoint_manifest import (
-    build_rank_checkpoint_manifest,
-)
-from koschei_sentinel.production_megatron_model_spec import (
-    load_production_megatron_model_spec,
 )
 
 CANDIDATE = Path("configs/training/production-megatron-model.397b-35b.candidate.json")
