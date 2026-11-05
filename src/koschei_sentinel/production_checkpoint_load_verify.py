@@ -40,8 +40,10 @@ def verify_rank_checkpoint_load(
     if not path.is_file():
         raise ValueError(f"checkpoint shard does not exist: {path}")
 
+    # Inspect tensor metadata without allowing arbitrary Python object unpickling.
+    # Meta tensors do not authenticate the checkpoint or prevent resource exhaustion.
     try:
-        payload = torch.load(path, map_location="meta", weights_only=False)
+        payload = torch.load(path, map_location="meta", weights_only=True)
     except Exception as exc:
         raise ValueError(f"unable to load checkpoint shard metadata: {path}") from exc
 
