@@ -7,12 +7,11 @@ import shutil
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from koschei_sentinel.production_checkpoint_load_verify import (
     verify_rank_checkpoint_load,
 )
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
 from koschei_sentinel.production_checkpoint_trust import (
     ApprovedRankCheckpointReceipt,
     checkpoint_approval_signature_message,
